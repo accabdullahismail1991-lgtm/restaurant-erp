@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>نموذج كاشير المطعم</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#FAF7F0;
+    --ink:#211F1C;
+    --ink-soft:#5B564C;
+    --primary:#2F5233;
+    --primary-ink:#F4F8F1;
+    --accent:#C9932A;
+    --card:#F1ECDD;
+    --card-border:#E0D8C2;
+    --danger:#B3403A;
+    --danger-bg:#FBEAE8;
+    --success:#3E7A45;
+    --success-bg:#EAF3E7;
+    --line:#D9D0B8;
+    --shadow: 0 1px 0 rgba(33,31,28,0.06);
+    --radius: 10px;
+    --font: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:#1B1A17;
+      --ink:#F1EDE2;
+      --ink-soft:#B8B1A0;
+      --primary:#7FB784;
+      --primary-ink:#12210F;
+      --accent:#E0AE55;
+      --card:#252320;
+      --card-border:#38352E;
+      --danger:#E4867F;
+      --danger-bg:#3A2320;
+      --success:#8FCB92;
+      --success-bg:#1E2E1D;
+      --line:#3A362C;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#1B1A17;
+    --ink:#F1EDE2;
+    --ink-soft:#B8B1A0;
+    --primary:#7FB784;
+    --primary-ink:#12210F;
+    --accent:#E0AE55;
+    --card:#252320;
+    --card-border:#38352E;
+    --danger:#E4867F;
+    --danger-bg:#3A2320;
+    --success:#8FCB92;
+    --success-bg:#1E2E1D;
+    --line:#3A362C;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--font);
+    min-height:100vh;
+    font-variant-numeric: tabular-nums;
+  }
+  .app{max-width:1180px;margin:0 auto;padding:20px 16px 60px;}
+
+  header.top{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:16px;
+    padding-bottom:16px;
+    border-bottom:2px solid var(--ink);
+    margin-bottom:18px;
+    flex-wrap:wrap;
+  }
+  .brand{display:flex;align-items:baseline;gap:10px;}
+  .brand h1{font-size:22px;margin:0;font-weight:700;letter-spacing:-0.01em;}
+  .brand span{font-size:13px;color:var(--ink-soft);}
+
+  nav.tabs{display:flex;gap:6px;flex-wrap:wrap;}
+  nav.tabs button{
+    font-family:var(--font);
+    background:transparent;
+    border:1.5px solid var(--card-border);
+    color:var(--ink-soft);
+    padding:8px 16px;
+    border-radius:999px;
+    font-size:14px;
+    font-weight:600;
+    cursor:pointer;
+    transition:background .15s, color .15s, border-color .15s;
+  }
+  nav.tabs button:hover{border-color:var(--primary);}
+  nav.tabs button.active{
+    background:var(--primary);
+    color:var(--primary-ink);
+    border-color:var(--primary);
+  }
+
+  section.view{display:none;}
+  section.view.active{display:block;animation:fadein .18s ease;}
+  @keyframes fadein{from{opacity:0;transform:translateY(3px);}to{opacity:1;transform:translateY(0);}}
+
+  /* ---------- Cashier ---------- */
+  .pos-grid{display:grid;grid-template-columns:1fr 340px;gap:20px;align-items:start;}
+  @media (max-width:820px){.pos-grid{grid-template-columns:1fr;}}
+
+  .cat-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+  .cat-row button{
+    font-family:var(--font);
+    background:var(--card);
+    border:1px solid var(--card-border);
+    color:var(--ink);
+    padding:6px 14px;
+    border-radius:8px;
+    font-size:13px;
+    cursor:pointer;
+  }
+  .cat-row button.active{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+
+  .menu-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+    gap:10px;
+  }
+  .item-card{
+    background:var(--card);
+    border:1px solid var(--card-border);
+    border-radius:var(--radius);
+    padding:14px 12px;
+    cursor:pointer;
+    text-align:right;
+    transition:transform .1s, border-color .15s;
+    position:relative;
+  }
+  .item-card:hover{border-color:var(--primary);}
+  .item-card:active{transform:scale(0.98);}
+  .item-card.out-of-stock{opacity:0.45;cursor:not-allowed;}
+  .item-card .name{font-weight:600;font-size:14.5px;margin-bottom:6px;display:block;}
+  .item-card .price{color:var(--primary);font-weight:700;font-size:14px;}
+  .item-card .warn{
+    position:absolute;top:8px;left:8px;
+    background:var(--danger-bg);color:var(--danger);
+    font-size:10px;font-weight:700;padding:2px 6px;border-radius:5px;
+  }
+
+  .ticket{
+    background:var(--card);
+    border:1px solid var(--card-border);
+    border-radius:var(--radius);
+    padding:16px;
+    position:sticky;
+    top:16px;
+  }
+  .ticket h3{margin:0 0 12px;font-size:15px;display:flex;justify-content:space-between;align-items:center;}
+  .ticket h3 .count{font-size:12px;color:var(--ink-soft);font-weight:500;}
+  .order-line{
+    display:flex;align-items:center;gap:8px;
+    padding:8px 0;border-bottom:1px dashed var(--line);
+    font-size:13.5px;
+  }
+  .order-line .oname{flex:1;}
+  .order-line .oqty{display:flex;align-items:center;gap:4px;}
+  .order-line button.step{
+    width:22px;height:22px;border-radius:6px;border:1px solid var(--card-border);
+    background:var(--paper);cursor:pointer;font-size:13px;line-height:1;color:var(--ink);
+  }
+  .order-line .oprice{width:64px;text-align:left;color:var(--ink-soft);}
+  .order-empty{color:var(--ink-soft);font-size:13px;text-align:center;padding:30px 0;}
+
+  .ticket-totals{margin-top:12px;padding-top:12px;border-top:2px solid var(--ink);font-size:13.5px;}
+  .ticket-totals .row{display:flex;justify-content:space-between;margin-bottom:6px;}
+  .ticket-totals .row.total{font-size:17px;font-weight:700;margin-top:8px;}
+
+  .pay-methods{display:flex;gap:6px;margin:10px 0;}
+  .pay-methods button{
+    flex:1;font-family:var(--font);padding:8px 4px;border-radius:8px;
+    border:1.5px solid var(--card-border);background:var(--paper);font-size:12.5px;cursor:pointer;color:var(--ink);
+  }
+  .pay-methods button.active{border-color:var(--accent);background:var(--accent);color:#2A1B02;font-weight:700;}
+
+  .checkout-btn{
+    width:100%;padding:13px;border:none;border-radius:9px;
+    background:var(--primary);color:var(--primary-ink);
+    font-family:var(--font);font-weight:700;font-size:15px;cursor:pointer;margin-top:8px;
+  }
+  .checkout-btn:disabled{opacity:0.4;cursor:not-allowed;}
+  .clear-btn{
+    width:100%;padding:8px;border:none;background:transparent;color:var(--ink-soft);
+    font-family:var(--font);font-size:12.5px;cursor:pointer;margin-top:4px;text-decoration:underline;
+  }
+
+  .toast{
+    position:fixed;bottom:20px;right:50%;transform:translateX(50%);
+    background:var(--ink);color:var(--paper);padding:11px 20px;border-radius:9px;
+    font-size:13.5px;box-shadow:0 6px 20px rgba(0,0,0,0.25);
+    opacity:0;pointer-events:none;transition:opacity .25s, transform .25s;
+    z-index:50;
+  }
+  .toast.show{opacity:1;transform:translateX(50%) translateY(-4px);}
+  .toast.err{background:var(--danger);}
+
+  /* ---------- Inventory ---------- */
+  .table-wrap{background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius);overflow:hidden;overflow-x:auto;}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px;}
+  th,td{padding:10px 14px;text-align:right;border-bottom:1px solid var(--card-border);}
+  th{background:var(--paper);font-size:12px;color:var(--ink-soft);font-weight:600;}
+  tr:last-child td{border-bottom:none;}
+  .badge{padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:700;}
+  .badge.low{background:var(--danger-bg);color:var(--danger);}
+  .badge.ok{background:var(--success-bg);color:var(--success);}
+  .mini-input{width:70px;padding:5px 7px;border-radius:6px;border:1px solid var(--card-border);font-family:var(--font);background:var(--paper);color:var(--ink);}
+  .mini-btn{
+    font-family:var(--font);background:var(--primary);color:var(--primary-ink);border:none;
+    padding:6px 12px;border-radius:6px;font-size:12.5px;cursor:pointer;font-weight:600;
+  }
+  .section-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+  .section-title h2{font-size:17px;margin:0;}
+  .section-title p{margin:2px 0 0;font-size:12.5px;color:var(--ink-soft);}
+
+  /* ---------- Recipes ---------- */
+  .recipe-list{display:flex;flex-direction:column;gap:12px;}
+  .recipe-card{background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius);padding:14px 16px;}
+  .recipe-card > .rc-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+  .recipe-card .rc-head b{font-size:14.5px;}
+  .recipe-card .rc-head .cat-tag{font-size:11px;color:var(--ink-soft);}
+  .recipe-rows{display:flex;flex-direction:column;gap:5px;margin-bottom:10px;}
+  .recipe-row{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-soft);}
+  .recipe-row .ing-name{flex:1;color:var(--ink);}
+  .recipe-row button.rm{background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;}
+  .add-row-form{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+  select,input[type=number],input[type=text]{
+    font-family:var(--font);padding:6px 9px;border-radius:6px;border:1px solid var(--card-border);
+    background:var(--paper);color:var(--ink);font-size:13px;
+  }
+
+  /* ---------- Report ---------- */
+  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;}
+  .kpi{background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius);padding:16px;}
+  .kpi .label{font-size:12px;color:var(--ink-soft);margin-bottom:6px;}
+  .kpi .value{font-size:22px;font-weight:700;}
+  .kpi .value small{font-size:13px;font-weight:500;color:var(--ink-soft);}
+
+  .empty-state{
+    text-align:center;padding:40px 20px;color:var(--ink-soft);font-size:13.5px;
+    background:var(--card);border:1px dashed var(--card-border);border-radius:var(--radius);
+  }
+  .footnote{font-size:12px;color:var(--ink-soft);margin-top:22px;line-height:1.7;border-top:1px solid var(--line);padding-top:14px;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="top">
+    <div class="brand">
+      <h1>نموذج الكاشير</h1>
+      <span>نسخة أولية — مبيعات مرتبطة بالوصفات والمخزون</span>
+    </div>
+    <nav class="tabs">
+      <button data-view="pos" class="active">الكاشير</button>
+      <button data-view="inventory">المخزون</button>
+      <button data-view="recipes">الوصفات</button>
+      <button data-view="report">التقرير اليومي</button>
+    </nav>
+  </header>
+
+  <!-- CASHIER -->
+  <section class="view active" id="view-pos">
+    <div class="pos-grid">
+      <div>
+        <div class="cat-row" id="catRow"></div>
+        <div class="menu-grid" id="menuGrid"></div>
+      </div>
+
+      <div class="ticket">
+        <h3>الطلب الحالي <span class="count" id="orderCount">0 صنف</span></h3>
+        <div id="orderLines"></div>
+        <div class="ticket-totals">
+          <div class="row"><span>المجموع الفرعي</span><span id="subtotal">0.00 ر.س</span></div>
+          <div class="row"><span>ضريبة القيمة المضافة (15%)</span><span id="vat">0.00 ر.س</span></div>
+          <div class="row total"><span>الإجمالي</span><span id="grandtotal">0.00 ر.س</span></div>
+        </div>
+        <div class="pay-methods" id="payMethods">
+          <button data-pm="نقدي" class="active">نقدي</button>
+          <button data-pm="شبكة">شبكة</button>
+        </div>
+        <button class="checkout-btn" id="checkoutBtn">إتمام البيع</button>
+        <button class="clear-btn" id="clearBtn">إفراغ الطلب</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- INVENTORY -->
+  <section class="view" id="view-inventory">
+    <div class="section-title">
+      <div>
+        <h2>المخزون الحالي</h2>
+        <p>الكميات تتحدث تلقائيًا عند البيع حسب وصفة كل صنف</p>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>المادة الخام</th><th>الرصيد الحالي</th><th>حد التنبيه</th><th>الحالة</th><th>استلام كمية (شراء/إنتاج)</th></tr>
+        </thead>
+        <tbody id="invBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- RECIPES -->
+  <section class="view" id="view-recipes">
+    <div class="section-title">
+      <div>
+        <h2>الوصفات (BOM)</h2>
+        <p>كل صنف مبيعات مرتبط بمكوناته الخام وكمياتها — هذا ما يُخصم من المخزون عند البيع</p>
+      </div>
+    </div>
+    <div class="recipe-list" id="recipeList"></div>
+  </section>
+
+  <!-- REPORT -->
+  <section class="view" id="view-report">
+    <div class="section-title">
+      <div>
+        <h2>التقرير اليومي</h2>
+        <p>ملخص العمليات المسجّلة في هذه الجلسة</p>
+      </div>
+    </div>
+    <div class="kpi-grid" id="kpiGrid"></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>الوقت</th><th>الأصناف</th><th>طريقة الدفع</th><th>الإجمالي</th></tr>
+        </thead>
+        <tbody id="salesBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="footnote">
+    نموذج أولي توضيحي — البيانات تُحفظ محليًا في هذا المتصفح فقط ولا تُزامن بين الأجهزة، ولا يوجد فيه توليد فاتورة ضريبية معتمدة (ZATCA) أو تكامل دفع فعلي. الهدف إثبات منطق ربط المبيعات بالوصفات والمخزون قبل بناء النظام الكامل.
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+
+  // ---------- Default data ----------
+  function defaultState(){
+    return {
+      ingredients: [
+        {id:'i1', name:'لحم برجر مفروم', unit:'g', qty:8000, low:1500},
+        {id:'i2', name:'خبز برجر', unit:'pcs', qty:60, low:15},
+        {id:'i3', name:'جبن شيدر', unit:'g', qty:3000, low:600},
+        {id:'i4', name:'خس', unit:'g', qty:2000, low:400},
+        {id:'i5', name:'طماطم', unit:'g', qty:2500, low:500},
+        {id:'i6', name:'عجينة بيتزا', unit:'pcs', qty:40, low:10},
+        {id:'i7', name:'صلصة طماطم (مُجهّزة)', unit:'g', qty:4000, low:800},
+        {id:'i8', name:'جبن موزاريلا', unit:'g', qty:3500, low:700},
+        {id:'i9', name:'صدر دجاج', unit:'g', qty:6000, low:1200},
+        {id:'i10', name:'بطاطس مجمدة', unit:'g', qty:9000, low:1500},
+        {id:'i11', name:'زيت قلي', unit:'ml', qty:5000, low:1000},
+        {id:'i12', name:'عصير برتقال طازج', unit:'ml', qty:3000, low:500},
+        {id:'i13', name:'كولا (علبة)', unit:'pcs', qty:80, low:20},
+      ],
+      items: [
+        {id:'m1', name:'برجر لحم', category:'أطباق رئيسية', price:28,
+          recipe:[{ing:'i1',qty:150},{ing:'i2',qty:1},{ing:'i3',qty:20},{ing:'i4',qty:15},{ing:'i5',qty:20}]},
+        {id:'m2', name:'بيتزا مارغريتا', category:'أطباق رئيسية', price:34,
+          recipe:[{ing:'i6',qty:1},{ing:'i7',qty:120},{ing:'i8',qty:150}]},
+        {id:'m3', name:'دجاج مشوي', category:'أطباق رئيسية', price:32,
+          recipe:[{ing:'i9',qty:220}]},
+        {id:'m4', name:'بطاطس مقلية', category:'مقبلات', price:12,
+          recipe:[{ing:'i10',qty:180},{ing:'i11',qty:40}]},
+        {id:'m5', name:'عصير برتقال', category:'مشروبات', price:14,
+          recipe:[{ing:'i12',qty:250}]},
+        {id:'m6', name:'كولا', category:'مشروبات', price:8,
+          recipe:[{ing:'i13',qty:1}]},
+      ],
+      sales: [],
+      lastSaleId: 0
+    };
+  }
+
+  let state;
+  try{
+    var saved = localStorage.getItem('pos_prototype_state_v1');
+    state = saved ? JSON.parse(saved) : defaultState();
+  }catch(e){
+    state = defaultState();
+  }
+
+  function persist(){
+    try{ localStorage.setItem('pos_prototype_state_v1', JSON.stringify(state)); }catch(e){}
+  }
+
+  let currentOrder = []; // {itemId, qty}
+  let activePayMethod = 'نقدي';
+  let activeCategory = 'الكل';
+
+  const ingById = id => state.ingredients.find(i=>i.id===id);
+  const itemById = id => state.items.find(i=>i.id===id);
+
+  function fmt(n){ return n.toFixed(2) + ' ر.س'; }
+  function fmtQty(n, unit){
+    var u = unit==='g' ? 'غم' : unit==='ml' ? 'مل' : 'قطعة';
+    return n.toLocaleString('en-US') + ' ' + u;
+  }
+
+  // ---------- Toast ----------
+  let toastTimer;
+  function toast(msg, isErr){
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast show' + (isErr ? ' err':'');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.className='toast'; }, 2600);
+  }
+
+  // ---------- Tabs ----------
+  document.querySelectorAll('nav.tabs button').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll('section.view').forEach(v=>v.classList.remove('active'));
+      document.getElementById('view-'+btn.dataset.view).classList.add('active');
+      if(btn.dataset.view==='inventory') renderInventory();
+      if(btn.dataset.view==='recipes') renderRecipes();
+      if(btn.dataset.view==='report') renderReport();
+    });
+  });
+
+  // ---------- Stock check ----------
+  // Returns max makeable count for an item given current stock
+  function maxMakeable(item){
+    var max = Infinity;
+    item.recipe.forEach(function(r){
+      var ing = ingById(r.ing);
+      var possible = Math.floor(ing.qty / r.qty);
+      if(possible < max) max = possible;
+    });
+    return max;
+  }
+
+  // How many of item already in current order
+  function qtyInOrder(itemId){
+    var l = currentOrder.find(function(o){return o.itemId===itemId;});
+    return l ? l.qty : 0;
+  }
+
+  // ---------- Render: Cashier ----------
+  function categories(){
+    var set = ['الكل'];
+    state.items.forEach(function(it){ if(set.indexOf(it.category)===-1) set.push(it.category); });
+    return set;
+  }
+
+  function renderCategories(){
+    var row = document.getElementById('catRow');
+    row.innerHTML = '';
+    categories().forEach(function(cat){
+      var b = document.createElement('button');
+      b.textContent = cat;
+      if(cat===activeCategory) b.classList.add('active');
+      b.addEventListener('click', function(){ activeCategory = cat; renderCategories(); renderMenu(); });
+      row.appendChild(b);
+    });
+  }
+
+  function renderMenu(){
+    var grid = document.getElementById('menuGrid');
+    grid.innerHTML = '';
+    var list = state.items.filter(function(it){ return activeCategory==='الكل' || it.category===activeCategory; });
+    list.forEach(function(it){
+      var makeable = maxMakeable(it) - qtyInOrder(it.id);
+      var card = document.createElement('div');
+      card.className = 'item-card' + (makeable<=0 ? ' out-of-stock' : '');
+      card.innerHTML =
+        (makeable<=0 ? '<span class="warn">نفذ المخزون</span>' : (makeable<=3 ? '<span class="warn">آخر '+makeable+'</span>' : '')) +
+        '<span class="name">'+it.name+'</span><span class="price">'+fmt(it.price)+'</span>';
+      card.addEventListener('click', function(){
+        if(makeable<=0){ toast('الكمية المتوفرة من المخزون لا تكفي لتحضير هذا الصنف', true); return; }
+        addToOrder(it.id);
+      });
+      grid.appendChild(card);
+    });
+  }
+
+  function addToOrder(itemId){
+    var line = currentOrder.find(function(o){return o.itemId===itemId;});
+    if(line){ line.qty += 1; } else { currentOrder.push({itemId:itemId, qty:1}); }
+    renderOrder(); renderMenu();
+  }
+  function changeQty(itemId, delta){
+    var line = currentOrder.find(function(o){return o.itemId===itemId;});
+    if(!line) return;
+    line.qty += delta;
+    if(line.qty<=0){ currentOrder = currentOrder.filter(function(o){return o.itemId!==itemId;}); }
+    renderOrder(); renderMenu();
+  }
+
+  function renderOrder(){
+    var wrap = document.getElementById('orderLines');
+    wrap.innerHTML='';
+    if(currentOrder.length===0){
+      wrap.innerHTML = '<div class="order-empty">لم تتم إضافة أصناف بعد</div>';
+    } else {
+      currentOrder.forEach(function(o){
+        var it = itemById(o.itemId);
+        var row = document.createElement('div');
+        row.className='order-line';
+        row.innerHTML =
+          '<span class="oname">'+it.name+'</span>'+
+          '<span class="oqty">'+
+            '<button class="step" data-a="dec">−</button>'+
+            '<span>'+o.qty+'</span>'+
+            '<button class="step" data-a="inc">+</button>'+
+          '</span>'+
+          '<span class="oprice">'+fmt(it.price*o.qty)+'</span>';
+        row.querySelector('[data-a="dec"]').addEventListener('click', function(){changeQty(o.itemId,-1);});
+        row.querySelector('[data-a="inc"]').addEventListener('click', function(){
+          var makeable = maxMakeable(it) - qtyInOrder(it.id);
+          if(makeable<=0){ toast('لا يمكن زيادة الكمية — المخزون غير كافٍ', true); return; }
+          changeQty(o.itemId,1);
+        });
+        wrap.appendChild(row);
+      });
+    }
+    document.getElementById('orderCount').textContent = currentOrder.reduce(function(s,o){return s+o.qty;},0) + ' صنف';
+
+    var subtotal = currentOrder.reduce(function(s,o){ return s + itemById(o.itemId).price * o.qty; },0);
+    var vat = subtotal * 0.15;
+    var total = subtotal + vat;
+    document.getElementById('subtotal').textContent = fmt(subtotal);
+    document.getElementById('vat').textContent = fmt(vat);
+    document.getElementById('grandtotal').textContent = fmt(total);
+    document.getElementById('checkoutBtn').disabled = currentOrder.length===0;
+  }
+
+  document.querySelectorAll('#payMethods button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('#payMethods button').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      activePayMethod = b.dataset.pm;
+    });
+  });
+
+  document.getElementById('clearBtn').addEventListener('click', function(){
+    currentOrder = [];
+    renderOrder(); renderMenu();
+  });
+
+  document.getElementById('checkoutBtn').addEventListener('click', function(){
+    if(currentOrder.length===0) return;
+    // verify stock again just before committing
+    for(var i=0;i<currentOrder.length;i++){
+      var it = itemById(currentOrder[i].itemId);
+      var needed = currentOrder[i].qty;
+      for(var j=0;j<it.recipe.length;j++){
+        var r = it.recipe[j];
+        var ing = ingById(r.ing);
+        if(ing.qty < r.qty*needed){
+          toast('تعذّر إتمام البيع: نقص في مادة "'+ing.name+'"', true);
+          return;
+        }
+      }
+    }
+    // deduct stock
+    currentOrder.forEach(function(o){
+      var it = itemById(o.itemId);
+      it.recipe.forEach(function(r){
+        var ing = ingById(r.ing);
+        ing.qty -= r.qty * o.qty;
+      });
+    });
+    var subtotal = currentOrder.reduce(function(s,o){ return s + itemById(o.itemId).price * o.qty; },0);
+    var vat = subtotal*0.15;
+    state.lastSaleId += 1;
+    state.sales.push({
+      id: state.lastSaleId,
+      time: new Date().toISOString(),
+      items: currentOrder.map(function(o){ return {itemId:o.itemId, name:itemById(o.itemId).name, qty:o.qty, price:itemById(o.itemId).price}; }),
+      subtotal: subtotal, vat: vat, total: subtotal+vat,
+      pay: activePayMethod
+    });
+    persist();
+    toast('تم تسجيل البيع وخصم المخزون تلقائيًا ✓');
+    currentOrder = [];
+    renderOrder(); renderMenu();
+  });
+
+  // ---------- Inventory ----------
+  function renderInventory(){
+    var body = document.getElementById('invBody');
+    body.innerHTML='';
+    state.ingredients.forEach(function(ing){
+      var low = ing.qty <= ing.low;
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>'+ing.name+'</td>'+
+        '<td>'+fmtQty(ing.qty, ing.unit)+'</td>'+
+        '<td>'+fmtQty(ing.low, ing.unit)+'</td>'+
+        '<td><span class="badge '+(low?'low':'ok')+'">'+(low?'منخفض':'جيد')+'</span></td>'+
+        '<td><input type="number" class="mini-input" min="0" placeholder="كمية" id="add-'+ing.id+'"> <button class="mini-btn" data-id="'+ing.id+'">استلام</button></td>';
+      body.appendChild(tr);
+    });
+    body.querySelectorAll('.mini-btn').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.dataset.id;
+        var input = document.getElementById('add-'+id);
+        var val = parseFloat(input.value);
+        if(!val || val<=0){ toast('أدخل كمية صحيحة', true); return; }
+        ingById(id).qty += val;
+        persist();
+        toast('تم استلام الكمية وتحديث المخزون ✓');
+        renderInventory(); renderMenu();
+      });
+    });
+  }
+
+  // ---------- Recipes ----------
+  function renderRecipes(){
+    var wrap = document.getElementById('recipeList');
+    wrap.innerHTML='';
+    state.items.forEach(function(it){
+      var card = document.createElement('div');
+      card.className='recipe-card';
+      var rowsHtml = it.recipe.map(function(r,idx){
+        var ing = ingById(r.ing);
+        return '<div class="recipe-row"><span class="ing-name">'+ing.name+'</span><span>'+r.qty+' '+(ing.unit==='g'?'غم':ing.unit==='ml'?'مل':'قطعة')+'</span><button class="rm" data-item="'+it.id+'" data-idx="'+idx+'">✕</button></div>';
+      }).join('');
+      card.innerHTML =
+        '<div class="rc-head"><b>'+it.name+'</b><span class="cat-tag">'+it.category+' · '+fmt(it.price)+'</span></div>'+
+        '<div class="recipe-rows">'+rowsHtml+'</div>'+
+        '<div class="add-row-form">'+
+          '<select id="sel-'+it.id+'">'+state.ingredients.map(function(ing){return '<option value="'+ing.id+'">'+ing.name+'</option>';}).join('')+'</select>'+
+          '<input type="number" min="0" placeholder="الكمية" id="qty-'+it.id+'" style="width:80px">'+
+          '<button class="mini-btn" data-additem="'+it.id+'">إضافة للوصفة</button>'+
+        '</div>';
+      wrap.appendChild(card);
+    });
+    wrap.querySelectorAll('.rm').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var it = itemById(btn.dataset.item);
+        it.recipe.splice(parseInt(btn.dataset.idx),1);
+        persist(); renderRecipes(); renderMenu();
+      });
+    });
+    wrap.querySelectorAll('[data-additem]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var itemId = btn.dataset.additem;
+        var ingSel = document.getElementById('sel-'+itemId).value;
+        var qty = parseFloat(document.getElementById('qty-'+itemId).value);
+        if(!qty || qty<=0){ toast('أدخل كمية صحيحة للمكوّن', true); return; }
+        var it = itemById(itemId);
+        var existing = it.recipe.find(function(r){return r.ing===ingSel;});
+        if(existing){ existing.qty = qty; } else { it.recipe.push({ing:ingSel, qty:qty}); }
+        persist();
+        toast('تم تحديث وصفة "'+it.name+'"');
+        renderRecipes(); renderMenu();
+      });
+    });
+  }
+
+  // ---------- Report ----------
+  function renderReport(){
+    var kpiGrid = document.getElementById('kpiGrid');
+    var salesBody = document.getElementById('salesBody');
+    var sales = state.sales;
+
+    var totalRevenue = sales.reduce(function(s,x){return s+x.total;},0);
+    var orderCount = sales.length;
+    var avgOrder = orderCount ? totalRevenue/orderCount : 0;
+
+    var itemCounts = {};
+    sales.forEach(function(s){
+      s.items.forEach(function(i){
+        itemCounts[i.name] = (itemCounts[i.name]||0) + i.qty;
+      });
+    });
+    var topItem = '—';
+    var topQty = 0;
+    Object.keys(itemCounts).forEach(function(name){
+      if(itemCounts[name] > topQty){ topQty = itemCounts[name]; topItem = name; }
+    });
+
+    kpiGrid.innerHTML =
+      '<div class="kpi"><div class="label">إجمالي المبيعات</div><div class="value">'+fmt(totalRevenue)+'</div></div>'+
+      '<div class="kpi"><div class="label">عدد الطلبات</div><div class="value">'+orderCount+'</div></div>'+
+      '<div class="kpi"><div class="label">متوسط قيمة الطلب</div><div class="value">'+fmt(avgOrder)+'</div></div>'+
+      '<div class="kpi"><div class="label">الصنف الأكثر مبيعًا</div><div class="value" style="font-size:16px">'+topItem+' <small>('+topQty+')</small></div></div>';
+
+    if(sales.length===0){
+      salesBody.parentElement.parentElement.style.display='none';
+      var existing = document.getElementById('emptyReport');
+      if(!existing){
+        var div = document.createElement('div');
+        div.id='emptyReport';
+        div.className='empty-state';
+        div.textContent='لا توجد عمليات بيع مسجّلة بعد. سجّل عملية بيع من شاشة الكاشير لتظهر هنا.';
+        document.getElementById('view-report').appendChild(div);
+      }
+    } else {
+      salesBody.parentElement.parentElement.style.display='';
+      var e = document.getElementById('emptyReport');
+      if(e) e.remove();
+      salesBody.innerHTML = sales.slice().reverse().map(function(s){
+        var time = new Date(s.time).toLocaleTimeString('ar-SA',{hour:'2-digit',minute:'2-digit'});
+        var itemsStr = s.items.map(function(i){return i.name+' ×'+i.qty;}).join('، ');
+        return '<tr><td>'+time+'</td><td>'+itemsStr+'</td><td>'+s.pay+'</td><td>'+fmt(s.total)+'</td></tr>';
+      }).join('');
+    }
+  }
+
+  // ---------- Init ----------
+  renderCategories();
+  renderMenu();
+  renderOrder();
+})();
+</script>
+</body>
+</html>

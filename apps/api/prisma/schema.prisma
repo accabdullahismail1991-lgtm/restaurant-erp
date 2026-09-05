@@ -1,0 +1,521 @@
+// ============================================================================
+// Restaurant ERP — مخطط قاعدة البيانات
+// هذا مخطط أولي (scaffold) يغطي القرارات المعمارية في docs/DECISIONS.md
+// لم يُختبر بعد بـ migration فعلي — راجعه وعدّله قبل أول migrate.
+// ============================================================================
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ---------------------------------------------------------------------------
+// المواقع (فروع + مطبخ مركزي) — القرار #1, #5
+// ---------------------------------------------------------------------------
+enum LocationType {
+  BRANCH
+  CENTRAL_KITCHEN
+  WAREHOUSE
+}
+
+model Location {
+  id        String       @id @default(cuid())
+  name      String
+  type      LocationType
+  address   String?
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+
+  inventoryBalances InventoryBalance[]
+  inventoryBatches  InventoryBatch[]
+  ordersAsSource    Order[]              @relation("OrderLocation")
+  purchaseOrders    PurchaseOrder[]
+  productionOrders  ProductionOrder[]
+  transfersFrom     Transfer[]           @relation("TransferFrom")
+  transfersTo       Transfer[]           @relation("TransferTo")
+  stocktakes        Stocktake[]
+  shifts            Shift[]
+  users             UserLocationScope[]
+}
+
+// ---------------------------------------------------------------------------
+// المستخدمون والصلاحيات (RBAC مرن مع Scope) — القرار #16
+// ---------------------------------------------------------------------------
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  phone        String   @unique
+  passwordHash String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  roles           UserRole[]
+  locationScopes  UserLocationScope[]
+  shiftsOpened    Shift[]              @relation("ShiftOpenedBy")
+  ordersServed    Order[]              @relation("OrderServedBy")
+  approvals       Approval[]
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique // مثال: "مدير فرع"، "كاشير"، "مشرف مشتريات إقليمي"
+  description String?
+
+  permissions RolePermission[]
+  users       UserRole[]
+}
+
+model Permission {
+  id     String @id @default(cuid())
+  code   String @unique // مثال: "pos.void_order", "purchasing.approve_po", "inventory.adjust"
+  label  String
+
+  roles RolePermission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id])
+  role   Role   @relation(fields: [roleId], references: [id])
+
+  @@id([userId, roleId])
+}
+
+// نطاق صلاحية المستخدم: فرع معيّن / كل الفروع / مطبخ مركزي...
+model UserLocationScope {
+  userId     String
+  locationId String
+  user       User     @relation(fields: [userId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id])
+
+  @@id([userId, locationId])
+}
+
+// ---------------------------------------------------------------------------
+// المواد الخام والمنتجات النصف مصنّعة — القرار #4, #9
+// ---------------------------------------------------------------------------
+enum ValuationMethod {
+  WEIGHTED_AVERAGE
+  FIFO
+}
+
+enum IngredientKind {
+  RAW_MATERIAL      // مادة خام تُشترى مباشرة
+  SEMI_FINISHED     // منتج وسيط ينتج بأمر إنتاج (مثل صلصة مجهّزة)
+}
+
+model Ingredient {
+  id              String          @id @default(cuid())
+  name            String
+  unit            String          // g, ml, pcs...
+  kind            IngredientKind  @default(RAW_MATERIAL)
+  valuationMethod ValuationMethod @default(WEIGHTED_AVERAGE) // القرار #9: لكل صنف طريقته
+  lowStockThreshold Decimal       @db.Decimal(12, 3)
+  shelfLifeDays   Int?            // لحساب تاريخ الصلاحية الافتراضي عند الإنتاج/الاستلام
+  createdAt       DateTime        @default(now())
+
+  batches          InventoryBatch[]
+  recipeUsages     RecipeLine[]        @relation("RecipeIngredient")
+  purchaseLines    PurchaseOrderLine[]
+  productionOutputs ProductionOrder[]  @relation("ProductionOutput")
+  productionInputs ProductionOrderLine[]
+  transferLines    TransferLine[]
+  stocktakeLines   StocktakeLine[]
+}
+
+// دفعة مخزون فعلية — إلزامي بغض النظر عن طريقة التقييم (القرار #9)
+model InventoryBatch {
+  id            String    @id @default(cuid())
+  ingredientId  String
+  locationId    String
+  batchNumber   String
+  quantity      Decimal   @db.Decimal(12, 3) // الرصيد المتبقي من هذه الدفعة
+  unitCost      Decimal   @db.Decimal(12, 4) // تكلفة الوحدة لهذه الدفعة تحديدًا (لأجل FIFO)
+  receivedAt    DateTime  @default(now())
+  expiresAt     DateTime?
+  sourceType    String    // "PURCHASE" | "PRODUCTION" | "TRANSFER" | "ADJUSTMENT"
+  sourceId      String?   // معرف المستند المصدر (PO / ProductionOrder / Transfer / Stocktake)
+
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+  location   Location   @relation(fields: [locationId], references: [id])
+  movements  StockMovement[]
+}
+
+// سجل حركة مخزون — كل خصم/إضافة يُسجَّل هنا (ledger)، لا تُعدَّل الأرصدة مباشرة
+model StockMovement {
+  id          String   @id @default(cuid())
+  batchId     String
+  quantity    Decimal  @db.Decimal(12, 3) // موجب = إضافة، سالب = خصم
+  reason      String   // "SALE" | "PRODUCTION_CONSUMPTION" | "TRANSFER_OUT" | "TRANSFER_IN" | "STOCKTAKE_ADJUSTMENT" | "WASTE"
+  refId       String?  // معرف الطلب/أمر الإنتاج/... المرتبط
+  createdAt   DateTime @default(now())
+
+  batch InventoryBatch @relation(fields: [batchId], references: [id])
+}
+
+// رصيد مجمّع لكل صنف بكل موقع (للقراءة السريعة، يُشتق من InventoryBatch)
+model InventoryBalance {
+  id           String   @id @default(cuid())
+  ingredientId String
+  locationId   String
+  quantity     Decimal  @db.Decimal(12, 3)
+  updatedAt    DateTime @updatedAt
+
+  location Location @relation(fields: [locationId], references: [id])
+
+  @@unique([ingredientId, locationId])
+}
+
+// ---------------------------------------------------------------------------
+// أصناف المبيعات والوصفات (Multi-level BOM) — القرار #4
+// ---------------------------------------------------------------------------
+model MenuItem {
+  id       String  @id @default(cuid())
+  name     String
+  category String
+  price    Decimal @db.Decimal(10, 2)
+  isActive Boolean @default(true)
+
+  recipe     RecipeLine[]
+  orderLines OrderLine[]
+}
+
+// سطر وصفة: يشير إما لمادة خام مباشرة أو لمنتج نصف مصنّع (كلاهما Ingredient بحقل kind)
+model RecipeLine {
+  id           String   @id @default(cuid())
+  menuItemId   String
+  ingredientId String
+  quantity     Decimal  @db.Decimal(12, 3)
+
+  menuItem   MenuItem   @relation(fields: [menuItemId], references: [id])
+  ingredient Ingredient @relation("RecipeIngredient", fields: [ingredientId], references: [id])
+}
+
+// ---------------------------------------------------------------------------
+// أوامر الإنتاج (لإنتاج منتجات نصف مصنّعة) — القرار #4, #5
+// ---------------------------------------------------------------------------
+enum ProductionStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model ProductionOrder {
+  id            String            @id @default(cuid())
+  locationId    String            // مرن: قد يكون مطبخ مركزي أو فرع (القرار #5)
+  outputIngredientId String      // المنتج النصف مصنّع الناتج
+  outputQuantity Decimal          @db.Decimal(12, 3)
+  status        ProductionStatus  @default(PLANNED)
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime          @default(now())
+
+  location       Location            @relation(fields: [locationId], references: [id])
+  outputIngredient Ingredient        @relation("ProductionOutput", fields: [outputIngredientId], references: [id])
+  inputs         ProductionOrderLine[]
+}
+
+// مكوّنات الإنتاج المستهلكة لإنتاج الدفعة
+model ProductionOrderLine {
+  id                String  @id @default(cuid())
+  productionOrderId String
+  ingredientId      String
+  quantity          Decimal @db.Decimal(12, 3)
+
+  productionOrder ProductionOrder @relation(fields: [productionOrderId], references: [id])
+  ingredient      Ingredient      @relation(fields: [ingredientId], references: [id])
+}
+
+// ---------------------------------------------------------------------------
+// الموردين والمشتريات + Approval Matrix — القرار #7, #8
+// ---------------------------------------------------------------------------
+model Supplier {
+  id      String  @id @default(cuid())
+  name    String
+  phone   String?
+  scopeLocationId String? // null = متاح لكل المواقع (مورد مركزي)
+
+  purchaseOrders PurchaseOrder[]
+}
+
+enum POStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  SENT_TO_SUPPLIER
+  RECEIVED
+  CANCELLED
+}
+
+model PurchaseOrder {
+  id          String   @id @default(cuid())
+  locationId  String   // موقع الوجهة (فرع أو مطبخ مركزي)
+  supplierId  String
+  status      POStatus @default(DRAFT)
+  totalAmount Decimal  @db.Decimal(12, 2)
+  createdById String
+  createdAt   DateTime @default(now())
+
+  location Location            @relation(fields: [locationId], references: [id])
+  supplier Supplier            @relation(fields: [supplierId], references: [id])
+  lines    PurchaseOrderLine[]
+  approvals Approval[]
+}
+
+model PurchaseOrderLine {
+  id              String  @id @default(cuid())
+  purchaseOrderId String
+  ingredientId    String
+  quantity        Decimal @db.Decimal(12, 3)
+  unitCost        Decimal @db.Decimal(12, 4)
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  ingredient    Ingredient    @relation(fields: [ingredientId], references: [id])
+}
+
+// قواعد الموافقة — غير مبرمجة بالكود، تُدار من لوحة تحكم (القرار #8)
+model ApprovalRule {
+  id              String   @id @default(cuid())
+  documentType    String   // "PURCHASE_ORDER" | "STOCKTAKE_ADJUSTMENT" | ...
+  maxAmount       Decimal? @db.Decimal(12, 2) // null = بلا حد أعلى (يتطلب موافقة دائمًا)
+  requiredRoleId  String   // الدور المخوّل بالموافقة على هذا الحد
+  scopeLocationId String?  // null = ينطبق على كل المواقع
+}
+
+model Approval {
+  id              String   @id @default(cuid())
+  purchaseOrderId String?
+  approvedById    String
+  decision        String   // "APPROVED" | "REJECTED"
+  note            String?
+  decidedAt       DateTime @default(now())
+
+  purchaseOrder PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  approvedBy    User           @relation(fields: [approvedById], references: [id])
+}
+
+// ---------------------------------------------------------------------------
+// التحويلات بين المواقع — القرار #6
+// ---------------------------------------------------------------------------
+enum TransferStatus {
+  DISPATCHED
+  RECEIVED
+  RECEIVED_WITH_VARIANCE
+}
+
+model Transfer {
+  id             String         @id @default(cuid())
+  fromLocationId String
+  toLocationId   String
+  status         TransferStatus @default(DISPATCHED)
+  dispatchedAt   DateTime       @default(now())
+  receivedAt     DateTime?
+
+  fromLocation Location       @relation("TransferFrom", fields: [fromLocationId], references: [id])
+  toLocation   Location       @relation("TransferTo", fields: [toLocationId], references: [id])
+  lines        TransferLine[]
+}
+
+model TransferLine {
+  id             String  @id @default(cuid())
+  transferId     String
+  ingredientId   String
+  quantitySent   Decimal @db.Decimal(12, 3)
+  quantityReceived Decimal? @db.Decimal(12, 3) // null حتى يتم التأكيد؛ الفرق = فاقد نقل
+
+  transfer   Transfer   @relation(fields: [transferId], references: [id])
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+}
+
+// ---------------------------------------------------------------------------
+// الجرد الدوري — القرار #19
+// ---------------------------------------------------------------------------
+model Stocktake {
+  id         String   @id @default(cuid())
+  locationId String
+  status     String   @default("IN_PROGRESS") // IN_PROGRESS | PENDING_APPROVAL | APPROVED
+  startedAt  DateTime @default(now())
+  completedAt DateTime?
+
+  location Location        @relation(fields: [locationId], references: [id])
+  lines    StocktakeLine[]
+}
+
+model StocktakeLine {
+  id             String  @id @default(cuid())
+  stocktakeId    String
+  ingredientId   String
+  systemQuantity Decimal @db.Decimal(12, 3) // الرصيد النظري وقت الجرد
+  countedQuantity Decimal @db.Decimal(12, 3) // الكمية المعدودة فعليًا
+  variance       Decimal @db.Decimal(12, 3) // counted - system
+
+  stocktake  Stocktake  @relation(fields: [stocktakeId], references: [id])
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+}
+
+// ---------------------------------------------------------------------------
+// العملاء والولاء — القرار #15
+// ---------------------------------------------------------------------------
+model Customer {
+  id        String   @id @default(cuid())
+  name      String?
+  phone     String   @unique
+  points    Int      @default(0)
+  createdAt DateTime @default(now())
+
+  orders Order[]
+}
+
+// ---------------------------------------------------------------------------
+// الطاولات — القرار #13
+// ---------------------------------------------------------------------------
+model Table {
+  id         String  @id @default(cuid())
+  locationId String
+  label      String  // "طاولة 4"
+  status     String  @default("AVAILABLE") // AVAILABLE | OCCUPIED | NEEDS_CLEANING
+
+  orders Order[]
+}
+
+// ---------------------------------------------------------------------------
+// الورديات وتسوية النقدية — القرار #12
+// ---------------------------------------------------------------------------
+model Shift {
+  id             String    @id @default(cuid())
+  locationId     String
+  openedById     String
+  openingFloat   Decimal   @db.Decimal(12, 2)
+  closingCounted Decimal?  @db.Decimal(12, 2) // ما تم عدّه فعليًا عند الإغلاق
+  expectedCash   Decimal?  @db.Decimal(12, 2) // ما يُفترض وجوده حسابيًا
+  variance       Decimal?  @db.Decimal(12, 2) // Over/Short
+  openedAt       DateTime  @default(now())
+  closedAt       DateTime?
+
+  location Location @relation(fields: [locationId], references: [id])
+  openedBy User     @relation("ShiftOpenedBy", fields: [openedById], references: [id])
+  orders   Order[]
+}
+
+// ---------------------------------------------------------------------------
+// الطلبات والمبيعات — القرار #2, #3, #10, #11, #14, #18
+// ---------------------------------------------------------------------------
+enum OrderChannel {
+  DINE_IN
+  TAKEAWAY
+  DRIVE_THRU
+  DELIVERY_PARTNER   // منصة توصيل خارجية
+  BRAND_APP          // تطبيق العلامة التجارية الخاص
+}
+
+enum OrderStatus {
+  OPEN
+  SENT_TO_KITCHEN
+  READY
+  PAID
+  VOIDED
+}
+
+model Order {
+  id           String       @id @default(cuid())
+  locationId   String
+  tableId      String?
+  customerId   String?
+  shiftId      String?
+  channel      OrderChannel
+  status       OrderStatus  @default(OPEN)
+  servedById   String?
+  subtotal     Decimal      @db.Decimal(12, 2)
+  discountTotal Decimal     @db.Decimal(12, 2) @default(0)
+  vatTotal     Decimal      @db.Decimal(12, 2)
+  grandTotal   Decimal      @db.Decimal(12, 2)
+  // ZATCA — القرار #3: تولَّد وتُوقَّع محليًا وقت البيع
+  zatcaUuid       String?
+  zatcaQrCode     String?  @db.Text
+  zatcaSignature  String?  @db.Text
+  zatcaSyncStatus String   @default("PENDING") // PENDING | SYNCED | FAILED
+  createdAt    DateTime     @default(now())
+  paidAt       DateTime?
+
+  location Location    @relation("OrderLocation", fields: [locationId], references: [id])
+  table    Table?      @relation(fields: [tableId], references: [id])
+  customer Customer?   @relation(fields: [customerId], references: [id])
+  shift    Shift?      @relation(fields: [shiftId], references: [id])
+  servedBy User?       @relation("OrderServedBy", fields: [servedById], references: [id])
+  lines    OrderLine[]
+  payments Payment[]
+}
+
+// حالة تحضير كل عنصر بشكل مستقل — ضرورية لـ KDS (القرار #11)
+enum KitchenLineStatus {
+  QUEUED
+  PREPARING
+  READY
+  SERVED
+}
+
+model OrderLine {
+  id             String            @id @default(cuid())
+  orderId        String
+  menuItemId     String
+  quantity       Int
+  unitPrice      Decimal           @db.Decimal(10, 2)
+  kitchenStatus  KitchenLineStatus @default(QUEUED)
+
+  order    Order    @relation(fields: [orderId], references: [id])
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
+}
+
+enum PaymentMode {
+  INTEGRATED
+  MANUAL
+}
+
+model Payment {
+  id            String      @id @default(cuid())
+  orderId       String
+  method        String      // "CASH" | "CARD" | "WALLET"
+  mode          PaymentMode
+  amount        Decimal     @db.Decimal(12, 2)
+  terminalRef   String?     // معرف العملية من جهاز الدفع (للتكامل المباشر)
+  createdAt     DateTime    @default(now())
+
+  order Order @relation(fields: [orderId], references: [id])
+}
+
+// ---------------------------------------------------------------------------
+// العروض — القرار #14
+// ---------------------------------------------------------------------------
+enum PromotionType {
+  PERCENTAGE_DISCOUNT
+  FIXED_DISCOUNT
+  BOGO
+  COMBO
+}
+
+model Promotion {
+  id           String        @id @default(cuid())
+  name         String
+  type         PromotionType
+  value        Decimal?      @db.Decimal(10, 2) // نسبة أو مبلغ حسب النوع
+  channelLimit OrderChannel? // null = كل القنوات
+  startsAt     DateTime?
+  endsAt       DateTime?
+  isActive     Boolean       @default(true)
+}

@@ -1,0 +1,13 @@
+{
+  "name": "restaurant-erp",
+  "private": true,
+  "workspaces": [
+    "apps/api",
+    "apps/pos-web"
+  ],
+  "scripts": {
+    "dev:api": "npm run start:dev --workspace=apps/api",
+    "dev:web": "npm run dev --workspace=apps/pos-web",
+    "db:migrate": "npm run prisma:migrate --workspace=apps/api"
+  }
+}
