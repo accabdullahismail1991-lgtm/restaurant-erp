@@ -14,10 +14,13 @@
 - ✅ **المرحلة 1 مكتملة وتعمل فعليًا (ليست مجرد هيكل)**: تسجيل دخول (Phone + Password)،
   JWT (access + refresh)، RBAC مرن (Role → Permission، غير مبرمج ثابت بالكود)، Scope على
   مستوى الموقع (فرع/مؤسسة)، وحدتا `users` و`branches` (Locations) بعمليات CRUD كاملة —
-  15 اختبار e2e حقيقي (يشغّل السيرفر فعليًا ضد قاعدة بيانات PostgreSQL حقيقية) في
-  `apps/api/test/app.e2e-spec.ts`
-- ⬜ لم يُبنَ بعد: بقية الوحدات (`ingredients`, `items`, `inventory`, `purchasing`, `production`,
-  `transfers`, `sales`)، Frontend فعلي، آلية المزامنة Offline-first، تكامل ZATCA، تكامل الدفع
+  15 اختبار e2e حقيقي في `apps/api/test/app.e2e-spec.ts`
+- ✅ **المرحلة 2 مكتملة وتعمل فعليًا**: `ingredients` (خامات + نصف مصنّعة، كل نصف مصنّع
+  له وصفته الخاصة) و`items` (أصناف منيو ووصفاتها) — BOM متعدد المستويات حقيقي (صنف نصف
+  مصنّع يُستخدم كمكوّن داخل صنف منيو)، مع منع الدورات (Cycle) والمكوّنات الوهمية — 8 اختبارات
+  e2e في `apps/api/test/recipes.e2e-spec.ts`
+- ⬜ لم يُبنَ بعد: بقية الوحدات (`inventory`, `purchasing`, `production`, `transfers`, `sales`)،
+  Frontend فعلي، آلية المزامنة Offline-first، تكامل ZATCA، تكامل الدفع
 
 ## تشغيل المشروع محليًا
 
@@ -45,11 +48,15 @@ export $(cat .env.test | xargs) && npm run test:e2e
 ## كيف تكمل من هنا (باستخدام Claude Code)
 
 1. المرحلة التالية بالترتيب المقترح في `docs/ARCHITECTURE.md` → قسم "خطة التنفيذ المرحلية":
-   **المرحلة 2: الأصناف والوصفات (Multi-level BOM)** — `modules/ingredients` و`modules/items`.
+   **المرحلة 3: Sales (كاشير أونلاين فقط أولًا)** — البيع يخصم المخزون بذرية (DB transaction)،
+   بدون Offline-first بعد (ده مرحلة 8).
 2. لا تبدأ بكل الوحدات دفعة وحدة — كل وحدة يجب أن تُبنى وتُختبر (باختبارات e2e حقيقية، مو Unit
-   tests وهمية فقط) قبل الانتقال للتالية، بنفس نمط المرحلة 1.
-3. اتبع نفس نمط RBAC المستخدم في المرحلة 1 (`@RequirePermission('code')` + `PermissionsGuard`
+   tests وهمية فقط) قبل الانتقال للتالية، بنفس نمط المرحلتين 1 و2.
+3. اتبع نفس نمط RBAC المستخدم في المراحل السابقة (`@RequirePermission('code')` + `PermissionsGuard`
    يقرأ من قاعدة البيانات مباشرة، مو من الـ JWT) لأي Endpoint جديد يحتاج صلاحية.
+4. المرحلة 3 تحتاج فعليًا وحدة `inventory` (المرحلة 4) جنبًا لجنب -- خصم المخزون وقت البيع
+   لازم يتعامل مع InventoryBatch/StockMovement الحقيقية، مش بس منطق نظري. راجع القرار #9
+   (تتبع الدفعات إلزامي من اليوم الأول) قبل ما تبدأ.
 
 ## التقنيات
 
@@ -69,15 +76,20 @@ restaurant-erp/
 │   ├── DECISIONS.md          ← كل القرارات المعمارية من جلسة التصميم
 │   └── ARCHITECTURE.md       ← تفصيل تقني + خطة تنفيذ مرحلية
 ├── apps/
-│   ├── api/                  ← Backend (NestJS) -- المرحلة 1 مبنية وتعمل
+│   ├── api/                  ← Backend (NestJS) -- المرحلتان 1 و2 مبنيتان وتعملان
 │   │   ├── prisma/schema.prisma  ← مخطط قاعدة البيانات الكامل
 │   │   ├── prisma/seed.ts        ← صلاحيات/أدوار أساسية + مستخدم مدير
 │   │   ├── src/prisma/            ← PrismaService/PrismaModule (بنية تحتية مشتركة)
 │   │   ├── src/auth/               ← تسجيل الدخول، JWT، RBAC guard/decorator
 │   │   ├── src/users/               ← وحدة المستخدمين (CRUD)
 │   │   ├── src/branches/             ← وحدة الفروع/المواقع (CRUD + Scope filtering)
-│   │   ├── src/modules/*/README.md    ← بقية الوحدات، لم تُبنَ بعد (كل واحدة README فقط)
-│   │   └── test/app.e2e-spec.ts        ← اختبارات المرحلة 1 الكاملة (15 اختبار)
+│   │   ├── src/ingredients/           ← خامات + نصف مصنّعة (CRUD + وصفة كل نصف مصنّع)
+│   │   ├── src/items/                  ← أصناف المنيو (CRUD + وصفة كل صنف)
+│   │   ├── src/modules/*/README.md      ← بقية الوحدات، لم تُبنَ بعد (كل واحدة README فقط)
+│   │   └── test/*.e2e-spec.ts            ← اختبارات المرحلتين 1 و2 الكاملة (23 اختبار)
 │   └── pos-web/               ← Frontend الكاشير (React + Vite PWA scaffold، لم يُبنَ بعد)
+├── prototypes/
+│   ├── pos_prototype.html    ← النموذج الأولي HTML/JS المرجعي (منطق البيع/خصم المخزون)
+│   └── login_demo.html        ← صفحة تجريبية بسيطة لتسجيل الدخول (Phase 1) ضد API حقيقي
 └── docker-compose.yml
 ```

@@ -13,6 +13,8 @@ const prisma = new PrismaClient();
 const PERMISSIONS: Array<{ code: string; label: string }> = [
   { code: 'users.manage', label: 'إدارة المستخدمين والأدوار' },
   { code: 'branches.manage', label: 'إدارة الفروع والمواقع' },
+  { code: 'ingredients.manage', label: 'إدارة الأصناف الخام ونصف المصنّعة ووصفاتها' },
+  { code: 'items.manage', label: 'إدارة أصناف المنيو ووصفاتها' },
   { code: 'inventory.adjust', label: 'تسوية أرصدة المخزون' },
   { code: 'purchasing.approve_po', label: 'اعتماد أوامر الشراء' },
   { code: 'purchasing.create_po', label: 'إنشاء أوامر شراء' },
@@ -30,7 +32,14 @@ async function main() {
   }
 
   const allCodes = PERMISSIONS.map((p) => p.code);
-  const branchManagerCodes = ['branches.manage', 'inventory.adjust', 'purchasing.create_po', 'pos.void_order'];
+  const branchManagerCodes = [
+    'branches.manage',
+    'ingredients.manage',
+    'items.manage',
+    'inventory.adjust',
+    'purchasing.create_po',
+    'pos.void_order',
+  ];
   const cashierCodes: string[] = []; // base cashier operations don't need a permission check yet (sales module unbuilt)
 
   const adminRole = await upsertRoleWithPermissions('مدير النظام', 'صلاحية كاملة على كل الوحدات', allCodes);

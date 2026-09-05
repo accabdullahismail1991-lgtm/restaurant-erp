@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Restaurant ERP — تسجيل الدخول (نموذج تجريبي)</title>
+<style>
+  :root{
+    --ink:#1a2030; --muted:#68748a; --border:#e3e6ee; --bg:#f2f3f8; --card:#ffffff;
+    --brand:#3730a3; --brand-dark:#2b2680; --danger:#d0453f; --ok:#1f9d68;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,'Segoe UI',Tahoma,Arial,sans-serif;background:var(--bg);color:var(--ink);
+    min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 30px rgba(20,20,40,.08);
+    width:100%;max-width:420px;padding:32px 28px;}
+  h1{font-size:18px;margin:0 0 4px;color:var(--ink);}
+  .sub{font-size:12.5px;color:var(--muted);margin:0 0 22px;line-height:1.6;}
+  label{display:block;font-size:12.5px;font-weight:600;color:var(--ink);margin:14px 0 6px;}
+  input{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:9px;font-size:14px;
+    background:#fafbfe;color:var(--ink);font-family:inherit;}
+  input:focus{outline:2px solid var(--brand);outline-offset:1px;border-color:var(--brand);}
+  button{width:100%;margin-top:20px;padding:11px;border:none;border-radius:9px;background:var(--brand);color:#fff;
+    font-size:14.5px;font-weight:700;cursor:pointer;font-family:inherit;}
+  button:hover{background:var(--brand-dark);}
+  button:disabled{opacity:.6;cursor:default;}
+  .result{margin-top:18px;padding:12px 14px;border-radius:9px;font-size:12.5px;line-height:1.8;display:none;word-break:break-all;}
+  .result.ok{display:block;background:rgba(31,157,104,.08);border:1px solid rgba(31,157,104,.35);color:#0f6b45;}
+  .result.err{display:block;background:rgba(208,69,63,.08);border:1px solid rgba(208,69,63,.35);color:#a5322d;}
+  .hint{font-size:11px;color:var(--muted);margin-top:6px;}
+  .field-row{display:flex;gap:10px;}
+  .field-row>div{flex:1;}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>🍽️ Restaurant ERP</h1>
+    <p class="sub">نموذج تجريبي لتسجيل الدخول (Phase 1) — يستدعي <code>POST /auth/login</code> فعليًا على الـ API.
+      لازم الـ API يكون شغّال ومتاح من نفس الجهاز اللي بتفتح الصفحة دي عليه.</p>
+
+    <label for="apiBase">عنوان الـ API</label>
+    <input id="apiBase" value="http://localhost:3000" placeholder="http://localhost:3000">
+    <div class="hint">غيّره لو الـ API شغّال على عنوان تاني (سيرفر تطوير، أو بيئة منشورة لاحقًا).</div>
+
+    <div class="field-row">
+      <div>
+        <label for="phone">رقم الجوال</label>
+        <input id="phone" value="+966500000000" placeholder="+9665xxxxxxxx">
+      </div>
+      <div>
+        <label for="password">كلمة المرور</label>
+        <input id="password" type="password" value="ChangeMe123!" placeholder="••••••••">
+      </div>
+    </div>
+
+    <button id="loginBtn" onclick="doLogin()">تسجيل الدخول</button>
+    <div class="hint">القيم الافتراضية هي حساب المدير اللي بيزرعه <code>prisma/seed.ts</code> — غيّرها فورًا في أي بيئة حقيقية.</div>
+
+    <div id="result" class="result"></div>
+  </div>
+
+<script>
+function decodeJwtPayload(token) {
+  try {
+    const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = part + '='.repeat((4 - (part.length % 4)) % 4);
+    return JSON.parse(atob(padded));
+  } catch (e) {
+    return null;
+  }
+}
+
+async function doLogin() {
+  const apiBase = document.getElementById('apiBase').value.trim().replace(/\/$/, '');
+  const phone = document.getElementById('phone').value.trim();
+  const password = document.getElementById('password').value;
+  const btn = document.getElementById('loginBtn');
+  const result = document.getElementById('result');
+  result.className = 'result';
+  result.textContent = '';
+  btn.disabled = true;
+  btn.textContent = 'جارٍ تسجيل الدخول...';
+
+  try {
+    const res = await fetch(apiBase + '/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, password }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      result.className = 'result err';
+      result.textContent = '❌ ' + (data.message || ('HTTP ' + res.status));
+      return;
+    }
+    const payload = decodeJwtPayload(data.accessToken);
+    const expires = payload && payload.exp ? new Date(payload.exp * 1000).toLocaleString('ar-SA') : '؟';
+    result.className = 'result ok';
+    result.textContent =
+      '✅ تم تسجيل الدخول بنجاح\n' +
+      'access token صالح حتى: ' + expires + '\n\n' +
+      'accessToken: ' + data.accessToken.slice(0, 40) + '...\n' +
+      'refreshToken: ' + data.refreshToken.slice(0, 40) + '...';
+  } catch (e) {
+    result.className = 'result err';
+    result.textContent = '❌ تعذّر الوصول للـ API على "' + apiBase + '" — تأكد إنه شغّال ومتاح، ومفعّل عليه CORS.\n' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'تسجيل الدخول';
+  }
+}
+</script>
+</body>
+</html>

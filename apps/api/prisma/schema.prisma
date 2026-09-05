@@ -130,6 +130,12 @@ model Ingredient {
 
   batches          InventoryBatch[]
   recipeUsages     RecipeLine[]        @relation("RecipeIngredient")
+  // This ingredient's OWN recipe -- only meaningful when kind==SEMI_FINISHED
+  // (e.g. "صلصة طماطم جاهزة" is itself made from tomatoes + salt). This is
+  // what actually makes the BOM multi-level: a RecipeLine's ingredientId
+  // can point at another SEMI_FINISHED ingredient, whose own ownRecipe
+  // says what THAT is made from, and so on.
+  ownRecipe        RecipeLine[]        @relation("IngredientOwnRecipe")
   purchaseLines    PurchaseOrderLine[]
   productionOutputs ProductionOrder[]  @relation("ProductionOutput")
   productionInputs ProductionOrderLine[]
@@ -194,15 +200,21 @@ model MenuItem {
   orderLines OrderLine[]
 }
 
-// سطر وصفة: يشير إما لمادة خام مباشرة أو لمنتج نصف مصنّع (كلاهما Ingredient بحقل kind)
+// سطر وصفة: ينتمي إما لصنف منيو (menuItemId) أو لصنف نصف مصنّع بيعرّف وصفته
+// هو نفسه (parentIngredientId) -- واحد منهم بالظبط، أبدًا الاثنين ولا ولا
+// واحد (يُفرض بقيد CHECK في الـ migration، انظر recipe_line_exactly_one_parent).
+// ingredientId هو المكوّن المُستهلك في الحالتين، ويقدر يكون خامة أو نصف
+// مصنّع تاني -- وده اللي بيخلي الـ BOM متعدد المستويات فعليًا (القرار #4).
 model RecipeLine {
-  id           String   @id @default(cuid())
-  menuItemId   String
-  ingredientId String
-  quantity     Decimal  @db.Decimal(12, 3)
+  id                 String   @id @default(cuid())
+  menuItemId         String?
+  parentIngredientId String?
+  ingredientId       String
+  quantity           Decimal  @db.Decimal(12, 3)
 
-  menuItem   MenuItem   @relation(fields: [menuItemId], references: [id])
-  ingredient Ingredient @relation("RecipeIngredient", fields: [ingredientId], references: [id])
+  menuItem         MenuItem?   @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  parentIngredient Ingredient? @relation("IngredientOwnRecipe", fields: [parentIngredientId], references: [id], onDelete: Cascade)
+  ingredient       Ingredient  @relation("RecipeIngredient", fields: [ingredientId], references: [id])
 }
 
 // ---------------------------------------------------------------------------

@@ -4,6 +4,11 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  // Open CORS -- this is an API meant to be called from a browser-based POS
+  // (and, for now, the standalone demo login page in prototypes/), not a
+  // server-to-server-only service. Tighten this to an explicit origin list
+  // once there's a real deployed frontend origin to allow instead.
+  app.enableCors();
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true, // strip any body field not declared on the DTO
