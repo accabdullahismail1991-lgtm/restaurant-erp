@@ -38,29 +38,34 @@
   header{background:var(--brand);color:#fff;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;}
   header h1{font-size:16px;margin:0;}
   header .who{font-size:12px;opacity:.85;}
-  nav{background:var(--card);border-bottom:1px solid var(--border);display:flex;gap:4px;padding:0 20px;}
-  nav button{background:none;color:var(--muted);border:none;border-radius:0;padding:12px 16px;font-weight:600;border-bottom:2px solid transparent;}
-  nav button.active{color:var(--brand);border-bottom-color:var(--brand);}
+  nav{background:var(--card);border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:2px;padding:6px 20px;position:sticky;top:0;z-index:5;}
+  nav button{background:none;color:var(--muted);border:none;border-radius:6px;padding:10px 14px;font-weight:600;font-size:13px;border-bottom:2px solid transparent;white-space:nowrap;}
+  nav button.active{color:var(--brand);background:var(--card2);border-bottom-color:var(--brand);}
   nav button:hover{background:var(--card2);}
-  main{flex:1;padding:24px;max-width:1100px;width:100%;margin:0 auto;}
-  .panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:18px;}
-  .panel h2{font-size:14.5px;margin:0 0 14px;}
+  main{flex:1;padding:24px;max-width:1320px;width:100%;margin:0 auto;}
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:18px;box-shadow:0 1px 3px rgba(20,20,40,.04);}
+  .panel h2{font-size:14.5px;margin:0 0 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  .table-wrap{overflow-x:auto;}
+  .table-wrap table{min-width:520px;}
   table{width:100%;border-collapse:collapse;font-size:13px;}
-  th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);}
+  th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);white-space:nowrap;}
   th{color:var(--muted);font-weight:600;font-size:12px;}
   tr:last-child td{border-bottom:none;}
+  tbody tr:hover td{background:var(--card2);}
   .row-form{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:10px;}
   .row-form > div{flex:1;min-width:140px;}
   .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;}
   .pill.raw{background:rgba(55,48,163,.1);color:var(--brand);}
   .pill.semi{background:rgba(31,157,104,.1);color:var(--ok);}
+  .pill.inactive{background:rgba(104,116,138,.12);color:var(--muted);}
   .link-btn{background:none;border:none;color:var(--brand);font-size:12px;font-weight:700;cursor:pointer;padding:0;}
   .link-btn:hover{text-decoration:underline;}
-  .recipe-box{margin-top:10px;background:var(--card2);border-radius:8px;padding:12px;display:none;}
-  .recipe-row{display:flex;gap:8px;align-items:center;margin-bottom:6px;}
-  .recipe-row select{flex:2;}
-  .recipe-row input{flex:1;}
-  .empty{color:var(--muted);font-size:12.5px;padding:10px 0;}
+  .link-btn.danger-link{color:var(--danger);}
+  .recipe-box{margin-top:10px;background:var(--card2);border-radius:8px;padding:12px;}
+  .recipe-row{display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap;}
+  .recipe-row select{flex:2;min-width:120px;}
+  .recipe-row input{flex:1;min-width:80px;}
+  .empty{color:var(--muted);font-size:12.5px;padding:10px 0;white-space:normal;}
   #apiBaseRow{font-size:11px;color:rgba(255,255,255,.75);}
   #apiBaseRow input{width:180px;padding:4px 8px;font-size:11px;background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff;}
 </style>
@@ -108,9 +113,9 @@
     <div id="view-branches" class="view">
       <div class="panel">
         <h2>الفروع الحالية</h2>
-        <table><thead><tr><th>الاسم</th><th>النوع</th><th>العنوان</th><th>الحالة</th></tr></thead>
+        <div class="table-wrap"><table><thead><tr><th>الاسم</th><th>النوع</th><th>العنوان</th><th>الحالة</th></tr></thead>
           <tbody id="branchesTable"></tbody>
-        </table>
+        </table></div>
       </div>
       <div class="panel">
         <h2>➕ إضافة فرع جديد</h2>
@@ -133,15 +138,23 @@
     <div id="view-ingredients" class="view hidden">
       <div class="panel">
         <h2>الأصناف الحالية</h2>
-        <table><thead><tr><th>الاسم</th><th>الوحدة</th><th>النوع</th><th>حد أدنى</th><th></th></tr></thead>
+        <div class="table-wrap"><table><thead><tr><th>الاسم</th><th>الوحدة</th><th>النوع</th><th>حد أدنى</th><th></th></tr></thead>
           <tbody id="ingredientsTable"></tbody>
-        </table>
+        </table></div>
       </div>
       <div class="panel">
         <h2>➕ إضافة صنف جديد</h2>
         <div class="row-form">
           <div><label>الاسم</label><input id="i-name" placeholder="طماطم"></div>
-          <div><label>الوحدة</label><input id="i-unit" placeholder="g / ml / pcs"></div>
+          <div><label>الوحدة</label>
+            <select id="i-unit">
+              <option value="g">جرام (g)</option>
+              <option value="kg">كجم (kg)</option>
+              <option value="ml">ملليلتر (ml)</option>
+              <option value="l">لتر (l)</option>
+              <option value="pcs">قطعة (pcs)</option>
+            </select>
+          </div>
           <div><label>النوع</label>
             <select id="i-kind">
               <option value="RAW_MATERIAL">خامة</option>
@@ -158,9 +171,9 @@
     <div id="view-items" class="view hidden">
       <div class="panel">
         <h2>أصناف المنيو الحالية</h2>
-        <table><thead><tr><th>الاسم</th><th>القسم</th><th>السعر</th><th></th></tr></thead>
+        <div class="table-wrap"><table><thead><tr><th>الاسم</th><th>القسم</th><th>السعر</th><th>الحالة</th><th></th></tr></thead>
           <tbody id="itemsTable"></tbody>
-        </table>
+        </table></div>
       </div>
       <div class="panel">
         <h2>➕ إضافة صنف منيو جديد</h2>
@@ -182,9 +195,9 @@
             <select id="inv-filter-location" onchange="loadInventoryBalances()"><option value="">كل المواقع</option></select>
           </div>
         </div>
-        <table><thead><tr><th>الموقع</th><th>الصنف</th><th>الرصيد</th></tr></thead>
+        <div class="table-wrap"><table><thead><tr><th>الموقع</th><th>الصنف</th><th>الرصيد</th></tr></thead>
           <tbody id="inventoryTable"></tbody>
-        </table>
+        </table></div>
       </div>
       <div class="panel">
         <h2>➕ استلام / تسوية مخزون</h2>
@@ -211,9 +224,9 @@
     <div id="view-sales" class="view hidden">
       <div class="panel">
         <h2>الورديات</h2>
-        <table><thead><tr><th>الموقع</th><th>الحالة</th><th>رأس المال</th><th>المتوقع</th><th>المعدود</th><th>الفرق</th><th></th></tr></thead>
+        <div class="table-wrap"><table><thead><tr><th>الموقع</th><th>الحالة</th><th>رأس المال</th><th>المتوقع</th><th>المعدود</th><th>الفرق</th><th></th></tr></thead>
           <tbody id="shiftsTable"></tbody>
-        </table>
+        </table></div>
         <div class="row-form">
           <div><label>الموقع</label><select id="sh-location"></select></div>
           <div><label>رأس المال الافتتاحي</label><input id="sh-float" type="number" step="0.01" value="200"></div>
@@ -242,9 +255,9 @@
       </div>
       <div class="panel">
         <h2>الطلبات</h2>
-        <table><thead><tr><th>الموقع</th><th>القناة</th><th>الحالة</th><th>الإجمالي</th><th></th></tr></thead>
+        <div class="table-wrap"><table><thead><tr><th>الموقع</th><th>القناة</th><th>الحالة</th><th>الإجمالي</th><th></th></tr></thead>
           <tbody id="ordersTable"></tbody>
-        </table>
+        </table></div>
       </div>
     </div>
 
@@ -252,9 +265,9 @@
     <div id="view-purchasing" class="view hidden">
       <div class="panel">
         <h2>الموردون</h2>
-        <table><thead><tr><th>الاسم</th><th>الجوال</th><th>النطاق</th></tr></thead>
+        <div class="table-wrap"><table><thead><tr><th>الاسم</th><th>الجوال</th><th>النطاق</th></tr></thead>
           <tbody id="suppliersTable"></tbody>
-        </table>
+        </table></div>
         <div class="row-form">
           <div><label>الاسم</label><input id="sup-name" placeholder="مورد الخضار"></div>
           <div><label>الجوال (اختياري)</label><input id="sup-phone" placeholder="+9665..."></div>
@@ -264,9 +277,9 @@
       </div>
       <div class="panel">
         <h2>مصفوفة الموافقات (Approval Matrix)</h2>
-        <table><thead><tr><th>النوع</th><th>الحد الأقصى</th><th>الدور المطلوب (Role ID)</th><th>الموقع</th><th></th></tr></thead>
+        <div class="table-wrap"><table><thead><tr><th>النوع</th><th>الحد الأقصى</th><th>الدور المطلوب (Role ID)</th><th>الموقع</th><th></th></tr></thead>
           <tbody id="approvalRulesTable"></tbody>
-        </table>
+        </table></div>
         <div class="row-form">
           <div><label>الحد الأقصى (اتركه فارغ = بلا حد)</label><input id="rule-max" type="number" step="0.01" placeholder="5000"></div>
           <div><label>Role ID المطلوب للاعتماد</label><input id="rule-role" placeholder="الصق معرّف الدور"></div>
@@ -288,9 +301,9 @@
       </div>
       <div class="panel">
         <h2>أوامر الشراء</h2>
-        <table><thead><tr><th>المورد</th><th>الموقع</th><th>الحالة</th><th>الإجمالي</th><th></th></tr></thead>
+        <div class="table-wrap"><table><thead><tr><th>المورد</th><th>الموقع</th><th>الحالة</th><th>الإجمالي</th><th></th></tr></thead>
           <tbody id="purchaseOrdersTable"></tbody>
-        </table>
+        </table></div>
       </div>
     </div>
 
@@ -312,9 +325,9 @@
       </div>
       <div class="panel">
         <h2>أوامر الإنتاج</h2>
-        <table><thead><tr><th>الموقع</th><th>الصنف الناتج</th><th>الكمية</th><th>الحالة</th><th></th></tr></thead>
+        <div class="table-wrap"><table><thead><tr><th>الموقع</th><th>الصنف الناتج</th><th>الكمية</th><th>الحالة</th><th></th></tr></thead>
           <tbody id="productionOrdersTable"></tbody>
-        </table>
+        </table></div>
       </div>
     </div>
 
@@ -334,9 +347,9 @@
       </div>
       <div class="panel">
         <h2>التحويلات</h2>
-        <table><thead><tr><th>من</th><th>إلى</th><th>الحالة</th><th></th></tr></thead>
+        <div class="table-wrap"><table><thead><tr><th>من</th><th>إلى</th><th>الحالة</th><th></th></tr></thead>
           <tbody id="transfersTable"></tbody>
-        </table>
+        </table></div>
       </div>
     </div>
   </main>
@@ -348,6 +361,16 @@ let ingredientsCache = [];
 let locationsCache = [];
 let menuItemsCache = [];
 
+const UNIT_OPTIONS = [
+  { value: 'g', label: 'جرام (g)' },
+  { value: 'kg', label: 'كجم (kg)' },
+  { value: 'ml', label: 'ملليلتر (ml)' },
+  { value: 'l', label: 'لتر (l)' },
+  { value: 'pcs', label: 'قطعة (pcs)' },
+];
+function unitOptionsHtml(selected) {
+  return UNIT_OPTIONS.map((u) => `<option value="${u.value}" ${u.value === selected ? 'selected' : ''}>${u.label}</option>`).join('');
+}
 function locationOptions() { return locationsCache.map((l) => `<option value="${l.id}">${l.name}</option>`).join(''); }
 function ingredientOptions(filterFn) {
   const list = filterFn ? ingredientsCache.filter(filterFn) : ingredientsCache;
@@ -466,22 +489,69 @@ function renderIngredientsTable() {
         <td>${i.name}</td><td>${i.unit}</td>
         <td><span class="pill ${i.kind === 'SEMI_FINISHED' ? 'semi' : 'raw'}">${i.kind === 'SEMI_FINISHED' ? 'نصف مصنّع' : 'خامة'}</span></td>
         <td>${i.lowStockThreshold}</td>
-        <td>${i.kind === 'SEMI_FINISHED' ? `<button class="link-btn" onclick="toggleIngredientRecipe('${i.id}')">📋 الوصفة</button>` : ''}</td>
+        <td>
+          <button class="link-btn" onclick="toggleIngredientEdit('${i.id}')">✏️ تعديل</button>
+          ${i.kind === 'SEMI_FINISHED' ? `<button class="link-btn" onclick="toggleIngredientRecipe('${i.id}')">📋 الوصفة</button>` : ''}
+        </td>
       </tr>
+      <tr id="edit-ing-row-${i.id}" class="hidden"><td colspan="5"><div class="recipe-box" id="edit-ing-box-${i.id}"></div></td></tr>
       ${i.kind === 'SEMI_FINISHED' ? `<tr id="recipe-row-${i.id}" class="hidden"><td colspan="5"><div class="recipe-box" id="recipe-box-${i.id}"></div></td></tr>` : ''}
     `).join('')
     : `<tr><td colspan="5" class="empty">لا توجد أصناف بعد</td></tr>`;
 }
 async function createIngredient() {
   const name = document.getElementById('i-name').value.trim();
-  const unit = document.getElementById('i-unit').value.trim();
+  const unit = document.getElementById('i-unit').value;
   const kind = document.getElementById('i-kind').value;
   const lowStockThreshold = parseFloat(document.getElementById('i-threshold').value) || 0;
-  if (!name || !unit) { flashGlobal('⚠️ اكتب الاسم والوحدة', 'err'); return; }
+  if (!name) { flashGlobal('⚠️ اكتب اسم الصنف', 'err'); return; }
   try {
-    await api('/ingredients', { method: 'POST', body: JSON.stringify({ name, unit, kind, lowStockThreshold }) });
-    document.getElementById('i-name').value = ''; document.getElementById('i-unit').value = '';
+    const created = await api('/ingredients', { method: 'POST', body: JSON.stringify({ name, unit, kind, lowStockThreshold }) });
+    document.getElementById('i-name').value = '';
     flashGlobal('✅ تمت إضافة الصنف', 'ok');
+    await loadIngredients();
+    // Guide the user straight to defining its recipe when it's a
+    // semi-finished item -- that's the whole point of adding one.
+    if (created && created.kind === 'SEMI_FINISHED') {
+      toggleIngredientRecipe(created.id);
+      document.getElementById('recipe-row-' + created.id).scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+
+function toggleIngredientEdit(id) {
+  const row = document.getElementById('edit-ing-row-' + id);
+  const box = document.getElementById('edit-ing-box-' + id);
+  const opening = row.classList.contains('hidden');
+  row.classList.toggle('hidden');
+  if (!opening) return;
+  const ing = ingredientsCache.find((i) => i.id === id);
+  box.innerHTML = `
+    <div class="row-form" style="margin-top:0">
+      <div><label>الاسم</label><input class="ei-name" value="${ing.name}"></div>
+      <div><label>الوحدة</label><select class="ei-unit">${unitOptionsHtml(ing.unit)}</select></div>
+      <div><label>النوع</label>
+        <select class="ei-kind">
+          <option value="RAW_MATERIAL" ${ing.kind === 'RAW_MATERIAL' ? 'selected' : ''}>خامة</option>
+          <option value="SEMI_FINISHED" ${ing.kind === 'SEMI_FINISHED' ? 'selected' : ''}>نصف مصنّع</option>
+        </select>
+      </div>
+      <div><label>الحد الأدنى للتنبيه</label><input class="ei-threshold" type="number" value="${ing.lowStockThreshold}"></div>
+      <div><button onclick="saveIngredientEdit('${id}')">💾 حفظ</button></div>
+    </div>
+  `;
+}
+async function saveIngredientEdit(id) {
+  const box = document.getElementById('edit-ing-box-' + id);
+  const name = box.querySelector('.ei-name').value.trim();
+  const unit = box.querySelector('.ei-unit').value;
+  const kind = box.querySelector('.ei-kind').value;
+  const lowStockThreshold = parseFloat(box.querySelector('.ei-threshold').value) || 0;
+  if (!name) { flashGlobal('⚠️ اكتب اسم الصنف', 'err'); return; }
+  try {
+    await api('/ingredients/' + id, { method: 'PATCH', body: JSON.stringify({ name, unit, kind, lowStockThreshold }) });
+    flashGlobal('✅ تم حفظ التعديل', 'ok');
+    document.getElementById('edit-ing-row-' + id).classList.add('hidden');
     loadIngredients();
   } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
 }
@@ -500,19 +570,25 @@ async function toggleIngredientRecipe(id) {
 }
 
 /* ---------------- Items ---------------- */
+let itemsCache = [];
 async function loadItems() {
   try {
     if (!ingredientsCache.length) ingredientsCache = await api('/ingredients');
-    const items = await api('/items');
-    document.getElementById('itemsTable').innerHTML = items.length
-      ? items.map((m) => `
+    itemsCache = await api('/items');
+    document.getElementById('itemsTable').innerHTML = itemsCache.length
+      ? itemsCache.map((m) => `
         <tr>
           <td>${m.name}</td><td>${m.category}</td><td>${Number(m.price).toFixed(2)}</td>
-          <td><button class="link-btn" onclick="toggleItemRecipe('${m.id}')">📋 الوصفة</button></td>
+          <td><span class="pill ${m.isActive ? 'semi' : 'inactive'}">${m.isActive ? 'نشط' : 'غير نشط'}</span></td>
+          <td>
+            <button class="link-btn" onclick="toggleItemEdit('${m.id}')">✏️ تعديل</button>
+            <button class="link-btn" onclick="toggleItemRecipe('${m.id}')">📋 الوصفة</button>
+          </td>
         </tr>
-        <tr id="mrecipe-row-${m.id}" class="hidden"><td colspan="4"><div class="recipe-box" id="mrecipe-box-${m.id}"></div></td></tr>
+        <tr id="edit-item-row-${m.id}" class="hidden"><td colspan="5"><div class="recipe-box" id="edit-item-box-${m.id}"></div></td></tr>
+        <tr id="mrecipe-row-${m.id}" class="hidden"><td colspan="5"><div class="recipe-box" id="mrecipe-box-${m.id}"></div></td></tr>
       `).join('')
-      : `<tr><td colspan="4" class="empty">لا توجد أصناف منيو بعد</td></tr>`;
+      : `<tr><td colspan="5" class="empty">لا توجد أصناف منيو بعد</td></tr>`;
   } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
 }
 async function createItem() {
@@ -521,9 +597,47 @@ async function createItem() {
   const price = parseFloat(document.getElementById('m-price').value);
   if (!name || !category || !price) { flashGlobal('⚠️ اكتب الاسم والقسم والسعر', 'err'); return; }
   try {
-    await api('/items', { method: 'POST', body: JSON.stringify({ name, category, price }) });
+    const created = await api('/items', { method: 'POST', body: JSON.stringify({ name, category, price }) });
     document.getElementById('m-name').value = ''; document.getElementById('m-category').value = ''; document.getElementById('m-price').value = '';
     flashGlobal('✅ تمت إضافة الصنف', 'ok');
+    await loadItems();
+    // Go straight to defining the recipe -- adding a menu item without one
+    // means it can never be sold (nothing to deduct from stock).
+    if (created) {
+      toggleItemRecipe(created.id);
+      document.getElementById('mrecipe-row-' + created.id).scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+
+function toggleItemEdit(id) {
+  const row = document.getElementById('edit-item-row-' + id);
+  const box = document.getElementById('edit-item-box-' + id);
+  const opening = row.classList.contains('hidden');
+  row.classList.toggle('hidden');
+  if (!opening) return;
+  const item = itemsCache.find((m) => m.id === id);
+  box.innerHTML = `
+    <div class="row-form" style="margin-top:0">
+      <div><label>الاسم</label><input class="em-name" value="${item.name}"></div>
+      <div><label>القسم</label><input class="em-category" value="${item.category}"></div>
+      <div><label>السعر</label><input class="em-price" type="number" step="0.01" value="${item.price}"></div>
+      <div><label><input type="checkbox" class="em-active" style="width:auto;display:inline" ${item.isActive ? 'checked' : ''}> نشط (متاح للبيع)</label></div>
+      <div><button onclick="saveItemEdit('${id}')">💾 حفظ</button></div>
+    </div>
+  `;
+}
+async function saveItemEdit(id) {
+  const box = document.getElementById('edit-item-box-' + id);
+  const name = box.querySelector('.em-name').value.trim();
+  const category = box.querySelector('.em-category').value.trim();
+  const price = parseFloat(box.querySelector('.em-price').value);
+  const isActive = box.querySelector('.em-active').checked;
+  if (!name || !category || !price) { flashGlobal('⚠️ اكمل كل الحقول', 'err'); return; }
+  try {
+    await api('/items/' + id, { method: 'PATCH', body: JSON.stringify({ name, category, price, isActive }) });
+    flashGlobal('✅ تم حفظ التعديل', 'ok');
+    document.getElementById('edit-item-row-' + id).classList.add('hidden');
     loadItems();
   } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
 }
@@ -1000,25 +1114,31 @@ async function loadTransfers() {
       : `<tr><td colspan="4" class="empty">لا توجد تحويلات بعد</td></tr>`;
   } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
 }
-function toggleTransferReceive(id) {
+async function toggleTransferReceive(id) {
   const row = document.getElementById('tr-receive-row-' + id);
   const box = document.getElementById('tr-receive-box-' + id);
   const opening = row.classList.contains('hidden');
   row.classList.toggle('hidden');
   if (!opening) return;
-  const transfer = transfersCache.find((t) => t.id === id);
+  box.innerHTML = '<div class="empty">جارٍ التحميل...</div>';
   const ingName = (ingId) => (ingredientsCache.find((i) => i.id === ingId) || {}).name || ingId;
-  box.innerHTML = `
-    <div id="tr-receive-rows-${id}">
-      ${transfer.lines.map((l) => `
-        <div class="recipe-row" data-ingredient-id="${l.ingredientId}">
-          <span style="flex:2">${ingName(l.ingredientId)} (أُرسل: ${Number(l.quantitySent)})</span>
-          <input class="tr-recv-qty" type="number" step="0.001" value="${Number(l.quantitySent)}" style="flex:1">
-        </div>
-      `).join('')}
-    </div>
-    <div style="margin-top:8px"><button onclick="confirmTransferReceive('${id}')">✅ تأكيد الاستلام</button></div>
-  `;
+  try {
+    // GET /transfers list doesn't include line detail -- fetch this one
+    // transfer's full record (which does) rather than assuming the
+    // cached list row already has it.
+    const transfer = await api('/transfers/' + id);
+    box.innerHTML = `
+      <div id="tr-receive-rows-${id}">
+        ${transfer.lines.map((l) => `
+          <div class="recipe-row" data-ingredient-id="${l.ingredientId}">
+            <span style="flex:2">${ingName(l.ingredientId)} (أُرسل: ${Number(l.quantitySent)})</span>
+            <input class="tr-recv-qty" type="number" step="0.001" value="${Number(l.quantitySent)}" style="flex:1">
+          </div>
+        `).join('')}
+      </div>
+      <div style="margin-top:8px"><button onclick="confirmTransferReceive('${id}')">✅ تأكيد الاستلام</button></div>
+    `;
+  } catch (e) { box.innerHTML = '❌ ' + e.message; }
 }
 async function confirmTransferReceive(id) {
   const container = document.getElementById('tr-receive-rows-' + id);
