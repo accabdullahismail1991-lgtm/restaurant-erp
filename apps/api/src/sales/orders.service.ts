@@ -3,12 +3,11 @@ import { OrderStatus } from '@prisma/client';
 import { scopedLocationIds } from '../common/location-scope.util';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ZatcaService } from '../zatca/zatca.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { PayOrderDto } from './dto/pay-order.dto';
 
-// KSA standard VAT rate (docs/DECISIONS.md #3: ZATCA compliance). Actual
-// invoice signing/QR/UUID generation is deferred to Phase 9 -- for now
-// zatcaSyncStatus just stays 'PENDING' on every order.
+// KSA standard VAT rate (docs/DECISIONS.md #3: ZATCA compliance).
 const VAT_RATE = 0.15;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -17,6 +16,7 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly inventory: InventoryService,
+    private readonly zatca: ZatcaService,
   ) {}
 
   private async assertLocationInScope(userId: string, locationId: string) {
@@ -135,12 +135,19 @@ export class OrdersService {
       await tx.payment.createMany({
         data: dto.payments.map((p) => ({ orderId: id, method: p.method, mode: p.mode, amount: p.amount, terminalRef: p.terminalRef })),
       });
-      return tx.order.update({
-        where: { id },
-        data: { status: OrderStatus.PAID, paidAt: new Date() },
-        include: { lines: true, payments: true },
-      });
+      await tx.order.update({ where: { id }, data: { status: OrderStatus.PAID, paidAt: new Date() } });
+      // Same transaction as the sale itself (docs/DECISIONS.md #3: generated
+      // and signed LOCALLY at sale time) -- no-ops if the location has no
+      // vatNumber configured, since a missing invoicing setting must never
+      // block an actual cash sale.
+      await this.zatca.generateForOrder(tx, id);
+      return tx.order.findUniqueOrThrow({ where: { id }, include: { lines: true, payments: true } });
     });
+  }
+
+  async submitZatca(id: string, userId: string) {
+    await this.findOne(id, userId); // scope check + 404 if missing
+    return this.zatca.submitToZatca(id);
   }
 
   // Only reachable before payment -- refunding an already-PAID order is a

@@ -50,4 +50,14 @@ export class OrdersController {
   void(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
     return this.orders.void(id, user.userId);
   }
+
+  // The invoice itself (XML/hash/signature/QR) is already generated and
+  // signed locally at pay() time -- this only attempts the separate step
+  // of reporting it to ZATCA's real platform, which honestly reports back
+  // that it isn't configured in this environment rather than faking it.
+  @Post(':id/zatca/submit')
+  @HttpCode(200)
+  submitZatca(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
+    return this.orders.submitZatca(id, user.userId);
+  }
 }

@@ -113,7 +113,7 @@
     <div id="view-branches" class="view">
       <div class="panel">
         <h2>الفروع الحالية</h2>
-        <div class="table-wrap"><table><thead><tr><th>الاسم</th><th>النوع</th><th>العنوان</th><th>الحالة</th></tr></thead>
+        <div class="table-wrap"><table><thead><tr><th>الاسم</th><th>النوع</th><th>العنوان</th><th>الرقم الضريبي</th><th>الحالة</th></tr></thead>
           <tbody id="branchesTable"></tbody>
         </table></div>
       </div>
@@ -129,6 +129,7 @@
             </select>
           </div>
           <div><label>العنوان (اختياري)</label><input id="b-address" placeholder="شارع الملك فهد"></div>
+          <div><label>الرقم الضريبي (اختياري -- لازم لفوترة ZATCA)</label><input id="b-vat" placeholder="15 رقمًا، يبدأ وينتهي بـ 3" maxlength="15"></div>
           <div><button onclick="createBranch()">إضافة</button></div>
         </div>
       </div>
@@ -458,18 +459,22 @@ async function loadBranches() {
     locationsCache = branches;
     const typeLabel = { BRANCH: 'فرع', CENTRAL_KITCHEN: 'مطبخ مركزي', WAREHOUSE: 'مستودع' };
     document.getElementById('branchesTable').innerHTML = branches.length
-      ? branches.map((b) => `<tr><td>${b.name}</td><td>${typeLabel[b.type] || b.type}</td><td>${b.address || '-'}</td><td>${b.isActive ? '✅ نشط' : '⛔ معطّل'}</td></tr>`).join('')
-      : `<tr><td colspan="4" class="empty">لا توجد فروع بعد</td></tr>`;
+      ? branches.map((b) => `<tr><td>${b.name}</td><td>${typeLabel[b.type] || b.type}</td><td>${b.address || '-'}</td><td>${b.vatNumber || '-'}</td><td>${b.isActive ? '✅ نشط' : '⛔ معطّل'}</td></tr>`).join('')
+      : `<tr><td colspan="5" class="empty">لا توجد فروع بعد</td></tr>`;
   } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
 }
 async function createBranch() {
   const name = document.getElementById('b-name').value.trim();
   const type = document.getElementById('b-type').value;
   const address = document.getElementById('b-address').value.trim();
+  const vatNumber = document.getElementById('b-vat').value.trim();
   if (!name) { flashGlobal('⚠️ اكتب اسم الفرع', 'err'); return; }
   try {
-    await api('/locations', { method: 'POST', body: JSON.stringify(address ? { name, type, address } : { name, type }) });
-    document.getElementById('b-name').value = ''; document.getElementById('b-address').value = '';
+    const body = { name, type };
+    if (address) body.address = address;
+    if (vatNumber) body.vatNumber = vatNumber;
+    await api('/locations', { method: 'POST', body: JSON.stringify(body) });
+    document.getElementById('b-name').value = ''; document.getElementById('b-address').value = ''; document.getElementById('b-vat').value = '';
     flashGlobal('✅ تمت إضافة الفرع', 'ok');
     loadBranches();
   } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
