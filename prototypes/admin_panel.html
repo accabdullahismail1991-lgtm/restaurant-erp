@@ -187,7 +187,7 @@
     <div id="view-items" class="view hidden">
       <div class="panel">
         <h2>أصناف المنيو الحالية</h2>
-        <div class="table-wrap"><table><thead><tr><th>الاسم</th><th>القسم</th><th>السعر</th><th>التكلفة الحالية</th><th>الحالة</th><th></th></tr></thead>
+        <div class="table-wrap"><table><thead><tr><th>الصورة</th><th>الاسم</th><th>القسم</th><th>السعر</th><th>التكلفة الحالية</th><th>الحالة</th><th></th></tr></thead>
           <tbody id="itemsTable"></tbody>
         </table></div>
       </div>
@@ -891,8 +891,12 @@ async function loadItems() {
           const costCell = c
             ? `${c.cost.toFixed(2)} <span style="color:var(--muted);font-size:11px">(${c.costPercent.toFixed(0)}% من السعر)</span>`
             : '<span class="empty">-</span>';
+          const thumb = m.hasImage
+            ? `<img id="item-thumb-${m.id}" style="width:40px;height:40px;border-radius:6px;object-fit:cover;background:var(--bg)">`
+            : `<div style="width:40px;height:40px;border-radius:6px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:16px">🍽️</div>`;
           return `
         <tr>
+          <td>${thumb}</td>
           <td>${m.name}</td><td>${m.category}</td><td>${Number(m.price).toFixed(2)}</td>
           <td>${costCell}</td>
           <td><span class="pill ${m.isActive ? 'semi' : 'inactive'}">${m.isActive ? 'نشط' : 'غير نشط'}</span></td>
@@ -901,12 +905,28 @@ async function loadItems() {
             <button class="link-btn" onclick="toggleItemRecipe('${m.id}')">📋 الوصفة</button>
           </td>
         </tr>
-        <tr id="edit-item-row-${m.id}" class="hidden"><td colspan="6"><div class="recipe-box" id="edit-item-box-${m.id}"></div></td></tr>
-        <tr id="mrecipe-row-${m.id}" class="hidden"><td colspan="6"><div class="recipe-box" id="mrecipe-box-${m.id}"></div></td></tr>
+        <tr id="edit-item-row-${m.id}" class="hidden"><td colspan="7"><div class="recipe-box" id="edit-item-box-${m.id}"></div></td></tr>
+        <tr id="mrecipe-row-${m.id}" class="hidden"><td colspan="7"><div class="recipe-box" id="mrecipe-box-${m.id}"></div></td></tr>
       `;
         }).join('')
-      : `<tr><td colspan="6" class="empty">لا توجد أصناف منيو بعد</td></tr>`;
+      : `<tr><td colspan="7" class="empty">لا توجد أصناف منيو بعد</td></tr>`;
+
+    // Thumbnails need an Authorization header (same as every other API
+    // call), which a plain <img src> can't send -- fetched as a blob and
+    // turned into a throwaway object URL instead, same pattern already
+    // used for downloading a generated report's file.
+    itemsCache.filter((m) => m.hasImage).forEach((m) => loadItemThumbnail(m.id));
   } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function loadItemThumbnail(id) {
+  const img = document.getElementById('item-thumb-' + id);
+  if (!img) return;
+  try {
+    const res = await fetch(apiBase() + '/items/' + id + '/image', { headers: accessToken ? { Authorization: 'Bearer ' + accessToken } : {} });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    img.src = URL.createObjectURL(blob);
+  } catch (e) { /* offline/cache-miss -- thumbnail just stays the emoji placeholder */ }
 }
 async function createItem() {
   const name = document.getElementById('m-name').value.trim();
@@ -942,7 +962,61 @@ function toggleItemEdit(id) {
       <div><label><input type="checkbox" class="em-active" style="width:auto;display:inline" ${item.isActive ? 'checked' : ''}> نشط (متاح للبيع)</label></div>
       <div><button onclick="saveItemEdit('${id}')">💾 حفظ</button></div>
     </div>
+    <div class="row-form" style="margin-top:10px;align-items:center">
+      <div style="flex:none"><img id="em-image-preview-${id}" style="width:64px;height:64px;border-radius:8px;object-fit:cover;background:var(--bg);display:${item.hasImage ? '' : 'none'}"></div>
+      <div><label>صورة الصنف (JPG/PNG/WEBP، حتى 2 ميجابايت)</label><input type="file" accept="image/jpeg,image/png,image/webp" class="em-image-file" onchange="uploadItemImage('${id}', this)"></div>
+      ${item.hasImage ? `<div><button class="ghost" onclick="removeItemImage('${id}')">🗑️ حذف الصورة</button></div>` : ''}
+    </div>
+    <div class="msg" id="em-image-msg-${id}"></div>
   `;
+  if (item.hasImage) loadEditPreviewImage(id);
+}
+async function loadEditPreviewImage(id) {
+  const img = document.getElementById('em-image-preview-' + id);
+  if (!img) return;
+  try {
+    const res = await fetch(apiBase() + '/items/' + id + '/image', { headers: accessToken ? { Authorization: 'Bearer ' + accessToken } : {} });
+    if (!res.ok) return;
+    img.src = URL.createObjectURL(await res.blob());
+  } catch (e) { /* leave the preview hidden */ }
+}
+async function uploadItemImage(id, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    // FormData sets its own multipart Content-Type (with the boundary) --
+    // api() would otherwise force 'application/json' on every request, so
+    // this bypasses it with a direct fetch, same as every other binary
+    // call in this file (report download, thumbnails).
+    const res = await fetch(apiBase() + '/items/' + id + '/image', {
+      method: 'POST',
+      headers: accessToken ? { Authorization: 'Bearer ' + accessToken } : {},
+      body: form,
+    });
+    if (!res.ok) {
+      let msg = 'HTTP ' + res.status;
+      try { const j = await res.json(); if (j && j.message) msg = Array.isArray(j.message) ? j.message.join('، ') : j.message; } catch (e) { /* no body */ }
+      throw new Error(msg);
+    }
+    // loadItems() re-renders the whole table (destroying and recreating
+    // em-image-msg-{id} along with everything else), so the success
+    // message has to be set on the FRESH element after that, not before --
+    // otherwise it's written to a node that's already gone by the time
+    // anyone could see it.
+    await loadItems();
+    toggleItemEdit(id);
+    showMsg('em-image-msg-' + id, '✅ تم رفع الصورة', 'ok');
+  } catch (e) { showMsg('em-image-msg-' + id, '❌ ' + e.message, 'err'); }
+}
+async function removeItemImage(id) {
+  try {
+    await api('/items/' + id + '/image', { method: 'DELETE' });
+    await loadItems();
+    toggleItemEdit(id);
+    flashGlobal('🗑️ تم حذف صورة الصنف', 'ok');
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
 }
 async function saveItemEdit(id) {
   const box = document.getElementById('edit-item-box-' + id);

@@ -1,4 +1,19 @@
-import { Body, Controller, Get, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Put,
+  StreamableFile,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermission } from '../auth/require-permission.decorator';
@@ -43,5 +58,28 @@ export class ItemsController {
   @RequirePermission('items.manage')
   setRecipe(@Param('id') id: string, @Body() dto: SetRecipeDto) {
     return this.items.setRecipe(id, dto);
+  }
+
+  // Not gated behind analytics.view like cost/margin -- a menu item photo
+  // is display data (same visibility level as its name/price), not a
+  // commercially sensitive number.
+  @Get(':id/image')
+  async getImage(@Param('id') id: string) {
+    const { data, mimeType } = await this.items.getImage(id);
+    return new StreamableFile(data, { type: mimeType });
+  }
+
+  @Post(':id/image')
+  @RequirePermission('items.manage')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }))
+  uploadImage(@Param('id') id: string, @UploadedFile() file?: Express.Multer.File) {
+    if (!file) throw new BadRequestException('لم يتم إرفاق أي صورة');
+    return this.items.setImage(id, file);
+  }
+
+  @Delete(':id/image')
+  @RequirePermission('items.manage')
+  removeImage(@Param('id') id: string) {
+    return this.items.removeImage(id);
   }
 }

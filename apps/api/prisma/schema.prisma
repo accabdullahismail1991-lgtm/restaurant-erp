@@ -195,11 +195,18 @@ model InventoryBalance {
 // أصناف المبيعات والوصفات (Multi-level BOM) — القرار #4
 // ---------------------------------------------------------------------------
 model MenuItem {
-  id       String  @id @default(cuid())
-  name     String
-  category String
-  price    Decimal @db.Decimal(10, 2)
-  isActive Boolean @default(true)
+  id            String  @id @default(cuid())
+  name          String
+  category      String
+  price         Decimal @db.Decimal(10, 2)
+  isActive      Boolean @default(true)
+  // Stored directly in Postgres (bytea), same choice already made for
+  // GeneratedReport.fileData -- no cloud object storage credentials exist
+  // in this environment, and a menu item photo is small enough (a few
+  // hundred KB at most, enforced by the upload endpoint) that this isn't
+  // the scaling liability it would be for larger files.
+  imageData     Bytes?
+  imageMimeType String?
 
   recipe     RecipeLine[]
   orderLines OrderLine[]
