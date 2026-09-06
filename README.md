@@ -90,6 +90,7 @@ restaurant-erp/
 │   └── pos-web/               ← Frontend الكاشير (React + Vite PWA scaffold، لم يُبنَ بعد)
 ├── prototypes/
 │   ├── pos_prototype.html    ← النموذج الأولي HTML/JS المرجعي (منطق البيع/خصم المخزون)
-│   └── login_demo.html        ← صفحة تجريبية بسيطة لتسجيل الدخول (Phase 1) ضد API حقيقي
+│   ├── login_demo.html        ← صفحة تجريبية بسيطة لتسجيل الدخول (Phase 1) ضد API حقيقي
+│   └── admin_panel.html        ← لوحة تحكم إدارية بسيطة: فروع، أصناف خام/نصف مصنّعة (بوصفاتها)، أصناف منيو (بوصفاتها)
 └── docker-compose.yml
 ```
