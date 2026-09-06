@@ -40,6 +40,7 @@ async function main() {
     'inventory.adjust',
     'purchasing.create_po',
     'purchasing.approve_po', // local/small POs -- the Approval Matrix's own role check still gates by amount tier
+    'production.manage', // local prep as well as central-kitchen runs (decision #5: hybrid production location)
     'pos.void_order',
   ];
   const cashierCodes: string[] = []; // base cashier operations don't need a permission check yet (sales module unbuilt)

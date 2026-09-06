@@ -72,6 +72,10 @@ export class InventoryService {
   // it's just not recomputed into a single rolling average yet. Throws if
   // the location doesn't have enough stock -- no oversell for this
   // online-only phase (offline/negative-balance reconciliation is Phase 8).
+  // Returns the total cost of what it actually depleted (sum of each
+  // touched batch's own unitCost x quantity taken from it) -- Production
+  // uses this to cost the batch it produces from these inputs; Sales and
+  // manual waste both just ignore it.
   async consume(db: Db, args: { locationId: string; ingredientId: string; quantity: number; reason: string; refId?: string }) {
     let remaining = new Prisma.Decimal(args.quantity);
     const batches = await db.inventoryBatch.findMany({
@@ -79,11 +83,11 @@ export class InventoryService {
       orderBy: { receivedAt: 'asc' },
     });
 
-    const consumed: Array<{ batchId: string; quantity: Prisma.Decimal }> = [];
+    const consumed: Array<{ batchId: string; quantity: Prisma.Decimal; unitCost: Prisma.Decimal }> = [];
     for (const batch of batches) {
       if (remaining.lte(0)) break;
       const take = Prisma.Decimal.min(batch.quantity, remaining);
-      consumed.push({ batchId: batch.id, quantity: take });
+      consumed.push({ batchId: batch.id, quantity: take, unitCost: batch.unitCost });
       remaining = remaining.sub(take);
     }
 
@@ -91,13 +95,16 @@ export class InventoryService {
       throw new BadRequestException(`رصيد المخزون غير كافٍ للصنف المطلوب (الناقص: ${remaining.toString()})`);
     }
 
+    let totalCost = new Prisma.Decimal(0);
     for (const c of consumed) {
       await db.inventoryBatch.update({ where: { id: c.batchId }, data: { quantity: { decrement: c.quantity } } });
       await db.stockMovement.create({
         data: { batchId: c.batchId, quantity: c.quantity.negated(), reason: args.reason, refId: args.refId },
       });
+      totalCost = totalCost.add(c.quantity.mul(c.unitCost));
     }
     await this.bumpBalance(db, args.locationId, args.ingredientId, -args.quantity);
+    return { totalCost };
   }
 
   // Reverses exactly the batch-level movements a prior consume() made for

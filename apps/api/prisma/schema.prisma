@@ -233,6 +233,11 @@ model ProductionOrder {
   outputIngredientId String      // المنتج النصف مصنّع الناتج
   outputQuantity Decimal          @db.Decimal(12, 3)
   status        ProductionStatus  @default(PLANNED)
+  // مجموع تكلفة المكوّنات الفعلية المستهلكة (من تكلفة كل دفعة استُهلكت
+  // منها فعليًا -- ليس تقديرًا) -- تُملأ عند بدء التنفيذ (start)، وتُستخدم
+  // لحساب تكلفة وحدة المنتج الناتج عند الاكتمال (complete): totalInputCost
+  // / outputQuantity. تبقى null قبل البدء.
+  totalInputCost Decimal?         @db.Decimal(12, 4)
   startedAt     DateTime?
   completedAt   DateTime?
   createdAt     DateTime          @default(now())

@@ -4,6 +4,7 @@ import * as bcrypt from 'bcrypt';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { resetDatabase } from './reset-db';
 
 // Phase 3+4: inventory (batches/movements/balances) + sales (shifts,
 // orders, payments, void) -- the "Sales <-> Items <-> Inventory" core
@@ -32,27 +33,10 @@ describe('Phase 3+4: inventory + sales (e2e)', () => {
     await app.init();
     prisma = app.get(PrismaService);
 
-    // This suite owns every one of these tables fully -- no other suite
-    // creates orders/shifts/payments/inventory rows, so a full wipe here
-    // is safe (children before parents to satisfy FK constraints). It also
-    // clears purchasing's tables defensively before ingredient -- this
-    // suite runs after purchasing.e2e-spec.ts alphabetically, and that
-    // suite's PurchaseOrderLine rows FK to Ingredient, so leftover ones
-    // would otherwise break THIS suite's own ingredient cleanup (same
-    // class of fix app.e2e-spec.ts and purchasing.e2e-spec.ts needed).
-    await prisma.approval.deleteMany({});
-    await prisma.purchaseOrderLine.deleteMany({});
-    await prisma.purchaseOrder.deleteMany({});
-    await prisma.payment.deleteMany({});
-    await prisma.orderLine.deleteMany({});
-    await prisma.order.deleteMany({});
-    await prisma.shift.deleteMany({});
-    await prisma.stockMovement.deleteMany({});
-    await prisma.inventoryBatch.deleteMany({});
-    await prisma.inventoryBalance.deleteMany({});
-    await prisma.recipeLine.deleteMany({});
-    await prisma.menuItem.deleteMany({});
-    await prisma.ingredient.deleteMany({});
+    // resetDatabase() clears every suite's domain tables first (see
+    // test/reset-db.ts), so leftover rows from any other suite's
+    // interrupted previous run never break this suite's own cleanup.
+    await resetDatabase(prisma);
     await prisma.userRole.deleteMany({});
     await prisma.rolePermission.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: { in: [ADMIN_PHONE, NOPERM_PHONE] } } });

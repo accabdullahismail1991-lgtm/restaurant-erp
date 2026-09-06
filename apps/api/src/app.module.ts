@@ -6,12 +6,13 @@ import { IngredientsModule } from './ingredients/ingredients.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { ItemsModule } from './items/items.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { ProductionModule } from './production/production.module';
 import { PurchasingModule } from './purchasing/purchasing.module';
 import { SalesModule } from './sales/sales.module';
 import { UsersModule } from './users/users.module';
 
-// Phases 1-5 wired up: config, Prisma, auth/RBAC, users, branches,
-// ingredients, items, inventory, sales, purchasing -- per
+// Phases 1-6 wired up: config, Prisma, auth/RBAC, users, branches,
+// ingredients, items, inventory, sales, purchasing, production -- per
 // docs/ARCHITECTURE.md's roadmap. Every other module under src/modules/*
 // stays an unimplemented README stub until its own phase.
 @Module({
@@ -26,6 +27,7 @@ import { UsersModule } from './users/users.module';
     InventoryModule,
     SalesModule,
     PurchasingModule,
+    ProductionModule,
   ],
 })
 export class AppModule {}

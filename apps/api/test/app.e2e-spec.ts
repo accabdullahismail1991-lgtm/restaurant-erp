@@ -4,6 +4,7 @@ import * as bcrypt from 'bcrypt';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { resetDatabase } from './reset-db';
 
 // Runs against a REAL Postgres database (restaurant_erp_test, migrated
 // separately -- see .env.test) and a REAL running Nest app instance, not
@@ -28,28 +29,13 @@ describe('Phase 1: auth + RBAC + users + branches (e2e)', () => {
     // Clean slate: this suite owns its rows, identified by the +9665000
     // test-phone prefix, so re-runs don't accumulate duplicate seed data
     // or collide with anything a developer seeded manually in this DB.
-    // This suite runs first (alphabetically), so it also defensively
-    // clears anything the Sales/Inventory or Purchasing suites may have
-    // left behind referencing these same users/locations from an
-    // interrupted previous run -- otherwise the FK constraints those
-    // later phases' tables added would break THIS suite's own cleanup
-    // (PurchaseOrder.locationId and Shift/Order.locationId both FK to
-    // Location, which this suite fully wipes below).
-    await prisma.approval.deleteMany({});
-    await prisma.purchaseOrderLine.deleteMany({});
-    await prisma.purchaseOrder.deleteMany({});
-    await prisma.payment.deleteMany({});
-    await prisma.orderLine.deleteMany({});
-    await prisma.order.deleteMany({});
-    await prisma.shift.deleteMany({});
-    await prisma.stockMovement.deleteMany({});
-    await prisma.inventoryBatch.deleteMany({});
-    await prisma.inventoryBalance.deleteMany({});
+    // resetDatabase() clears every other suite's domain tables first (see
+    // test/reset-db.ts) so an interrupted previous run never breaks this
+    // suite's own cleanup, regardless of which phase added which table.
+    await resetDatabase(prisma);
     await prisma.userRole.deleteMany({});
-    await prisma.userLocationScope.deleteMany({});
     await prisma.rolePermission.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: { startsWith: '+96650000' } } });
-    await prisma.location.deleteMany({});
     await prisma.role.deleteMany({});
     await prisma.permission.deleteMany({});
 
