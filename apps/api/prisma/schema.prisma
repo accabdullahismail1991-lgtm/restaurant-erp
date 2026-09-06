@@ -589,3 +589,20 @@ model Promotion {
   // refuses to save configuration that would silently never take effect.
   orders Order[]
 }
+
+// ---------------------------------------------------------------------------
+// تقارير مُصدَّرة (Excel/PDF) -- تكرار ما بعد خطة التنفيذ الأصلية، فوق طبقة
+// BI للقراءة فقط في src/analytics/. الملف الفعلي يُخزَّن هنا (bytea) لبساطة
+// التقارير المتوقعة (كيلوبايتات قليلة) بلا حاجة لتخزين كائنات خارجي، ولأن
+// بيئة التطوير هذه لا تملك بيانات اعتماد لأي خدمة تخزين سحابي فعلية.
+model GeneratedReport {
+  id          String   @id @default(cuid())
+  type        String   // "DAILY_BUNDLE" (حاليًا النوع الوحيد -- ملخص مبيعات + أصناف + تكلفة طعام + نقص مخزون في ملف واحد)
+  format      String   // "XLSX" | "PDF"
+  locationId  String?  // null = كل المواقع (تقرير على مستوى المؤسسة)
+  periodStart DateTime
+  periodEnd   DateTime
+  fileName    String
+  fileData    Bytes
+  createdAt   DateTime @default(now())
+}

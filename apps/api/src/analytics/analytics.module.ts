@@ -7,5 +7,6 @@ import { AnalyticsService } from './analytics.service';
   imports: [AuthModule],
   controllers: [AnalyticsController],
   providers: [AnalyticsService],
+  exports: [AnalyticsService],
 })
 export class AnalyticsModule {}

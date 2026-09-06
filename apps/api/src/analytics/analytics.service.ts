@@ -7,9 +7,17 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 
 // Phase 11 (docs/DECISIONS.md #20): a purely read-only analytical layer
 // over the same operational tables every other module already writes --
-// nothing here mutates state or adds new tables. Every report is scoped
-// by the SAME location-scope rule every other module uses
+// nothing here mutates state or adds new tables. Every user-facing report
+// is scoped by the SAME location-scope rule every other module uses
 // (scopedLocationIds), so a branch manager sees only their own numbers.
+//
+// Each report is split into a `*Core(ids, ...)` method that takes an
+// already-resolved location filter, and a thin public `*(userId, ...)`
+// wrapper that resolves it from the caller's scope. The system-level
+// report-generation job (ReportsService's cron) calls the *Core methods
+// directly with an explicit locationId -- it must NEVER borrow an
+// arbitrary user's scope (there is no "current user" for a cron job), so
+// it cannot go through the userId-based public methods at all.
 @Injectable()
 export class AnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -23,7 +31,7 @@ export class AnalyticsService {
     return allowed ?? undefined; // undefined = no filter at all (org-wide + no specific location asked)
   }
 
-  private parseRange(from?: string, to?: string): { gte?: Date; lte?: Date } {
+  parseRange(from?: string, to?: string): { gte?: Date; lte?: Date } {
     const gte = from ? new Date(from) : undefined;
     const lte = to ? new Date(to) : undefined;
     if (gte && isNaN(gte.getTime())) throw new BadRequestException('تاريخ البداية (from) غير صالح');
@@ -33,6 +41,14 @@ export class AnalyticsService {
 
   async salesSummary(userId: string, locationId?: string, from?: string, to?: string) {
     const ids = await this.resolveLocationIds(userId, locationId);
+    return this.salesSummaryCore(ids, from, to);
+  }
+
+  salesSummaryForLocation(locationId: string | undefined, from?: string, to?: string) {
+    return this.salesSummaryCore(locationId ? [locationId] : undefined, from, to);
+  }
+
+  private async salesSummaryCore(ids: string[] | undefined, from?: string, to?: string) {
     const { gte, lte } = this.parseRange(from, to);
     const orders = await this.prisma.order.findMany({
       where: {
@@ -70,6 +86,14 @@ export class AnalyticsService {
 
   async topItems(userId: string, locationId?: string, from?: string, to?: string, limit = 10) {
     const ids = await this.resolveLocationIds(userId, locationId);
+    return this.topItemsCore(ids, from, to, limit);
+  }
+
+  topItemsForLocation(locationId: string | undefined, from?: string, to?: string, limit = 20) {
+    return this.topItemsCore(locationId ? [locationId] : undefined, from, to, limit);
+  }
+
+  private async topItemsCore(ids: string[] | undefined, from?: string, to?: string, limit = 10) {
     const { gte, lte } = this.parseRange(from, to);
     const lines = await this.prisma.orderLine.findMany({
       where: {
@@ -103,6 +127,14 @@ export class AnalyticsService {
   // theoretical cost. Food Cost % = COGS / net sales, the standard F&B KPI.
   async foodCost(userId: string, locationId?: string, from?: string, to?: string) {
     const ids = await this.resolveLocationIds(userId, locationId);
+    return this.foodCostCore(ids, from, to);
+  }
+
+  foodCostForLocation(locationId: string | undefined, from?: string, to?: string) {
+    return this.foodCostCore(locationId ? [locationId] : undefined, from, to);
+  }
+
+  private async foodCostCore(ids: string[] | undefined, from?: string, to?: string) {
     const { gte, lte } = this.parseRange(from, to);
 
     const orders = await this.prisma.order.findMany({
@@ -135,6 +167,14 @@ export class AnalyticsService {
 
   async inventoryValuation(userId: string, locationId?: string) {
     const ids = await this.resolveLocationIds(userId, locationId);
+    return this.inventoryValuationCore(ids);
+  }
+
+  inventoryValuationForLocation(locationId: string | undefined) {
+    return this.inventoryValuationCore(locationId ? [locationId] : undefined);
+  }
+
+  private async inventoryValuationCore(ids: string[] | undefined) {
     const batches = await this.prisma.inventoryBatch.findMany({
       where: { locationId: ids ? { in: ids } : undefined, quantity: { gt: 0 } },
       select: { ingredientId: true, quantity: true, unitCost: true, ingredient: { select: { name: true, unit: true } } },
@@ -157,6 +197,14 @@ export class AnalyticsService {
 
   async lowStock(userId: string, locationId?: string) {
     const ids = await this.resolveLocationIds(userId, locationId);
+    return this.lowStockCore(ids);
+  }
+
+  lowStockForLocation(locationId: string | undefined) {
+    return this.lowStockCore(locationId ? [locationId] : undefined);
+  }
+
+  private async lowStockCore(ids: string[] | undefined) {
     const balances = await this.prisma.inventoryBalance.findMany({
       where: { locationId: ids ? { in: ids } : undefined },
       select: { ingredientId: true, locationId: true, quantity: true, location: { select: { name: true } } },

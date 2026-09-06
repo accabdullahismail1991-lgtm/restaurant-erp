@@ -12,6 +12,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 // whatever User/Role/Permission rows it needs for login.
 //
 export async function resetDatabase(prisma: PrismaService) {
+  await prisma.generatedReport.deleteMany({});
   await prisma.approval.deleteMany({});
   await prisma.purchaseOrderLine.deleteMany({});
   await prisma.purchaseOrder.deleteMany({});

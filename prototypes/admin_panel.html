@@ -463,6 +463,25 @@
           <tbody id="an-lowstock-table"></tbody>
         </table></div>
       </div>
+      <div class="panel">
+        <h2>تصدير التقارير (Excel / PDF)</h2>
+        <div class="hint">يستخدم نفس فلتر الموقع والفترة أعلاه. التقرير المُولَّد يبقى محفوظًا هنا للتحميل لاحقًا -- بما فيها النسخة التي تتولّد تلقائيًا كل يوم لكل فرع (docs/DECISIONS.md).</div>
+        <div class="row-form">
+          <div><label>الصيغة</label>
+            <select id="rp-format">
+              <option value="XLSX">Excel (XLSX)</option>
+              <option value="PDF">PDF</option>
+              <option value="BOTH">Excel + PDF</option>
+            </select>
+          </div>
+          <div><button onclick="generateReportNow()" id="rp-generate-btn">📄 توليد تقرير الآن</button></div>
+          <div><button class="ghost" onclick="generateAllReportsNow()" id="rp-generate-all-btn">🗓️ توليد دفعة اليوم لكل الفروع</button></div>
+        </div>
+        <div id="rp-msg" class="msg"></div>
+        <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>النوع</th><th>الصيغة</th><th>الموقع</th><th>الفترة</th><th>تاريخ التوليد</th><th></th></tr></thead>
+          <tbody id="rp-list-table"></tbody>
+        </table></div>
+      </div>
     </div>
   </main>
 </div>
@@ -547,6 +566,13 @@ function doLogout(message) {
 
 const TABS = ['branches', 'ingredients', 'items', 'inventory', 'sales', 'purchasing', 'production', 'transfers', 'promotions', 'customers', 'analytics'];
 function switchTab(name) {
+  // An error banner from whatever the user was doing on the PREVIOUS tab
+  // (e.g. a permission error trying to save an Approval Matrix rule under
+  // Purchasing) otherwise stays on screen forever -- showMsg() only
+  // auto-clears 'ok' messages, never 'err' ones, and nothing else ever
+  // resets it -- so it kept showing on top of whichever unrelated tab the
+  // user switched to next, looking like an error caused by THAT tab.
+  document.getElementById('globalMsg').className = 'msg';
   TABS.forEach((t) => {
     document.getElementById('tab-' + t).classList.toggle('active', t === name);
     document.getElementById('view-' + t).classList.toggle('hidden', t !== name);
@@ -1452,7 +1478,84 @@ async function loadAnalytics() {
     document.getElementById('an-lowstock-table').innerHTML = lowStock.length
       ? lowStock.map((r) => `<tr><td>${r.name}</td><td>${r.locationName}</td><td>${r.quantity} ${r.unit}</td><td>${r.lowStockThreshold} ${r.unit}</td></tr>`).join('')
       : `<tr><td colspan="4" class="empty">لا توجد تنبيهات انخفاض مخزون</td></tr>`;
+
+    loadReportsList();
   } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+
+/* ---------------- Reports export (Excel/PDF) ---------------- */
+async function loadReportsList() {
+  try {
+    const locationId = document.getElementById('an-location').value;
+    const reports = await api('/reports' + (locationId ? '?locationId=' + locationId : ''));
+    const typeLabel = { DAILY_BUNDLE: 'حزمة يومية' };
+    document.getElementById('rp-list-table').innerHTML = reports.length
+      ? reports.map((r) => `<tr>
+          <td>${typeLabel[r.type] || r.type}</td>
+          <td>${r.format}</td>
+          <td>${r.locationId ? (locationsCache.find((l) => l.id === r.locationId) || {}).name || r.locationId : 'كل المواقع'}</td>
+          <td>${r.periodStart.slice(0, 10)} → ${r.periodEnd.slice(0, 10)}</td>
+          <td>${new Date(r.createdAt).toLocaleString('ar-SA')}</td>
+          <td><button class="link-btn" onclick="downloadReport('${r.id}', '${r.fileName.replace(/'/g, "\\'")}')">⬇️ تحميل</button></td>
+        </tr>`).join('')
+      : `<tr><td colspan="6" class="empty">لا توجد تقارير مولَّدة بعد</td></tr>`;
+  } catch (e) { showMsg('rp-msg', '❌ ' + e.message, 'err'); }
+}
+
+async function generateReportNow() {
+  const btn = document.getElementById('rp-generate-btn');
+  btn.disabled = true;
+  try {
+    const locationId = document.getElementById('an-location').value;
+    const from = document.getElementById('an-from').value;
+    const to = document.getElementById('an-to').value;
+    const format = document.getElementById('rp-format').value;
+    if (!from || !to) { showMsg('rp-msg', '⚠️ حدد "من تاريخ" و"إلى تاريخ" في عوامل التصفية أعلاه أولًا', 'err'); return; }
+    const body = { from: new Date(from).toISOString(), to: new Date(to + 'T23:59:59').toISOString(), format };
+    if (locationId) body.locationId = locationId;
+    await api('/reports/generate', { method: 'POST', body: JSON.stringify(body) });
+    showMsg('rp-msg', '✅ تم توليد التقرير', 'ok');
+    loadReportsList();
+  } catch (e) { showMsg('rp-msg', '❌ ' + e.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+
+async function generateAllReportsNow() {
+  if (!confirm('توليد دفعة تقارير اليوم لكل الفروع النشطة (Excel + PDF)؟ هذا نفس الإجراء الذي يعمل تلقائيًا كل يوم الساعة 1 صباحًا.')) return;
+  const btn = document.getElementById('rp-generate-all-btn');
+  btn.disabled = true;
+  try {
+    const now = new Date();
+    const from = new Date(now); from.setHours(0, 0, 0, 0);
+    const to = new Date(now); to.setHours(23, 59, 59, 999);
+    await api('/reports/generate-all', { method: 'POST', body: JSON.stringify({ from: from.toISOString(), to: to.toISOString() }) });
+    showMsg('rp-msg', '✅ تم توليد دفعة تقارير اليوم لكل الفروع', 'ok');
+    loadReportsList();
+  } catch (e) { showMsg('rp-msg', '❌ ' + e.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+
+// api() always parses the response as JSON, which would corrupt a binary
+// XLSX/PDF file -- this bypasses it with a raw fetch + blob() instead, same
+// auth header, then triggers the browser's native save dialog via a
+// throwaway <a download> link (no server-side storage path needed).
+async function downloadReport(id, fileName) {
+  try {
+    const res = await fetch(apiBase() + '/reports/' + id + '/download', {
+      headers: accessToken ? { Authorization: 'Bearer ' + accessToken } : {},
+    });
+    if (!res.ok) {
+      let msg = 'HTTP ' + res.status;
+      try { const j = await res.json(); if (j && j.message) msg = j.message; } catch (e) { /* not JSON */ }
+      throw new Error(msg);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fileName;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) { showMsg('rp-msg', '❌ فشل تحميل التقرير: ' + e.message, 'err'); }
 }
 </script>
 </body>
