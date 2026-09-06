@@ -186,6 +186,32 @@ export $(cat .env.test | xargs) && npx prisma migrate deploy
 export $(cat .env.test | xargs) && npm run test:e2e
 ```
 
+## النشر أونلاين (Render)
+
+`render.yaml` (Blueprint جاهز في جذر المستودع) ينشر النظام كامل بثلاث خدمات: قاعدة بيانات
+PostgreSQL مُدارة (`restaurant-erp-db`)، الـ API (`restaurant-erp-api`، NestJS)، ولوحة التحكم
+(`restaurant-erp-admin`، static site لملف `prototypes/admin_panel.html`).
+
+**الخطوات**:
+1. من لوحة Render: **New +** → **Blueprint** → اربط مستودع GitHub هذا (`accabdullahismail1991-lgtm/restaurant-erp`).
+2. Render يكتشف `render.yaml` تلقائيًا ويعرض الخدمات الثلاث -- اضغط **Apply**.
+3. (اختياري، قبل أول Deploy لو حابب): من إعدادات خدمة `restaurant-erp-api` أضف متغيرات البيئة
+   `ADMIN_PHONE`/`ADMIN_PASSWORD` لو عايز حساب مدير مختلف عن الافتراضي المحلي. لو سبتهم فاضيين،
+   هيتزرع نفس حساب التطوير المحلي (`+966500000000` / `ChangeMe123!`) -- **غيّره فور أول دخول لو
+   النظام هيتفتح لأي حد تاني غير فريق التطوير**، لأن تعديل هذه المتغيرات بعد إنشاء المستخدم لأول
+   مرة لن يغيّر كلمة سره (`seed.ts` upsert لا يعدّل مستخدمًا موجودًا بالفعل).
+4. بعد اكتمال الـ Deploy (دقيقتين تقريبًا لأول مرة): افتح رابط `restaurant-erp-admin`
+   (شكله `https://restaurant-erp-admin.onrender.com/admin_panel.html` -- تأكد من الاسم الفعلي في
+   لوحة Render لو Render أضاف لاحقة لتفادي تعارض اسم)، وفي حقل "عنوان الـ API" أول مرة الصق رابط
+   خدمة `restaurant-erp-api` (شكله `https://restaurant-erp-api.onrender.com`) -- يُحفظ تلقائيًا في
+   المتصفح (localStorage) فلن تحتاج تكتبه كل مرة.
+5. سجّل الدخول بحساب المدير (الافتراضي أو اللي حددته في الخطوة 3).
+
+**ملاحظات صريحة**: الخطة المجانية على Render "تنام" الخدمة بعد فترة خمول فتأخذ أول طلب بعدها ثوانٍ
+لتنهض -- طبيعي، ليس عطلاً. `prisma migrate deploy` + بذر البيانات (`prisma:seed`، آمن تمامًا يتكرر
+لأنه upsert بالكامل) يعملان تلقائيًا عند كل تشغيل للخدمة، فليس هناك خطوة يدوية بعد أول نشر. لو
+احتجت تشغيل أمر لمرة واحدة يدويًا (فحص بيانات، إلخ) استخدم تبويب **Shell** في لوحة تحكم خدمة الـ API.
+
 ## تشغيل واجهة الكاشير (`apps/pos-web`) محليًا
 
 ```bash

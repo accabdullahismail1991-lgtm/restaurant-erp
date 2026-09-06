@@ -26,8 +26,11 @@ const PERMISSIONS: Array<{ code: string; label: string }> = [
   { code: 'analytics.view', label: 'عرض التقارير التحليلية (مبيعات/تكلفة/مخزون)' },
 ];
 
-const ADMIN_PHONE = '+966500000000';
-const ADMIN_PASSWORD = 'ChangeMe123!'; // dev-only seed credential -- see README
+// Overridable via env so a real deployment (Render, etc.) isn't stuck with
+// the well-known local dev credential -- falls back to it when unset so
+// nothing changes for local development.
+const ADMIN_PHONE = process.env.ADMIN_PHONE || '+966500000000';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'ChangeMe123!'; // dev-only seed credential -- see README
 
 async function main() {
   for (const p of PERMISSIONS) {

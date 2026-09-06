@@ -1,0 +1,57 @@
+# Render Blueprint -- deploys the whole system with one "New +" -> "Blueprint"
+# import of this repo. See README.md's "النشر أونلاين (Render)" section for
+# the full step-by-step walkthrough (what to run once after first deploy,
+# what URL you actually get, how to change the seeded admin password).
+#
+# Two services, one managed database:
+#   - restaurant-erp-db   : managed PostgreSQL
+#   - restaurant-erp-api  : the NestJS API (apps/api), migrates the DB on
+#                            every deploy (safe/idempotent -- `prisma migrate
+#                            deploy` only ever applies NEW migrations)
+#   - restaurant-erp-admin: the admin panel (prototypes/), a static site
+databases:
+  - name: restaurant-erp-db
+    plan: free
+    postgresMajorVersion: "16"
+
+services:
+  - type: web
+    name: restaurant-erp-api
+    runtime: node
+    plan: free
+    # --include=dev: Render sets NODE_ENV=production by default, which
+    # makes a plain `npm install` skip devDependencies -- ts-node/typescript
+    # (needed for the seed step below) live there, so this is required, not
+    # just tidiness.
+    buildCommand: npm install --include=dev && npm run build --workspace=apps/api
+    # prisma/seed.ts is 100% idempotent (every write is an upsert -- see its
+    # own comment), so running it on every single start is safe and means
+    # the baseline roles/permissions/admin user are always self-healing,
+    # not a manual one-time step you can forget.
+    startCommand: npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma && npm run prisma:seed --workspace=apps/api && node apps/api/dist/src/main.js
+    healthCheckPath: /auth/login
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: restaurant-erp-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_ACCESS_EXPIRES_IN
+        value: 15m
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: 7d
+      # Optional -- set these in the Render dashboard BEFORE the very first
+      # deploy to control the seeded admin login instead of the well-known
+      # local dev default. seed.ts only CREATES the admin user (upsert with
+      # an empty `update: {}`), so changing these after the user already
+      # exists has no effect on it.
+      - key: ADMIN_PHONE
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+
+  - type: web
+    name: restaurant-erp-admin
+    runtime: static
+    staticPublishPath: prototypes

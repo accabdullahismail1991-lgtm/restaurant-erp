@@ -499,6 +499,19 @@ let ingredientsCache = [];
 let locationsCache = [];
 let menuItemsCache = [];
 
+// Remembers the API URL across visits (e.g. a deployed Render URL) so it
+// doesn't need retyping every time -- login itself still isn't persisted,
+// same session-only behavior as before.
+(function restoreApiBase() {
+  try {
+    const saved = localStorage.getItem('restaurant_erp_admin_api_base');
+    if (saved) document.getElementById('apiBase').value = saved;
+  } catch (e) { /* private browsing or storage disabled -- just keeps the default */ }
+})();
+document.getElementById('apiBase').addEventListener('change', (e) => {
+  try { localStorage.setItem('restaurant_erp_admin_api_base', e.target.value.trim()); } catch (err) { /* ignore */ }
+});
+
 // App-shell caching only (see service-worker.js) -- requires a secure
 // context (https or localhost), same browser restriction Service Workers
 // always have; silently does nothing under file:// or plain http.
