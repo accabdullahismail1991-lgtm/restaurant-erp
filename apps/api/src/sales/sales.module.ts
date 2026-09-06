@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { CustomersModule } from '../customers/customers.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { PromotionsModule } from '../promotions/promotions.module';
 import { ZatcaModule } from '../zatca/zatca.module';
@@ -9,7 +10,7 @@ import { ShiftsController } from './shifts.controller';
 import { ShiftsService } from './shifts.service';
 
 @Module({
-  imports: [AuthModule, InventoryModule, ZatcaModule, PromotionsModule],
+  imports: [AuthModule, InventoryModule, ZatcaModule, PromotionsModule, CustomersModule],
   controllers: [ShiftsController, OrdersController],
   providers: [ShiftsService, OrdersService],
 })

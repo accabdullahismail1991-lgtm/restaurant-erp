@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { OrderStatus } from '@prisma/client';
 import { scopedLocationIds } from '../common/location-scope.util';
+import { CustomersService, EARN_CURRENCY_PER_POINT } from '../customers/customers.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromotionsService } from '../promotions/promotions.service';
@@ -19,6 +20,7 @@ export class OrdersService {
     private readonly inventory: InventoryService,
     private readonly zatca: ZatcaService,
     private readonly promotions: PromotionsService,
+    private readonly customers: CustomersService,
   ) {}
 
   private async assertLocationInScope(userId: string, locationId: string) {
@@ -51,6 +53,11 @@ export class OrdersService {
     const inactive = menuItems.find((m) => !m.isActive);
     if (inactive) throw new BadRequestException(`الصنف "${inactive.name}" غير متاح حاليًا`);
     const byId = new Map(menuItems.map((m) => [m.id, m]));
+
+    if (dto.customerId) {
+      const customer = await this.prisma.customer.findUnique({ where: { id: dto.customerId } });
+      if (!customer) throw new BadRequestException('العميل غير موجود');
+    }
 
     const subtotal = round2(dto.lines.reduce((sum, l) => sum + Number(byId.get(l.menuItemId)!.price) * l.quantity, 0));
 
@@ -157,6 +164,13 @@ export class OrdersService {
       // vatNumber configured, since a missing invoicing setting must never
       // block an actual cash sale.
       await this.zatca.generateForOrder(tx, id);
+      // Loyalty (docs/DECISIONS.md #15): earn on PAYMENT, not order creation
+      // (an order can still be voided before payment) -- floor() so a sale
+      // under the earn threshold simply earns 0, never a fraction.
+      if (order.customerId) {
+        const points = Math.floor(Number(order.grandTotal) / EARN_CURRENCY_PER_POINT);
+        await this.customers.awardPoints(tx, order.customerId, points, 'ORDER_EARN', id);
+      }
       return tx.order.findUniqueOrThrow({ where: { id }, include: { lines: true, payments: true, promotion: true } });
     });
   }

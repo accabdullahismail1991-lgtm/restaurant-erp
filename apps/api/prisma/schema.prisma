@@ -409,10 +409,27 @@ model Customer {
   id        String   @id @default(cuid())
   name      String?
   phone     String   @unique
+  // Derived running total, cached for fast reads -- LoyaltyTransaction
+  // below is the actual source of truth (Phase 10c, CustomersService),
+  // same "ledger + cached aggregate" split as StockMovement/InventoryBalance.
   points    Int      @default(0)
   createdAt DateTime @default(now())
 
-  orders Order[]
+  orders              Order[]
+  loyaltyTransactions LoyaltyTransaction[]
+}
+
+// نفس منطق StockMovement تمامًا: سجل حركة موقّع (موجب = كسب، سالب = استبدال/تعديل)
+// + سبب + مرجع اختياري، بدل عدّاد خام بلا تدقيق (القرار #15: "Points Ledger منفصل").
+model LoyaltyTransaction {
+  id         String   @id @default(cuid())
+  customerId String
+  points     Int      // موجب = كسب (ORDER_EARN)، سالب = استبدال (REDEEM) أو تعديل يدوي (MANUAL_ADJUST)
+  reason     String   // "ORDER_EARN" | "REDEEM" | "MANUAL_ADJUST"
+  orderId    String?  // الطلب الذي كسبت منه النقاط، لو كسب
+  createdAt  DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id])
 }
 
 // ---------------------------------------------------------------------------

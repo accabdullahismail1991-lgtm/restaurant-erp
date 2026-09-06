@@ -107,6 +107,7 @@
     <button id="tab-production" onclick="switchTab('production')">🏭 الإنتاج</button>
     <button id="tab-transfers" onclick="switchTab('transfers')">🚚 التحويلات</button>
     <button id="tab-promotions" onclick="switchTab('promotions')">🎁 العروض</button>
+    <button id="tab-customers" onclick="switchTab('customers')">👤 العملاء</button>
   </nav>
   <main>
     <div id="globalMsg" class="msg" style="margin-bottom:14px"></div>
@@ -392,6 +393,28 @@
         <div class="hint">* أنواع "اشترِ واحصل على" و"الكومبو" غير مدعومة بعد في محرك تطبيق العروض تلقائيًا.</div>
       </div>
     </div>
+
+    <!-- CUSTOMERS / LOYALTY -->
+    <div id="view-customers" class="view hidden">
+      <div class="panel">
+        <h2>العملاء</h2>
+        <div class="row-form" style="margin-bottom:10px">
+          <div><label>بحث بالجوال</label><input id="cust-search" placeholder="+9665..." oninput="loadCustomers()"></div>
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>الاسم</th><th>الجوال</th><th>النقاط</th><th></th></tr></thead>
+          <tbody id="customersTable"></tbody>
+        </table></div>
+      </div>
+      <div class="panel">
+        <h2>➕ عميل جديد</h2>
+        <div class="row-form">
+          <div><label>الجوال</label><input id="cust-phone" placeholder="+9665..."></div>
+          <div><label>الاسم (اختياري)</label><input id="cust-name" placeholder="اسم العميل"></div>
+          <div><button onclick="createCustomer()">إضافة</button></div>
+        </div>
+        <div class="hint">* نقطة واحدة لكل 10 ر.س من إجمالي الفاتورة عند الدفع، وقيمة النقطة عند الاستبدال 0.10 ر.س.</div>
+      </div>
+    </div>
   </main>
 </div>
 
@@ -473,7 +496,7 @@ function doLogout(message) {
   if (message) showMsg('loginMsg', 'ℹ️ ' + message, 'err');
 }
 
-const TABS = ['branches', 'ingredients', 'items', 'inventory', 'sales', 'purchasing', 'production', 'transfers', 'promotions'];
+const TABS = ['branches', 'ingredients', 'items', 'inventory', 'sales', 'purchasing', 'production', 'transfers', 'promotions', 'customers'];
 function switchTab(name) {
   TABS.forEach((t) => {
     document.getElementById('tab-' + t).classList.toggle('active', t === name);
@@ -488,6 +511,7 @@ function switchTab(name) {
   if (name === 'production') loadProductionTab();
   if (name === 'transfers') loadTransfersTab();
   if (name === 'promotions') loadPromotions();
+  if (name === 'customers') loadCustomers();
 }
 
 function flashGlobal(text, kind) { showMsg('globalMsg', text, kind); }
@@ -1252,6 +1276,73 @@ async function togglePromotion(id, isActive) {
     await api('/promotions/' + id, { method: 'PATCH', body: JSON.stringify({ isActive }) });
     flashGlobal(isActive ? '✅ تم تفعيل العرض' : '✅ تم تعطيل العرض', 'ok');
     loadPromotions();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+
+/* ---------------- Customers / Loyalty ---------------- */
+let customersCache = [];
+async function loadCustomers() {
+  try {
+    const phone = document.getElementById('cust-search').value.trim();
+    customersCache = await api('/customers' + (phone ? '?phone=' + encodeURIComponent(phone) : ''));
+    document.getElementById('customersTable').innerHTML = customersCache.length
+      ? customersCache.map((c) => `
+        <tr>
+          <td>${c.name || '-'}</td><td>${c.phone}</td><td>${c.points}</td>
+          <td><button class="link-btn" onclick="toggleCustomerDetail('${c.id}')">التفاصيل</button></td>
+        </tr>
+        <tr id="cust-detail-row-${c.id}" class="hidden"><td colspan="4"><div class="recipe-box" id="cust-detail-box-${c.id}"></div></td></tr>
+      `).join('')
+      : `<tr><td colspan="4" class="empty">لا يوجد عملاء بعد</td></tr>`;
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function createCustomer() {
+  const phone = document.getElementById('cust-phone').value.trim();
+  const name = document.getElementById('cust-name').value.trim();
+  if (!phone) { flashGlobal('⚠️ اكتب رقم جوال العميل', 'err'); return; }
+  try {
+    const body = { phone };
+    if (name) body.name = name;
+    await api('/customers', { method: 'POST', body: JSON.stringify(body) });
+    document.getElementById('cust-phone').value = ''; document.getElementById('cust-name').value = '';
+    flashGlobal('✅ تمت إضافة العميل', 'ok');
+    loadCustomers();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+const LOYALTY_REASON_LABEL = { ORDER_EARN: 'كسب من طلب', REDEEM: 'استبدال', MANUAL_ADJUST: 'تعديل يدوي' };
+async function toggleCustomerDetail(id) {
+  const row = document.getElementById('cust-detail-row-' + id);
+  const box = document.getElementById('cust-detail-box-' + id);
+  const opening = row.classList.contains('hidden');
+  row.classList.toggle('hidden');
+  if (!opening) return;
+  box.innerHTML = '<div class="empty">جارٍ التحميل...</div>';
+  try {
+    const ledger = await api(`/customers/${id}/ledger`);
+    box.innerHTML = `
+      <div class="table-wrap"><table><thead><tr><th>التاريخ</th><th>النقاط</th><th>السبب</th></tr></thead>
+        <tbody>
+          ${ledger.length ? ledger.map((t) => `
+            <tr><td>${new Date(t.createdAt).toLocaleString('ar-SA')}</td><td>${t.points > 0 ? '+' : ''}${t.points}</td><td>${LOYALTY_REASON_LABEL[t.reason] || t.reason}</td></tr>
+          `).join('') : `<tr><td colspan="3" class="empty">لا توجد حركات نقاط بعد</td></tr>`}
+        </tbody>
+      </table></div>
+      <div class="row-form" style="margin-top:10px">
+        <div><label>استبدال نقاط</label><input id="cust-redeem-${id}" type="number" min="1" placeholder="عدد النقاط"></div>
+        <div><button onclick="redeemCustomerPoints('${id}')">استبدال</button></div>
+      </div>
+    `;
+  } catch (e) { box.innerHTML = '❌ ' + e.message; }
+}
+async function redeemCustomerPoints(id) {
+  const input = document.getElementById('cust-redeem-' + id);
+  const points = parseInt(input.value, 10);
+  if (!points || points <= 0) { flashGlobal('⚠️ اكتب عدد نقاط صحيحًا', 'err'); return; }
+  try {
+    const res = await api(`/customers/${id}/redeem`, { method: 'POST', body: JSON.stringify({ points }) });
+    flashGlobal(`✅ تم استبدال ${res.pointsRedeemed} نقطة بقيمة ${res.cashValue.toFixed(2)} ر.س`, 'ok');
+    loadCustomers();
+    toggleCustomerDetail(id); toggleCustomerDetail(id); // close then reopen to refresh the ledger box
   } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
 }
 </script>
