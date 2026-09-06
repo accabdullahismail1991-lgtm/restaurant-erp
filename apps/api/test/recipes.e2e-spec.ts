@@ -25,6 +25,22 @@ describe('Phase 2: ingredients + items + multi-level recipes (e2e)', () => {
     await app.init();
     prisma = app.get(PrismaService);
 
+    // Defensively clears other suites' tables that FK into
+    // Ingredient/MenuItem before deleting those -- this suite runs after
+    // purchasing.e2e-spec.ts alphabetically (PurchaseOrderLine AND
+    // InventoryBatch, created on receive, both FK to Ingredient) and
+    // leftover Order/OrderLine rows from a previous run's
+    // sales.e2e-spec.ts FK to MenuItem, any of which would otherwise
+    // break this suite's own cleanup.
+    await prisma.approval.deleteMany({});
+    await prisma.purchaseOrderLine.deleteMany({});
+    await prisma.purchaseOrder.deleteMany({});
+    await prisma.payment.deleteMany({});
+    await prisma.orderLine.deleteMany({});
+    await prisma.order.deleteMany({});
+    await prisma.stockMovement.deleteMany({});
+    await prisma.inventoryBatch.deleteMany({});
+    await prisma.inventoryBalance.deleteMany({});
     await prisma.recipeLine.deleteMany({});
     await prisma.menuItem.deleteMany({});
     await prisma.ingredient.deleteMany({});

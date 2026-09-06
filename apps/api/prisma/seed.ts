@@ -18,6 +18,7 @@ const PERMISSIONS: Array<{ code: string; label: string }> = [
   { code: 'inventory.adjust', label: 'تسوية أرصدة المخزون' },
   { code: 'purchasing.approve_po', label: 'اعتماد أوامر الشراء' },
   { code: 'purchasing.create_po', label: 'إنشاء أوامر شراء' },
+  { code: 'purchasing.manage_rules', label: 'إدارة مصفوفة الموافقات (Approval Matrix)' },
   { code: 'production.manage', label: 'إدارة أوامر الإنتاج' },
   { code: 'transfers.manage', label: 'إدارة التحويلات بين المواقع' },
   { code: 'pos.void_order', label: 'إلغاء طلب من الكاشير' },
@@ -38,6 +39,7 @@ async function main() {
     'items.manage',
     'inventory.adjust',
     'purchasing.create_po',
+    'purchasing.approve_po', // local/small POs -- the Approval Matrix's own role check still gates by amount tier
     'pos.void_order',
   ];
   const cashierCodes: string[] = []; // base cashier operations don't need a permission check yet (sales module unbuilt)

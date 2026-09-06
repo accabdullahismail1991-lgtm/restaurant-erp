@@ -71,8 +71,8 @@
 | 2 | ✅ Ingredients + Items + Recipes | BOM متعدد المستويات فعليًا (صنف نصف مصنّع له وصفته الخاصة، تُستخدم كمكوّن في صنف منيو) + منع الدورات (Cycle) -- مبني ومُختبر (`apps/api/test/recipes.e2e-spec.ts`, 8 اختبارات) |
 | 3 | ✅ Sales (كاشير أونلاين فقط أولًا) | البيع يخصم المخزون بذرية (transaction)، بدون Offline بعد -- مبني ومُختبر |
 | 4 | ✅ Inventory (دفعات/حركات/أرصدة) — ⬜ Stocktake لسه | أرصدة دقيقة عبر FIFO + استلام/تسوية/تالف -- مبني ومُختبر؛ الجرد الدوري (Stocktake model موجود بالمخطط) لسه بلا منطق/Endpoints |
-| 5 | ⬜ Purchasing + Approval Matrix (التالي) | PO كامل مع مسار موافقة، ينتهي باستلام يُنشئ InventoryBatch عبر InventoryService.receive الموجودة |
-| 6 | Production Orders (multi-level BOM) | منتجات نصف مصنّعة + مطبخ مركزي |
+| 5 | ✅ Purchasing + Approval Matrix | PO كامل (مسودة→تقديم→اعتماد/رفض→إرسال→استلام→إلغاء) مع مصفوفة موافقات حقيقية (ApprovalRule، غير مبرمجة بالكود)، ينتهي باستلام يُنشئ InventoryBatch عبر InventoryService.receive الموجودة -- مبني ومُختبر (`apps/api/test/purchasing.e2e-spec.ts`, 20 اختبار) |
+| 6 | ⬜ Production Orders (multi-level BOM) (التالي) | منتجات نصف مصنّعة + مطبخ مركزي -- يستهلك مكوّنات وينتج دفعة عبر InventoryService الموجودة |
 | 7 | Transfers | تحويلات بين المواقع مع تسجيل فاقد النقل |
 | 8 | Offline-first | تحويل الـ POS لـ PWA بـ IndexedDB + Sync Queue |
 | 9 | ZATCA Phase 2 | توليد وتوقيع وربط بمنصة فاتورة |

@@ -34,7 +34,15 @@ describe('Phase 3+4: inventory + sales (e2e)', () => {
 
     // This suite owns every one of these tables fully -- no other suite
     // creates orders/shifts/payments/inventory rows, so a full wipe here
-    // is safe (children before parents to satisfy FK constraints).
+    // is safe (children before parents to satisfy FK constraints). It also
+    // clears purchasing's tables defensively before ingredient -- this
+    // suite runs after purchasing.e2e-spec.ts alphabetically, and that
+    // suite's PurchaseOrderLine rows FK to Ingredient, so leftover ones
+    // would otherwise break THIS suite's own ingredient cleanup (same
+    // class of fix app.e2e-spec.ts and purchasing.e2e-spec.ts needed).
+    await prisma.approval.deleteMany({});
+    await prisma.purchaseOrderLine.deleteMany({});
+    await prisma.purchaseOrder.deleteMany({});
     await prisma.payment.deleteMany({});
     await prisma.orderLine.deleteMany({});
     await prisma.order.deleteMany({});
