@@ -5,6 +5,7 @@ import { BranchesModule } from './branches/branches.module';
 import { IngredientsModule } from './ingredients/ingredients.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { ItemsModule } from './items/items.module';
+import { KitchenModule } from './kitchen/kitchen.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductionModule } from './production/production.module';
 import { PurchasingModule } from './purchasing/purchasing.module';
@@ -13,11 +14,12 @@ import { StocktakeModule } from './stocktake/stocktake.module';
 import { TransfersModule } from './transfers/transfers.module';
 import { UsersModule } from './users/users.module';
 
-// Phases 1-7 (plus the Stocktake half of Phase 4) wired up: config,
-// Prisma, auth/RBAC, users, branches, ingredients, items, inventory,
-// sales, purchasing, production, transfers, stocktake -- per
-// docs/ARCHITECTURE.md's roadmap. Every other module under src/modules/*
-// stays an unimplemented README stub until its own phase.
+// Phases 1-7 (plus the Stocktake half of Phase 4) and the KDS slice of
+// Phase 10 wired up: config, Prisma, auth/RBAC, users, branches,
+// ingredients, items, inventory, sales, purchasing, production, transfers,
+// stocktake, kitchen -- per docs/ARCHITECTURE.md's roadmap. Every other
+// module under src/modules/* stays an unimplemented README stub until its
+// own phase.
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -33,6 +35,7 @@ import { UsersModule } from './users/users.module';
     ProductionModule,
     TransfersModule,
     StocktakeModule,
+    KitchenModule,
   ],
 })
 export class AppModule {}
