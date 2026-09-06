@@ -11,11 +11,6 @@ import { PrismaService } from '../src/prisma/prisma.service';
 // beforeAll, then separately cleans up (targeted or full, its choice)
 // whatever User/Role/Permission rows it needs for login.
 //
-// NOTE for whoever builds Stocktake next: those tables
-// (Stocktake/StocktakeLine) also FK into Ingredient/Location and
-// currently sit empty because nothing writes to them yet -- add their
-// deleteMany calls here, in the same children-before-parents order, the
-// day a suite starts creating rows in them.
 export async function resetDatabase(prisma: PrismaService) {
   await prisma.approval.deleteMany({});
   await prisma.purchaseOrderLine.deleteMany({});
@@ -26,6 +21,8 @@ export async function resetDatabase(prisma: PrismaService) {
   await prisma.productionOrder.deleteMany({});
   await prisma.transferLine.deleteMany({});
   await prisma.transfer.deleteMany({});
+  await prisma.stocktakeLine.deleteMany({});
+  await prisma.stocktake.deleteMany({});
   await prisma.payment.deleteMany({});
   await prisma.orderLine.deleteMany({});
   await prisma.order.deleteMany({});

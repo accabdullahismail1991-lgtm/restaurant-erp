@@ -1,9 +1,10 @@
 import { IsIn, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
 
 // documentType is a free string per the schema (room for future document
-// types beyond PURCHASE_ORDER), but purchasing is the only one wired up
-// so far -- keep it constrained here until another module needs one.
-const DOCUMENT_TYPES = ['PURCHASE_ORDER'];
+// types), constrained here to the ones an actual module routes through
+// the Approval Matrix: purchase orders (Phase 5) and stocktake variances
+// (Phase 4b, docs/ARCHITECTURE.md).
+const DOCUMENT_TYPES = ['PURCHASE_ORDER', 'STOCKTAKE_ADJUSTMENT'];
 
 export class CreateApprovalRuleDto {
   @IsIn(DOCUMENT_TYPES)

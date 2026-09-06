@@ -126,6 +126,20 @@ export class InventoryService {
     }
   }
 
+  // Quantity-weighted average cost across an ingredient's currently open
+  // batches at a location -- used to value a stocktake variance (there's
+  // no single "the" cost once multiple purchase batches at different
+  // prices are on the shelf simultaneously). Returns 0 if there's no
+  // batch to derive a cost from (e.g. a stocktake "finds" stock for an
+  // ingredient that was never formally received there).
+  async averageUnitCost(locationId: string, ingredientId: string): Promise<Prisma.Decimal> {
+    const batches = await this.prisma.inventoryBatch.findMany({ where: { locationId, ingredientId, quantity: { gt: 0 } } });
+    if (!batches.length) return new Prisma.Decimal(0);
+    const totalQty = batches.reduce((sum, b) => sum.add(b.quantity), new Prisma.Decimal(0));
+    const totalCost = batches.reduce((sum, b) => sum.add(b.quantity.mul(b.unitCost)), new Prisma.Decimal(0));
+    return totalCost.div(totalQty);
+  }
+
   private async bumpBalance(db: Db, locationId: string, ingredientId: string, delta: number) {
     await db.inventoryBalance.upsert({
       where: { ingredientId_locationId: { ingredientId, locationId } },

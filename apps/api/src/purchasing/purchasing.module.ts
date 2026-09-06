@@ -12,5 +12,10 @@ import { SuppliersService } from './suppliers.service';
   imports: [AuthModule, InventoryModule],
   controllers: [SuppliersController, ApprovalRulesController, PurchaseOrdersController],
   providers: [SuppliersService, ApprovalRulesService, PurchaseOrdersService],
+  // ApprovalRulesService is the Approval Matrix engine (docs/DECISIONS.md
+  // #8) -- exported so any OTHER document type routed through the same
+  // matrix (e.g. Stocktake's STOCKTAKE_ADJUSTMENT) reuses it instead of
+  // re-deriving the tie-break logic.
+  exports: [ApprovalRulesService],
 })
 export class PurchasingModule {}

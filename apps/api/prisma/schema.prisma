@@ -315,15 +315,21 @@ model ApprovalRule {
   scopeLocationId String?  // null = ينطبق على كل المواقع
 }
 
+// عام لكل أنواع المستندات اللي تمر بمصفوفة الموافقات (القرار #8) -- ليس
+// حصريًا لأوامر الشراء، بدليل documentType أعلاه اللي يذكر
+// STOCKTAKE_ADJUSTMENT صراحة. كل مستند له حقل FK اختياري خاص به (بالضبط
+// واحد منها مربوط أيًا كان نوع المستند).
 model Approval {
   id              String   @id @default(cuid())
   purchaseOrderId String?
+  stocktakeId     String?
   approvedById    String
   decision        String   // "APPROVED" | "REJECTED"
   note            String?
   decidedAt       DateTime @default(now())
 
   purchaseOrder PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  stocktake     Stocktake?     @relation(fields: [stocktakeId], references: [id])
   approvedBy    User           @relation(fields: [approvedById], references: [id])
 }
 
@@ -376,6 +382,7 @@ model Stocktake {
 
   location Location        @relation(fields: [locationId], references: [id])
   lines    StocktakeLine[]
+  approvals Approval[]
 }
 
 model StocktakeLine {
