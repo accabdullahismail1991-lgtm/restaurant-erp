@@ -95,6 +95,11 @@
     <button id="tab-branches" class="active" onclick="switchTab('branches')">🏢 الفروع</button>
     <button id="tab-ingredients" onclick="switchTab('ingredients')">🥕 الأصناف الخام والنصف مصنّعة</button>
     <button id="tab-items" onclick="switchTab('items')">📋 أصناف المنيو</button>
+    <button id="tab-inventory" onclick="switchTab('inventory')">📦 المخزون</button>
+    <button id="tab-sales" onclick="switchTab('sales')">🧾 المبيعات</button>
+    <button id="tab-purchasing" onclick="switchTab('purchasing')">🛒 المشتريات</button>
+    <button id="tab-production" onclick="switchTab('production')">🏭 الإنتاج</button>
+    <button id="tab-transfers" onclick="switchTab('transfers')">🚚 التحويلات</button>
   </nav>
   <main>
     <div id="globalMsg" class="msg" style="margin-bottom:14px"></div>
@@ -167,12 +172,189 @@
         </div>
       </div>
     </div>
+
+    <!-- INVENTORY -->
+    <div id="view-inventory" class="view hidden">
+      <div class="panel">
+        <h2>الأرصدة الحالية</h2>
+        <div class="row-form" style="margin-top:0;margin-bottom:12px">
+          <div><label>تصفية حسب الموقع</label>
+            <select id="inv-filter-location" onchange="loadInventoryBalances()"><option value="">كل المواقع</option></select>
+          </div>
+        </div>
+        <table><thead><tr><th>الموقع</th><th>الصنف</th><th>الرصيد</th></tr></thead>
+          <tbody id="inventoryTable"></tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <h2>➕ استلام / تسوية مخزون</h2>
+        <div class="row-form">
+          <div><label>الموقع</label><select id="inv-r-location"></select></div>
+          <div><label>الصنف</label><select id="inv-r-ingredient"></select></div>
+          <div><label>الكمية</label><input id="inv-r-qty" type="number" step="0.001" placeholder="100"></div>
+          <div><label>تكلفة الوحدة</label><input id="inv-r-cost" type="number" step="0.0001" placeholder="5"></div>
+          <div><button onclick="receiveInventory()">استلام</button></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>🗑️ تسجيل تالف (Waste)</h2>
+        <div class="row-form">
+          <div><label>الموقع</label><select id="inv-w-location"></select></div>
+          <div><label>الصنف</label><select id="inv-w-ingredient"></select></div>
+          <div><label>الكمية</label><input id="inv-w-qty" type="number" step="0.001" placeholder="5"></div>
+          <div><button class="danger" onclick="recordWaste()">تسجيل تالف</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SALES -->
+    <div id="view-sales" class="view hidden">
+      <div class="panel">
+        <h2>الورديات</h2>
+        <table><thead><tr><th>الموقع</th><th>الحالة</th><th>رأس المال</th><th>المتوقع</th><th>المعدود</th><th>الفرق</th><th></th></tr></thead>
+          <tbody id="shiftsTable"></tbody>
+        </table>
+        <div class="row-form">
+          <div><label>الموقع</label><select id="sh-location"></select></div>
+          <div><label>رأس المال الافتتاحي</label><input id="sh-float" type="number" step="0.01" value="200"></div>
+          <div><button onclick="openShift()">فتح وردية</button></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>➕ طلب جديد</h2>
+        <div class="row-form">
+          <div><label>الوردية المفتوحة</label><select id="ord-shift"></select></div>
+          <div><label>القناة</label>
+            <select id="ord-channel">
+              <option value="DINE_IN">صالة</option>
+              <option value="TAKEAWAY">تيك أواي</option>
+              <option value="DRIVE_THRU">Drive-thru</option>
+              <option value="DELIVERY_PARTNER">توصيل خارجي</option>
+              <option value="BRAND_APP">تطبيق العلامة</option>
+            </select>
+          </div>
+        </div>
+        <div id="ord-lines"></div>
+        <div style="margin-top:8px;display:flex;gap:8px">
+          <button class="ghost" onclick="addOrderLineRow()">➕ صنف</button>
+          <button onclick="createOrder()">إنشاء الطلب</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>الطلبات</h2>
+        <table><thead><tr><th>الموقع</th><th>القناة</th><th>الحالة</th><th>الإجمالي</th><th></th></tr></thead>
+          <tbody id="ordersTable"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- PURCHASING -->
+    <div id="view-purchasing" class="view hidden">
+      <div class="panel">
+        <h2>الموردون</h2>
+        <table><thead><tr><th>الاسم</th><th>الجوال</th><th>النطاق</th></tr></thead>
+          <tbody id="suppliersTable"></tbody>
+        </table>
+        <div class="row-form">
+          <div><label>الاسم</label><input id="sup-name" placeholder="مورد الخضار"></div>
+          <div><label>الجوال (اختياري)</label><input id="sup-phone" placeholder="+9665..."></div>
+          <div><label>مخصص لموقع (اختياري)</label><select id="sup-location"><option value="">كل المواقع</option></select></div>
+          <div><button onclick="createSupplier()">إضافة</button></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>مصفوفة الموافقات (Approval Matrix)</h2>
+        <table><thead><tr><th>النوع</th><th>الحد الأقصى</th><th>الدور المطلوب (Role ID)</th><th>الموقع</th><th></th></tr></thead>
+          <tbody id="approvalRulesTable"></tbody>
+        </table>
+        <div class="row-form">
+          <div><label>الحد الأقصى (اتركه فارغ = بلا حد)</label><input id="rule-max" type="number" step="0.01" placeholder="5000"></div>
+          <div><label>Role ID المطلوب للاعتماد</label><input id="rule-role" placeholder="الصق معرّف الدور"></div>
+          <div><label>مخصص لموقع (اختياري)</label><select id="rule-location"><option value="">كل المواقع</option></select></div>
+          <div><button onclick="createApprovalRule()">إضافة قاعدة</button></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>➕ أمر شراء جديد</h2>
+        <div class="row-form">
+          <div><label>الموقع</label><select id="po-location"></select></div>
+          <div><label>المورد</label><select id="po-supplier"></select></div>
+        </div>
+        <div id="po-lines"></div>
+        <div style="margin-top:8px;display:flex;gap:8px">
+          <button class="ghost" onclick="addPoLineRow()">➕ مكوّن</button>
+          <button onclick="createPurchaseOrder()">إنشاء أمر الشراء</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>أوامر الشراء</h2>
+        <table><thead><tr><th>المورد</th><th>الموقع</th><th>الحالة</th><th>الإجمالي</th><th></th></tr></thead>
+          <tbody id="purchaseOrdersTable"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- PRODUCTION -->
+    <div id="view-production" class="view hidden">
+      <div class="panel">
+        <h2>➕ أمر إنتاج جديد</h2>
+        <div class="row-form">
+          <div><label>الموقع</label><select id="prod-location"></select></div>
+          <div><label>الصنف الناتج (نصف مصنّع)</label><select id="prod-output"></select></div>
+          <div><label>الكمية المطلوب إنتاجها</label><input id="prod-qty" type="number" step="0.001" placeholder="100"></div>
+          <div><label><input type="checkbox" id="prod-override" style="width:auto;display:inline" onchange="toggleProdOverride()"> تخصيص المكوّنات يدويًا</label></div>
+          <div><button onclick="createProductionOrder()">إنشاء</button></div>
+        </div>
+        <div id="prod-lines" class="hidden"></div>
+        <div id="prod-lines-actions" class="hidden" style="margin-top:8px">
+          <button class="ghost" onclick="addProdLineRow()">➕ مكوّن</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>أوامر الإنتاج</h2>
+        <table><thead><tr><th>الموقع</th><th>الصنف الناتج</th><th>الكمية</th><th>الحالة</th><th></th></tr></thead>
+          <tbody id="productionOrdersTable"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TRANSFERS -->
+    <div id="view-transfers" class="view hidden">
+      <div class="panel">
+        <h2>➕ تحويل جديد (إرسال)</h2>
+        <div class="row-form">
+          <div><label>من موقع</label><select id="tr-from"></select></div>
+          <div><label>إلى موقع</label><select id="tr-to"></select></div>
+        </div>
+        <div id="tr-lines"></div>
+        <div style="margin-top:8px;display:flex;gap:8px">
+          <button class="ghost" onclick="addTransferLineRow()">➕ مكوّن</button>
+          <button onclick="createTransfer()">إرسال التحويل</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>التحويلات</h2>
+        <table><thead><tr><th>من</th><th>إلى</th><th>الحالة</th><th></th></tr></thead>
+          <tbody id="transfersTable"></tbody>
+        </table>
+      </div>
+    </div>
   </main>
 </div>
 
 <script>
 let accessToken = null;
 let ingredientsCache = [];
+let locationsCache = [];
+let menuItemsCache = [];
+
+function locationOptions() { return locationsCache.map((l) => `<option value="${l.id}">${l.name}</option>`).join(''); }
+function ingredientOptions(filterFn) {
+  const list = filterFn ? ingredientsCache.filter(filterFn) : ingredientsCache;
+  return list.map((i) => `<option value="${i.id}">${i.name} (${i.unit})</option>`).join('');
+}
+async function ensureIngredientsCache() { if (!ingredientsCache.length) ingredientsCache = await api('/ingredients'); }
+async function ensureMenuItemsCache() { if (!menuItemsCache.length) menuItemsCache = await api('/items'); }
 
 function apiBase() { return document.getElementById('apiBase').value.trim().replace(/\/$/, ''); }
 
@@ -228,14 +410,20 @@ function doLogout(message) {
   if (message) showMsg('loginMsg', 'ℹ️ ' + message, 'err');
 }
 
+const TABS = ['branches', 'ingredients', 'items', 'inventory', 'sales', 'purchasing', 'production', 'transfers'];
 function switchTab(name) {
-  ['branches', 'ingredients', 'items'].forEach((t) => {
+  TABS.forEach((t) => {
     document.getElementById('tab-' + t).classList.toggle('active', t === name);
     document.getElementById('view-' + t).classList.toggle('hidden', t !== name);
   });
   if (name === 'branches') loadBranches();
   if (name === 'ingredients') loadIngredients();
   if (name === 'items') loadItems();
+  if (name === 'inventory') loadInventoryTab();
+  if (name === 'sales') loadSalesTab();
+  if (name === 'purchasing') loadPurchasingTab();
+  if (name === 'production') loadProductionTab();
+  if (name === 'transfers') loadTransfersTab();
 }
 
 function flashGlobal(text, kind) { showMsg('globalMsg', text, kind); }
@@ -244,6 +432,7 @@ function flashGlobal(text, kind) { showMsg('globalMsg', text, kind); }
 async function loadBranches() {
   try {
     const branches = await api('/locations');
+    locationsCache = branches;
     const typeLabel = { BRANCH: 'فرع', CENTRAL_KITCHEN: 'مطبخ مركزي', WAREHOUSE: 'مستودع' };
     document.getElementById('branchesTable').innerHTML = branches.length
       ? branches.map((b) => `<tr><td>${b.name}</td><td>${typeLabel[b.type] || b.type}</td><td>${b.address || '-'}</td><td>${b.isActive ? '✅ نشط' : '⛔ معطّل'}</td></tr>`).join('')
@@ -390,6 +579,457 @@ async function saveRecipe(parentId, parentKind) {
   try {
     await api(path, { method: 'PUT', body: JSON.stringify({ lines }) });
     flashGlobal('✅ تم حفظ الوصفة', 'ok');
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+
+/* ================= Inventory ================= */
+async function loadInventoryTab() {
+  await ensureIngredientsCache();
+  const opts = locationOptions();
+  document.getElementById('inv-r-location').innerHTML = opts;
+  document.getElementById('inv-w-location').innerHTML = opts;
+  const filterSel = document.getElementById('inv-filter-location');
+  filterSel.innerHTML = '<option value="">كل المواقع</option>' + opts;
+  document.getElementById('inv-r-ingredient').innerHTML = ingredientOptions();
+  document.getElementById('inv-w-ingredient').innerHTML = ingredientOptions();
+  loadInventoryBalances();
+}
+async function loadInventoryBalances() {
+  try {
+    const locationId = document.getElementById('inv-filter-location').value;
+    const balances = await api('/inventory/balances' + (locationId ? '?locationId=' + locationId : ''));
+    const ingName = (id) => (ingredientsCache.find((i) => i.id === id) || {}).name || id;
+    document.getElementById('inventoryTable').innerHTML = balances.length
+      ? balances.map((b) => `<tr><td>${(b.location || {}).name || '-'}</td><td>${ingName(b.ingredientId)}</td><td>${Number(b.quantity)}</td></tr>`).join('')
+      : `<tr><td colspan="3" class="empty">لا توجد أرصدة بعد</td></tr>`;
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function receiveInventory() {
+  const locationId = document.getElementById('inv-r-location').value;
+  const ingredientId = document.getElementById('inv-r-ingredient').value;
+  const quantity = parseFloat(document.getElementById('inv-r-qty').value);
+  const unitCost = parseFloat(document.getElementById('inv-r-cost').value);
+  if (!locationId || !ingredientId || !quantity || !unitCost) { flashGlobal('⚠️ اكمل كل الحقول', 'err'); return; }
+  try {
+    await api('/inventory/adjustments', { method: 'POST', body: JSON.stringify({ locationId, ingredientId, quantity, unitCost }) });
+    flashGlobal('✅ تم الاستلام', 'ok');
+    document.getElementById('inv-r-qty').value = ''; document.getElementById('inv-r-cost').value = '';
+    loadInventoryBalances();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function recordWaste() {
+  const locationId = document.getElementById('inv-w-location').value;
+  const ingredientId = document.getElementById('inv-w-ingredient').value;
+  const quantity = parseFloat(document.getElementById('inv-w-qty').value);
+  if (!locationId || !ingredientId || !quantity) { flashGlobal('⚠️ اكمل كل الحقول', 'err'); return; }
+  try {
+    await api('/inventory/waste', { method: 'POST', body: JSON.stringify({ locationId, ingredientId, quantity }) });
+    flashGlobal('✅ تم تسجيل التالف', 'ok');
+    document.getElementById('inv-w-qty').value = '';
+    loadInventoryBalances();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+
+/* ================= Sales ================= */
+async function loadSalesTab() {
+  await ensureMenuItemsCache();
+  document.getElementById('sh-location').innerHTML = locationOptions();
+  await loadShifts();
+  await loadOrders();
+}
+let shiftsCache = [];
+async function loadShifts() {
+  try {
+    const shifts = await api('/shifts');
+    shiftsCache = shifts;
+    const locName = (id) => (locationsCache.find((l) => l.id === id) || {}).name || id;
+    document.getElementById('shiftsTable').innerHTML = shifts.length
+      ? shifts.map((s) => `
+        <tr>
+          <td>${locName(s.locationId)}</td>
+          <td>${s.closedAt ? '⛔ مغلقة' : '✅ مفتوحة'}</td>
+          <td>${Number(s.openingFloat).toFixed(2)}</td>
+          <td>${s.expectedCash != null ? Number(s.expectedCash).toFixed(2) : '-'}</td>
+          <td>${s.closingCounted != null ? Number(s.closingCounted).toFixed(2) : '-'}</td>
+          <td>${s.variance != null ? Number(s.variance).toFixed(2) : '-'}</td>
+          <td>${s.closedAt ? '' : `<button class="link-btn" onclick="closeShiftPrompt('${s.id}')">إغلاق</button>`}</td>
+        </tr>
+      `).join('')
+      : `<tr><td colspan="7" class="empty">لا توجد ورديات بعد</td></tr>`;
+    const openShifts = shifts.filter((s) => !s.closedAt);
+    document.getElementById('ord-shift').innerHTML = openShifts.length
+      ? openShifts.map((s) => `<option value="${s.id}">${locName(s.locationId)} -- ${s.id.slice(-6)}</option>`).join('')
+      : '<option value="">لا توجد وردية مفتوحة</option>';
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function openShift() {
+  const locationId = document.getElementById('sh-location').value;
+  const openingFloat = parseFloat(document.getElementById('sh-float').value);
+  if (!locationId || isNaN(openingFloat)) { flashGlobal('⚠️ اختر الموقع واكتب رأس المال', 'err'); return; }
+  try {
+    await api('/shifts', { method: 'POST', body: JSON.stringify({ locationId, openingFloat }) });
+    flashGlobal('✅ تم فتح الوردية', 'ok');
+    loadShifts();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function closeShiftPrompt(id) {
+  const closingCounted = parseFloat(window.prompt('المبلغ المعدود فعليًا في الدرج؟'));
+  if (isNaN(closingCounted)) return;
+  try {
+    await api(`/shifts/${id}/close`, { method: 'POST', body: JSON.stringify({ closingCounted }) });
+    flashGlobal('✅ تم إغلاق الوردية', 'ok');
+    loadShifts();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+function addOrderLineRow() {
+  const container = document.getElementById('ord-lines');
+  const div = document.createElement('div');
+  div.className = 'recipe-row';
+  div.innerHTML = `<select class="ol-item">${menuItemsCache.map((m) => `<option value="${m.id}">${m.name} (${Number(m.price).toFixed(2)})</option>`).join('')}</select>
+    <input class="ol-qty" type="number" min="1" step="1" value="1" placeholder="الكمية">
+    <button class="link-btn" onclick="this.closest('.recipe-row').remove()">✕</button>`;
+  container.appendChild(div);
+}
+async function createOrder() {
+  const shiftId = document.getElementById('ord-shift').value;
+  const channel = document.getElementById('ord-channel').value;
+  const container = document.getElementById('ord-lines');
+  const lines = Array.from(container.querySelectorAll('.recipe-row')).map((row) => ({
+    menuItemId: row.querySelector('.ol-item').value,
+    quantity: parseInt(row.querySelector('.ol-qty').value, 10),
+  })).filter((l) => l.menuItemId && l.quantity > 0);
+  if (!shiftId) { flashGlobal('⚠️ افتح وردية أولًا', 'err'); return; }
+  if (!lines.length) { flashGlobal('⚠️ أضف صنف واحد على الأقل', 'err'); return; }
+  try {
+    const shift = shiftsCache.find((s) => s.id === shiftId);
+    await api('/orders', { method: 'POST', body: JSON.stringify({ locationId: shift.locationId, shiftId, channel, lines }) });
+    container.innerHTML = '';
+    flashGlobal('✅ تم إنشاء الطلب', 'ok');
+    loadOrders(); loadShifts();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function loadOrders() {
+  try {
+    const orders = await api('/orders');
+    const locName = (id) => (locationsCache.find((l) => l.id === id) || {}).name || id;
+    const channelLabel = { DINE_IN: 'صالة', TAKEAWAY: 'تيك أواي', DRIVE_THRU: 'Drive-thru', DELIVERY_PARTNER: 'توصيل خارجي', BRAND_APP: 'تطبيق' };
+    document.getElementById('ordersTable').innerHTML = orders.length
+      ? orders.map((o) => `
+        <tr>
+          <td>${locName(o.locationId)}</td><td>${channelLabel[o.channel] || o.channel}</td><td>${o.status}</td>
+          <td>${Number(o.grandTotal).toFixed(2)}</td>
+          <td>
+            ${o.status === 'SENT_TO_KITCHEN' ? `<button class="link-btn" onclick="payOrderCash('${o.id}', ${o.grandTotal})">💵 دفع كاش</button> <button class="link-btn" onclick="voidOrder('${o.id}')">إلغاء</button>` : ''}
+          </td>
+        </tr>
+      `).join('')
+      : `<tr><td colspan="5" class="empty">لا توجد طلبات بعد</td></tr>`;
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function payOrderCash(id, amount) {
+  try {
+    await api(`/orders/${id}/pay`, { method: 'POST', body: JSON.stringify({ payments: [{ method: 'CASH', mode: 'MANUAL', amount }] }) });
+    flashGlobal('✅ تم الدفع', 'ok');
+    loadOrders();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function voidOrder(id) {
+  try {
+    await api(`/orders/${id}/void`, { method: 'POST' });
+    flashGlobal('✅ تم إلغاء الطلب', 'ok');
+    loadOrders();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+
+/* ================= Purchasing ================= */
+async function loadPurchasingTab() {
+  await ensureIngredientsCache();
+  const opts = locationOptions();
+  document.getElementById('po-location').innerHTML = opts;
+  document.getElementById('sup-location').innerHTML = '<option value="">كل المواقع</option>' + opts;
+  document.getElementById('rule-location').innerHTML = '<option value="">كل المواقع</option>' + opts;
+  await loadSuppliers();
+  await loadApprovalRules();
+  await loadPurchaseOrders();
+}
+async function loadSuppliers() {
+  try {
+    const suppliers = await api('/suppliers');
+    const locName = (id) => (locationsCache.find((l) => l.id === id) || {}).name || id;
+    document.getElementById('suppliersTable').innerHTML = suppliers.length
+      ? suppliers.map((s) => `<tr><td>${s.name}</td><td>${s.phone || '-'}</td><td>${s.scopeLocationId ? locName(s.scopeLocationId) : 'كل المواقع'}</td></tr>`).join('')
+      : `<tr><td colspan="3" class="empty">لا يوجد موردون بعد</td></tr>`;
+    document.getElementById('po-supplier').innerHTML = suppliers.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function createSupplier() {
+  const name = document.getElementById('sup-name').value.trim();
+  const phone = document.getElementById('sup-phone').value.trim();
+  const scopeLocationId = document.getElementById('sup-location').value;
+  if (!name) { flashGlobal('⚠️ اكتب اسم المورد', 'err'); return; }
+  try {
+    const body = { name };
+    if (phone) body.phone = phone;
+    if (scopeLocationId) body.scopeLocationId = scopeLocationId;
+    await api('/suppliers', { method: 'POST', body: JSON.stringify(body) });
+    document.getElementById('sup-name').value = ''; document.getElementById('sup-phone').value = '';
+    flashGlobal('✅ تمت إضافة المورد', 'ok');
+    loadSuppliers();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function loadApprovalRules() {
+  try {
+    const rules = await api('/approval-rules');
+    const locName = (id) => (locationsCache.find((l) => l.id === id) || {}).name || id;
+    document.getElementById('approvalRulesTable').innerHTML = rules.length
+      ? rules.map((r) => `
+        <tr>
+          <td>${r.documentType}</td><td>${r.maxAmount != null ? Number(r.maxAmount).toFixed(2) : 'بلا حد'}</td>
+          <td style="font-size:11px">${r.requiredRoleId}</td>
+          <td>${r.scopeLocationId ? locName(r.scopeLocationId) : 'كل المواقع'}</td>
+          <td><button class="link-btn" onclick="deleteApprovalRule('${r.id}')">حذف</button></td>
+        </tr>
+      `).join('')
+      : `<tr><td colspan="5" class="empty">لا توجد قواعد بعد -- كل أمر شراء يُعتمد تلقائيًا</td></tr>`;
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function createApprovalRule() {
+  const maxAmountRaw = document.getElementById('rule-max').value;
+  const requiredRoleId = document.getElementById('rule-role').value.trim();
+  const scopeLocationId = document.getElementById('rule-location').value;
+  if (!requiredRoleId) { flashGlobal('⚠️ اكتب Role ID', 'err'); return; }
+  try {
+    const body = { documentType: 'PURCHASE_ORDER', requiredRoleId };
+    if (maxAmountRaw) body.maxAmount = parseFloat(maxAmountRaw);
+    if (scopeLocationId) body.scopeLocationId = scopeLocationId;
+    await api('/approval-rules', { method: 'POST', body: JSON.stringify(body) });
+    document.getElementById('rule-max').value = ''; document.getElementById('rule-role').value = '';
+    flashGlobal('✅ تمت إضافة القاعدة', 'ok');
+    loadApprovalRules();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function deleteApprovalRule(id) {
+  try {
+    await api('/approval-rules/' + id, { method: 'DELETE' });
+    flashGlobal('✅ تم حذف القاعدة', 'ok');
+    loadApprovalRules();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+function addPoLineRow() {
+  const container = document.getElementById('po-lines');
+  const div = document.createElement('div');
+  div.className = 'recipe-row';
+  div.innerHTML = `<select class="po-ing">${ingredientOptions()}</select>
+    <input class="po-qty" type="number" step="0.001" placeholder="الكمية">
+    <input class="po-cost" type="number" step="0.0001" placeholder="تكلفة الوحدة">
+    <button class="link-btn" onclick="this.closest('.recipe-row').remove()">✕</button>`;
+  container.appendChild(div);
+}
+async function createPurchaseOrder() {
+  const locationId = document.getElementById('po-location').value;
+  const supplierId = document.getElementById('po-supplier').value;
+  const container = document.getElementById('po-lines');
+  const lines = Array.from(container.querySelectorAll('.recipe-row')).map((row) => ({
+    ingredientId: row.querySelector('.po-ing').value,
+    quantity: parseFloat(row.querySelector('.po-qty').value),
+    unitCost: parseFloat(row.querySelector('.po-cost').value),
+  })).filter((l) => l.ingredientId && l.quantity > 0 && l.unitCost > 0);
+  if (!locationId || !supplierId) { flashGlobal('⚠️ اختر الموقع والمورد', 'err'); return; }
+  if (!lines.length) { flashGlobal('⚠️ أضف مكوّن واحد على الأقل بكمية وتكلفة', 'err'); return; }
+  try {
+    await api('/purchase-orders', { method: 'POST', body: JSON.stringify({ locationId, supplierId, lines }) });
+    container.innerHTML = '';
+    flashGlobal('✅ تم إنشاء أمر الشراء (مسودة)', 'ok');
+    loadPurchaseOrders();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function loadPurchaseOrders() {
+  try {
+    const pos = await api('/purchase-orders');
+    const suppliers = await api('/suppliers');
+    const locName = (id) => (locationsCache.find((l) => l.id === id) || {}).name || id;
+    const supName = (id) => (suppliers.find((s) => s.id === id) || {}).name || id;
+    const actionsFor = (po) => {
+      const btns = [];
+      if (po.status === 'DRAFT') btns.push(`<button class="link-btn" onclick="submitPO('${po.id}')">تقديم</button>`);
+      if (po.status === 'PENDING_APPROVAL') {
+        btns.push(`<button class="link-btn" onclick="approvePO('${po.id}')">اعتماد</button>`);
+        btns.push(`<button class="link-btn" onclick="rejectPO('${po.id}')">رفض</button>`);
+      }
+      if (po.status === 'APPROVED') btns.push(`<button class="link-btn" onclick="sendPO('${po.id}')">إرسال للمورد</button>`);
+      if (po.status === 'APPROVED' || po.status === 'SENT_TO_SUPPLIER') btns.push(`<button class="link-btn" onclick="receivePO('${po.id}')">استلام</button>`);
+      if (!['RECEIVED', 'CANCELLED'].includes(po.status)) btns.push(`<button class="link-btn" onclick="cancelPO('${po.id}')">إلغاء</button>`);
+      return btns.join(' ');
+    };
+    document.getElementById('purchaseOrdersTable').innerHTML = pos.length
+      ? pos.map((po) => `<tr><td>${supName(po.supplierId)}</td><td>${locName(po.locationId)}</td><td>${po.status}</td><td>${Number(po.totalAmount).toFixed(2)}</td><td>${actionsFor(po)}</td></tr>`).join('')
+      : `<tr><td colspan="5" class="empty">لا توجد أوامر شراء بعد</td></tr>`;
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function poAction(id, action, method) {
+  try {
+    await api(`/purchase-orders/${id}/${action}`, { method: method || 'POST' });
+    flashGlobal('✅ تم', 'ok');
+    loadPurchaseOrders(); loadInventoryBalances();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+function submitPO(id) { poAction(id, 'submit'); }
+function approvePO(id) { poAction(id, 'approve'); }
+function rejectPO(id) { poAction(id, 'reject'); }
+function sendPO(id) { poAction(id, 'send'); }
+function receivePO(id) { poAction(id, 'receive'); }
+function cancelPO(id) { poAction(id, 'cancel'); }
+
+/* ================= Production ================= */
+async function loadProductionTab() {
+  await ensureIngredientsCache();
+  document.getElementById('prod-location').innerHTML = locationOptions();
+  document.getElementById('prod-output').innerHTML = ingredientOptions((i) => i.kind === 'SEMI_FINISHED');
+  await loadProductionOrders();
+}
+function toggleProdOverride() {
+  const on = document.getElementById('prod-override').checked;
+  document.getElementById('prod-lines').classList.toggle('hidden', !on);
+  document.getElementById('prod-lines-actions').classList.toggle('hidden', !on);
+}
+function addProdLineRow() {
+  const container = document.getElementById('prod-lines');
+  const div = document.createElement('div');
+  div.className = 'recipe-row';
+  div.innerHTML = `<select class="pr-ing">${ingredientOptions()}</select>
+    <input class="pr-qty" type="number" step="0.001" placeholder="الكمية">
+    <button class="link-btn" onclick="this.closest('.recipe-row').remove()">✕</button>`;
+  container.appendChild(div);
+}
+async function createProductionOrder() {
+  const locationId = document.getElementById('prod-location').value;
+  const outputIngredientId = document.getElementById('prod-output').value;
+  const outputQuantity = parseFloat(document.getElementById('prod-qty').value);
+  if (!locationId || !outputIngredientId || !outputQuantity) { flashGlobal('⚠️ اكمل كل الحقول', 'err'); return; }
+  const body = { locationId, outputIngredientId, outputQuantity };
+  if (document.getElementById('prod-override').checked) {
+    const container = document.getElementById('prod-lines');
+    body.lines = Array.from(container.querySelectorAll('.recipe-row')).map((row) => ({
+      ingredientId: row.querySelector('.pr-ing').value,
+      quantity: parseFloat(row.querySelector('.pr-qty').value),
+    })).filter((l) => l.ingredientId && l.quantity > 0);
+    if (!body.lines.length) { flashGlobal('⚠️ أضف مكوّن واحد على الأقل', 'err'); return; }
+  }
+  try {
+    await api('/production-orders', { method: 'POST', body: JSON.stringify(body) });
+    document.getElementById('prod-qty').value = '';
+    flashGlobal('✅ تم إنشاء أمر الإنتاج', 'ok');
+    loadProductionOrders();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function loadProductionOrders() {
+  try {
+    const orders = await api('/production-orders');
+    const locName = (id) => (locationsCache.find((l) => l.id === id) || {}).name || id;
+    const ingName = (id) => (ingredientsCache.find((i) => i.id === id) || {}).name || id;
+    const actionsFor = (o) => {
+      const btns = [];
+      if (o.status === 'PLANNED') btns.push(`<button class="link-btn" onclick="startProd('${o.id}')">بدء</button>`);
+      if (o.status === 'IN_PROGRESS') btns.push(`<button class="link-btn" onclick="completeProd('${o.id}')">اكتمال</button>`);
+      if (!['COMPLETED', 'CANCELLED'].includes(o.status)) btns.push(`<button class="link-btn" onclick="cancelProd('${o.id}')">إلغاء</button>`);
+      return btns.join(' ');
+    };
+    document.getElementById('productionOrdersTable').innerHTML = orders.length
+      ? orders.map((o) => `<tr><td>${locName(o.locationId)}</td><td>${ingName(o.outputIngredientId)}</td><td>${Number(o.outputQuantity)}</td><td>${o.status}</td><td>${actionsFor(o)}</td></tr>`).join('')
+      : `<tr><td colspan="5" class="empty">لا توجد أوامر إنتاج بعد</td></tr>`;
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function prodAction(id, action) {
+  try {
+    await api(`/production-orders/${id}/${action}`, { method: 'POST' });
+    flashGlobal('✅ تم', 'ok');
+    loadProductionOrders(); loadInventoryBalances();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+function startProd(id) { prodAction(id, 'start'); }
+function completeProd(id) { prodAction(id, 'complete'); }
+function cancelProd(id) { prodAction(id, 'cancel'); }
+
+/* ================= Transfers ================= */
+let transfersCache = [];
+async function loadTransfersTab() {
+  await ensureIngredientsCache();
+  const opts = locationOptions();
+  document.getElementById('tr-from').innerHTML = opts;
+  document.getElementById('tr-to').innerHTML = opts;
+  await loadTransfers();
+}
+function addTransferLineRow() {
+  const container = document.getElementById('tr-lines');
+  const div = document.createElement('div');
+  div.className = 'recipe-row';
+  div.innerHTML = `<select class="tl-ing">${ingredientOptions()}</select>
+    <input class="tl-qty" type="number" step="0.001" placeholder="الكمية">
+    <button class="link-btn" onclick="this.closest('.recipe-row').remove()">✕</button>`;
+  container.appendChild(div);
+}
+async function createTransfer() {
+  const fromLocationId = document.getElementById('tr-from').value;
+  const toLocationId = document.getElementById('tr-to').value;
+  const container = document.getElementById('tr-lines');
+  const lines = Array.from(container.querySelectorAll('.recipe-row')).map((row) => ({
+    ingredientId: row.querySelector('.tl-ing').value,
+    quantity: parseFloat(row.querySelector('.tl-qty').value),
+  })).filter((l) => l.ingredientId && l.quantity > 0);
+  if (!fromLocationId || !toLocationId) { flashGlobal('⚠️ اختر موقعي المصدر والوجهة', 'err'); return; }
+  if (!lines.length) { flashGlobal('⚠️ أضف مكوّن واحد على الأقل', 'err'); return; }
+  try {
+    await api('/transfers', { method: 'POST', body: JSON.stringify({ fromLocationId, toLocationId, lines }) });
+    container.innerHTML = '';
+    flashGlobal('✅ تم إرسال التحويل', 'ok');
+    loadTransfers(); loadInventoryBalances();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function loadTransfers() {
+  try {
+    transfersCache = await api('/transfers');
+    const locName = (id) => (locationsCache.find((l) => l.id === id) || {}).name || id;
+    document.getElementById('transfersTable').innerHTML = transfersCache.length
+      ? transfersCache.map((t) => `
+        <tr>
+          <td>${locName(t.fromLocationId)}</td><td>${locName(t.toLocationId)}</td><td>${t.status}</td>
+          <td>${t.status === 'DISPATCHED' ? `<button class="link-btn" onclick="toggleTransferReceive('${t.id}')">📥 استلام</button>` : ''}</td>
+        </tr>
+        ${t.status === 'DISPATCHED' ? `<tr id="tr-receive-row-${t.id}" class="hidden"><td colspan="4"><div class="recipe-box" id="tr-receive-box-${t.id}"></div></td></tr>` : ''}
+      `).join('')
+      : `<tr><td colspan="4" class="empty">لا توجد تحويلات بعد</td></tr>`;
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+function toggleTransferReceive(id) {
+  const row = document.getElementById('tr-receive-row-' + id);
+  const box = document.getElementById('tr-receive-box-' + id);
+  const opening = row.classList.contains('hidden');
+  row.classList.toggle('hidden');
+  if (!opening) return;
+  const transfer = transfersCache.find((t) => t.id === id);
+  const ingName = (ingId) => (ingredientsCache.find((i) => i.id === ingId) || {}).name || ingId;
+  box.innerHTML = `
+    <div id="tr-receive-rows-${id}">
+      ${transfer.lines.map((l) => `
+        <div class="recipe-row" data-ingredient-id="${l.ingredientId}">
+          <span style="flex:2">${ingName(l.ingredientId)} (أُرسل: ${Number(l.quantitySent)})</span>
+          <input class="tr-recv-qty" type="number" step="0.001" value="${Number(l.quantitySent)}" style="flex:1">
+        </div>
+      `).join('')}
+    </div>
+    <div style="margin-top:8px"><button onclick="confirmTransferReceive('${id}')">✅ تأكيد الاستلام</button></div>
+  `;
+}
+async function confirmTransferReceive(id) {
+  const container = document.getElementById('tr-receive-rows-' + id);
+  const lines = Array.from(container.querySelectorAll('.recipe-row')).map((row) => ({
+    ingredientId: row.dataset.ingredientId,
+    quantityReceived: parseFloat(row.querySelector('.tr-recv-qty').value),
+  }));
+  try {
+    await api(`/transfers/${id}/receive`, { method: 'POST', body: JSON.stringify({ lines }) });
+    flashGlobal('✅ تم استلام التحويل', 'ok');
+    loadTransfers(); loadInventoryBalances();
   } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
 }
 </script>
