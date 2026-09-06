@@ -28,6 +28,18 @@ describe('Phase 1: auth + RBAC + users + branches (e2e)', () => {
     // Clean slate: this suite owns its rows, identified by the +9665000
     // test-phone prefix, so re-runs don't accumulate duplicate seed data
     // or collide with anything a developer seeded manually in this DB.
+    // This suite runs first (alphabetically), so it also defensively
+    // clears anything the Sales/Inventory suite (test/sales.e2e-spec.ts)
+    // may have left behind referencing these same users/locations from an
+    // interrupted previous run -- otherwise the FK constraints those
+    // Phase 3+4 tables added would break THIS suite's own cleanup.
+    await prisma.payment.deleteMany({});
+    await prisma.orderLine.deleteMany({});
+    await prisma.order.deleteMany({});
+    await prisma.shift.deleteMany({});
+    await prisma.stockMovement.deleteMany({});
+    await prisma.inventoryBatch.deleteMany({});
+    await prisma.inventoryBalance.deleteMany({});
     await prisma.userRole.deleteMany({});
     await prisma.userLocationScope.deleteMany({});
     await prisma.rolePermission.deleteMany({});

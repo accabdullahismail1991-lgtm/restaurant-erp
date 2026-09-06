@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { scopedLocationIds } from '../common/location-scope.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLocationDto } from './dto/create-location.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
@@ -11,19 +12,8 @@ export class BranchesService {
     return this.prisma.location.create({ data: dto });
   }
 
-  // A user with ZERO UserLocationScope rows is org-level scoped (per
-  // docs/DECISIONS.md #16: scope can be branch/region/org) -- they see
-  // every location. A user WITH scope rows sees only those locations.
-  // This is the pattern every future module's list endpoint should
-  // follow for its own location-scoped resource.
-  private async scopedLocationIds(userId: string): Promise<string[] | null> {
-    const scopes = await this.prisma.userLocationScope.findMany({ where: { userId }, select: { locationId: true } });
-    if (scopes.length === 0) return null; // null = unrestricted
-    return scopes.map((s) => s.locationId);
-  }
-
   async findAll(userId: string) {
-    const allowedIds = await this.scopedLocationIds(userId);
+    const allowedIds = await scopedLocationIds(this.prisma, userId);
     return this.prisma.location.findMany({
       where: allowedIds ? { id: { in: allowedIds } } : undefined,
       orderBy: { name: 'asc' },
@@ -31,7 +21,7 @@ export class BranchesService {
   }
 
   async findOne(id: string, userId: string) {
-    const allowedIds = await this.scopedLocationIds(userId);
+    const allowedIds = await scopedLocationIds(this.prisma, userId);
     if (allowedIds && !allowedIds.includes(id)) {
       throw new NotFoundException('الموقع غير موجود أو خارج نطاق صلاحيتك');
     }

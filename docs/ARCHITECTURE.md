@@ -69,9 +69,9 @@
 | 0 | ✅ إعداد البيئة | Docker Compose (Postgres) + NestJS + Prisma migrate أولي |
 | 1 | ✅ Users/RBAC + Branches | تسجيل دخول، أدوار، وربط كل بيانات لاحقة بـ Scope -- مبني ومُختبر (`apps/api/test/app.e2e-spec.ts`, 15 اختبار) |
 | 2 | ✅ Ingredients + Items + Recipes | BOM متعدد المستويات فعليًا (صنف نصف مصنّع له وصفته الخاصة، تُستخدم كمكوّن في صنف منيو) + منع الدورات (Cycle) -- مبني ومُختبر (`apps/api/test/recipes.e2e-spec.ts`, 8 اختبارات) |
-| 3 | ⬜ Sales (كاشير أونلاين فقط أولًا) (التالي) | البيع يخصم المخزون بذرية (transaction)، بدون Offline بعد |
-| 4 | Inventory + Stocktake | أرصدة دقيقة + جرد دوري وتسويات |
-| 5 | Purchasing + Approval Matrix | PO كامل مع مسار موافقة |
+| 3 | ✅ Sales (كاشير أونلاين فقط أولًا) | البيع يخصم المخزون بذرية (transaction)، بدون Offline بعد -- مبني ومُختبر |
+| 4 | ✅ Inventory (دفعات/حركات/أرصدة) — ⬜ Stocktake لسه | أرصدة دقيقة عبر FIFO + استلام/تسوية/تالف -- مبني ومُختبر؛ الجرد الدوري (Stocktake model موجود بالمخطط) لسه بلا منطق/Endpoints |
+| 5 | ⬜ Purchasing + Approval Matrix (التالي) | PO كامل مع مسار موافقة، ينتهي باستلام يُنشئ InventoryBatch عبر InventoryService.receive الموجودة |
 | 6 | Production Orders (multi-level BOM) | منتجات نصف مصنّعة + مطبخ مركزي |
 | 7 | Transfers | تحويلات بين المواقع مع تسجيل فاقد النقل |
 | 8 | Offline-first | تحويل الـ POS لـ PWA بـ IndexedDB + Sync Queue |
