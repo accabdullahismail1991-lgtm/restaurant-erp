@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Restaurant ERP — لوحة التحكم</title>
+<!-- Vendored locally (not loaded from a CDN) so the app's own offline
+     support doesn't itself depend on reaching the internet the very
+     first time it's opened -- some of the environments this is meant to
+     work offline in (a restaurant's back office, a factory floor) may
+     block arbitrary external hosts entirely. -->
+<script src="./dexie.min.js"></script>
 <style>
   :root{
     --ink:#1a2030; --muted:#68748a; --border:#e3e6ee; --bg:#f2f3f8; --card:#ffffff;
@@ -101,6 +107,7 @@
       <button class="ghost" style="background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.4)" onclick="doLogout()">خروج</button>
     </div>
   </header>
+  <div id="offlineBanner" class="msg" style="display:none;margin:12px 20px 0"></div>
   <nav>
     <button id="tab-branches" class="active" onclick="switchTab('branches')">🏢 الفروع</button>
     <button id="tab-ingredients" onclick="switchTab('ingredients')">🥕 الأصناف الخام والنصف مصنّعة</button>
@@ -492,6 +499,15 @@ let ingredientsCache = [];
 let locationsCache = [];
 let menuItemsCache = [];
 
+// App-shell caching only (see service-worker.js) -- requires a secure
+// context (https or localhost), same browser restriction Service Workers
+// always have; silently does nothing under file:// or plain http.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./service-worker.js').catch(() => { /* not a secure context -- app still works fully online */ });
+  });
+}
+
 const UNIT_OPTIONS = [
   { value: 'g', label: 'جرام (g)' },
   { value: 'kg', label: 'كجم (kg)' },
@@ -512,18 +528,141 @@ async function ensureMenuItemsCache() { if (!menuItemsCache.length) menuItemsCac
 
 function apiBase() { return document.getElementById('apiBase').value.trim().replace(/\/$/, ''); }
 
+// ---------------- Offline support ----------------
+// Unlike apps/pos-web's offline layer (a bespoke LocalOrder queue for one
+// well-understood action: sell/pay/void an order), this admin panel spans
+// ten unrelated domains with dozens of mutating endpoints -- a bespoke
+// queue entry type per action isn't practical here. Instead this is a
+// GENERIC request-replay queue (method+path+body, whatever they are) that
+// every existing load*/create*/update*/delete* function gets for free by
+// going through api(), with no per-function changes anywhere else in this
+// file. Same core distinction as pos-web's isNetworkError though: fetch()
+// rejects with a TypeError specifically when the request never reached a
+// server (offline/DNS/connection-refused) -- a real 4xx/5xx means the
+// server WAS reached and must never be queued (e.g. a genuine validation
+// error shouldn't silently retry forever).
+const offlineDb = new Dexie('restaurant_erp_admin_offline_v1');
+offlineDb.version(1).stores({ cache: 'key', queue: '++id, ts' });
+
+function isNetworkError(e) { return e instanceof TypeError; }
+
+async function updateOfflineBanner() {
+  const el = document.getElementById('offlineBanner');
+  if (!el) return;
+  const pending = await offlineDb.queue.count();
+  if (!navigator.onLine) {
+    el.className = 'msg err';
+    el.style.display = 'block';
+    el.textContent = '🔌 غير متصل بالإنترنت -- البيانات المعروضة من آخر نسخة محفوظة محليًا'
+      + (pending ? `، و${pending} عملية بانتظار المزامنة عند عودة الاتصال` : '');
+  } else if (pending) {
+    el.className = 'msg ok';
+    el.style.display = 'block';
+    el.textContent = `🔄 جارٍ مزامنة ${pending} عملية كانت معلّقة أثناء انقطاع الاتصال...`;
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+// Replays every queued mutation in the order it was made -- exactly as if
+// the user had been online the whole time -- stopping at the first REAL
+// network failure (still offline) so ordering is preserved for the next
+// attempt. A real server rejection once back online (e.g. the underlying
+// resource changed or was deleted meanwhile) is not silently retried
+// forever: it's dropped and surfaced via the global banner for a human to
+// review and redo, same "don't guess a business decision" principle
+// pos-web's syncEngine documents for its own sync_failed state.
+let syncingQueue = false;
+async function replayOfflineQueue() {
+  if (syncingQueue || !navigator.onLine) return;
+  syncingQueue = true;
+  try {
+    const items = await offlineDb.queue.orderBy('ts').toArray();
+    for (const item of items) {
+      try {
+        const res = await fetch(apiBase() + item.path, {
+          method: item.method,
+          headers: Object.assign({ 'Content-Type': 'application/json' }, accessToken ? { Authorization: 'Bearer ' + accessToken } : {}),
+          body: item.body,
+        });
+        if (!res.ok) {
+          let msg = 'HTTP ' + res.status;
+          try { const j = await res.json(); if (j && j.message) msg = Array.isArray(j.message) ? j.message.join('، ') : j.message; } catch (e) { /* no body */ }
+          await offlineDb.queue.delete(item.id);
+          flashGlobal('⚠️ فشلت عملية كانت بانتظار المزامنة ولم تُطبَّق (' + item.method + ' ' + item.path + '): ' + msg, 'err');
+          continue;
+        }
+        await offlineDb.queue.delete(item.id);
+      } catch (e) {
+        if (isNetworkError(e)) return; // offline again -- stop, next 'online'/interval retries the rest
+        throw e;
+      }
+    }
+  } finally {
+    syncingQueue = false;
+    await updateOfflineBanner();
+    // Refresh whatever tab is currently open so anything that just synced
+    // actually shows up instead of only appearing after a manual reload.
+    const activeTab = TABS.find((t) => !document.getElementById('view-' + t).classList.contains('hidden'));
+    if (activeTab) switchTab(activeTab);
+  }
+}
+window.addEventListener('online', () => { updateOfflineBanner(); replayOfflineQueue(); });
+window.addEventListener('offline', updateOfflineBanner);
+setInterval(replayOfflineQueue, 20000); // safety net, same cadence as pos-web's syncEngine
+
 async function api(path, options) {
   options = options || {};
+  const method = (options.method || 'GET').toUpperCase();
   options.headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers || {});
   if (accessToken) options.headers['Authorization'] = 'Bearer ' + accessToken;
-  const res = await fetch(apiBase() + path, options);
-  let data = null;
-  try { data = await res.json(); } catch (e) { /* empty body */ }
-  if (!res.ok) {
-    if (res.status === 401) { doLogout('انتهت صلاحية الجلسة، سجّل الدخول تاني'); }
-    throw new Error((data && data.message) ? (Array.isArray(data.message) ? data.message.join('، ') : data.message) : ('HTTP ' + res.status));
+
+  if (method === 'GET') {
+    try {
+      const res = await fetch(apiBase() + path, options);
+      let data = null;
+      try { data = await res.json(); } catch (e) { /* empty body */ }
+      if (!res.ok) {
+        if (res.status === 401) { doLogout('انتهت صلاحية الجلسة، سجّل الدخول تاني'); }
+        throw new Error((data && data.message) ? (Array.isArray(data.message) ? data.message.join('، ') : data.message) : ('HTTP ' + res.status));
+      }
+      await offlineDb.cache.put({ key: path, data, cachedAt: new Date().toISOString() });
+      return data;
+    } catch (e) {
+      if (isNetworkError(e)) {
+        const cached = await offlineDb.cache.get(path);
+        if (cached) { updateOfflineBanner(); return cached.data; }
+      }
+      throw e;
+    }
   }
-  return data;
+
+  try {
+    const res = await fetch(apiBase() + path, options);
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* empty body */ }
+    if (!res.ok) {
+      if (res.status === 401) { doLogout('انتهت صلاحية الجلسة، سجّل الدخول تاني'); }
+      throw new Error((data && data.message) ? (Array.isArray(data.message) ? data.message.join('، ') : data.message) : ('HTTP ' + res.status));
+    }
+    return data;
+  } catch (e) {
+    if (isNetworkError(e)) {
+      await offlineDb.queue.add({ method, path, body: options.body || null, ts: Date.now() });
+      await updateOfflineBanner();
+      // Every existing call site already wraps its api() call in
+      // try/catch and shows e.message via flashGlobal/showMsg -- reusing
+      // that exact path here (rather than a fake success return every
+      // caller would need special-casing for) is what lets every existing
+      // create*/update*/delete* function gain offline queueing for free,
+      // with zero changes to any of them. The form/list simply doesn't
+      // update until the real sync completes -- an intentional, honest
+      // scope boundary rather than a generic optimistic-merge this
+      // request shape can't support safely across ten unrelated domains.
+      throw new Error('لا يوجد اتصال بالإنترنت -- تم حفظ هذه العملية محليًا وستُطبَّق تلقائيًا عند عودة الاتصال.');
+    }
+    throw e;
+  }
 }
 
 function showMsg(id, text, kind) {
@@ -549,6 +688,7 @@ async function doLogin() {
     document.getElementById('whoAmI').textContent = phone;
     document.getElementById('loginScreen').classList.add('hidden');
     document.getElementById('appScreen').classList.remove('hidden');
+    updateOfflineBanner();
     switchTab('branches');
   } catch (e) {
     showMsg('loginMsg', '❌ ' + e.message, 'err');
