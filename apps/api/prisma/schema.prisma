@@ -355,6 +355,10 @@ model TransferLine {
   ingredientId   String
   quantitySent   Decimal @db.Decimal(12, 3)
   quantityReceived Decimal? @db.Decimal(12, 3) // null حتى يتم التأكيد؛ الفرق = فاقد نقل
+  // تكلفة الوحدة الفعلية لما اتخصم فعليًا من موقع المصدر وقت الإرسال (من
+  // نفس الدفعات، مش تقدير) -- تُستخدم لتسعير الدفعة الجديدة في موقع
+  // الوجهة عند الاستلام، بنفس منطق ProductionOrder.totalInputCost.
+  unitCost       Decimal? @db.Decimal(12, 4)
 
   transfer   Transfer   @relation(fields: [transferId], references: [id])
   ingredient Ingredient @relation(fields: [ingredientId], references: [id])

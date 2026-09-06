@@ -73,7 +73,8 @@
 | 4 | ✅ Inventory (دفعات/حركات/أرصدة) — ⬜ Stocktake لسه | أرصدة دقيقة عبر FIFO + استلام/تسوية/تالف -- مبني ومُختبر؛ الجرد الدوري (Stocktake model موجود بالمخطط) لسه بلا منطق/Endpoints |
 | 5 | ✅ Purchasing + Approval Matrix | PO كامل (مسودة→تقديم→اعتماد/رفض→إرسال→استلام→إلغاء) مع مصفوفة موافقات حقيقية (ApprovalRule، غير مبرمجة بالكود)، ينتهي باستلام يُنشئ InventoryBatch عبر InventoryService.receive الموجودة -- مبني ومُختبر (`apps/api/test/purchasing.e2e-spec.ts`, 20 اختبار) |
 | 6 | ✅ Production Orders (multi-level BOM) | منتجات نصف مصنّعة + مطبخ مركزي: مخطط→قيد التنفيذ (يستهلك المكوّنات بذرية + يسجّل تكلفتها الفعلية)→مكتمل (ينتج دفعة بتكلفة وحدة حقيقية = التكلفة/الكمية)، أو إلغاء يرجّع الاستهلاك -- مبني ومُختبر (`apps/api/test/production.e2e-spec.ts`, 15 اختبار) |
-| 7 | ⬜ Transfers (التالي) | تحويلات بين المواقع (Dispatched→Received) مع تسجيل فاقد نقل تلقائي (الفرق بين المُرسَل والمُستلَم)، عبر InventoryService.consume/receive الموجودة |
+| 7 | ✅ Transfers | تحويلات بين المواقع (Dispatched→Received) مع تسجيل فاقد نقل تلقائي (الفرق بين المُرسَل والمُستلَم، حقيقة مُشتقّة لا سجل منفصل)، عبر InventoryService.consume/receive الموجودة، وتكلفة وحدة حقيقية محمولة من المصدر -- مبني ومُختبر (`apps/api/test/transfers.e2e-spec.ts`, 12 اختبار) |
+| 4b | ⬜ Stocktake (باقي من المرحلة 4) (التالي) | جرد دوري يقارن الرصيد النظري بالمعدود فعليًا، والفرق يمر بنفس ApprovalRule (documentType='STOCKTAKE_ADJUSTMENT') قبل التسوية عبر InventoryService |
 | 8 | Offline-first | تحويل الـ POS لـ PWA بـ IndexedDB + Sync Queue |
 | 9 | ZATCA Phase 2 | توليد وتوقيع وربط بمنصة فاتورة |
 | 10 | KDS + Multi-channel + Promotions + CRM/Loyalty | طبقات تجربة المستخدم والتسويق |

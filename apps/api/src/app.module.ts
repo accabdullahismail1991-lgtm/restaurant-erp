@@ -9,12 +9,14 @@ import { PrismaModule } from './prisma/prisma.module';
 import { ProductionModule } from './production/production.module';
 import { PurchasingModule } from './purchasing/purchasing.module';
 import { SalesModule } from './sales/sales.module';
+import { TransfersModule } from './transfers/transfers.module';
 import { UsersModule } from './users/users.module';
 
-// Phases 1-6 wired up: config, Prisma, auth/RBAC, users, branches,
-// ingredients, items, inventory, sales, purchasing, production -- per
-// docs/ARCHITECTURE.md's roadmap. Every other module under src/modules/*
-// stays an unimplemented README stub until its own phase.
+// Phases 1-7 wired up: config, Prisma, auth/RBAC, users, branches,
+// ingredients, items, inventory, sales, purchasing, production,
+// transfers -- per docs/ARCHITECTURE.md's roadmap. Every other module
+// under src/modules/* stays an unimplemented README stub until its own
+// phase.
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -28,6 +30,7 @@ import { UsersModule } from './users/users.module';
     SalesModule,
     PurchasingModule,
     ProductionModule,
+    TransfersModule,
   ],
 })
 export class AppModule {}
