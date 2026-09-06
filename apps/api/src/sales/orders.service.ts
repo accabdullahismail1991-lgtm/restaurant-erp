@@ -3,6 +3,7 @@ import { OrderStatus } from '@prisma/client';
 import { scopedLocationIds } from '../common/location-scope.util';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PromotionsService } from '../promotions/promotions.service';
 import { ZatcaService } from '../zatca/zatca.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { PayOrderDto } from './dto/pay-order.dto';
@@ -17,6 +18,7 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly inventory: InventoryService,
     private readonly zatca: ZatcaService,
+    private readonly promotions: PromotionsService,
   ) {}
 
   private async assertLocationInScope(userId: string, locationId: string) {
@@ -51,7 +53,20 @@ export class OrdersService {
     const byId = new Map(menuItems.map((m) => [m.id, m]));
 
     const subtotal = round2(dto.lines.reduce((sum, l) => sum + Number(byId.get(l.menuItemId)!.price) * l.quantity, 0));
-    const discountTotal = round2(dto.discountTotal ?? 0);
+
+    // A manual discountTotal from the cashier always wins -- the
+    // Promotions engine (docs/DECISIONS.md #14, a calculation layer
+    // separate from base pricing) only auto-applies when nothing manual
+    // was given, and records WHICH promotion fired for audit.
+    let discountTotal: number;
+    let promotionId: string | null = null;
+    if (dto.discountTotal != null) {
+      discountTotal = round2(dto.discountTotal);
+    } else {
+      const applicable = await this.promotions.findApplicablePromotion(dto.channel, subtotal);
+      discountTotal = applicable?.discount ?? 0;
+      promotionId = applicable?.promotion.id ?? null;
+    }
     if (discountTotal > subtotal) throw new BadRequestException('قيمة الخصم أكبر من إجمالي الفاتورة');
     const vatTotal = round2((subtotal - discountTotal) * VAT_RATE);
     const grandTotal = round2(subtotal - discountTotal + vatTotal);
@@ -68,6 +83,7 @@ export class OrdersService {
           servedById: userId,
           subtotal,
           discountTotal,
+          promotionId,
           vatTotal,
           grandTotal,
         },
@@ -96,12 +112,12 @@ export class OrdersService {
         }
       }
 
-      return tx.order.findUniqueOrThrow({ where: { id: order.id }, include: { lines: true } });
+      return tx.order.findUniqueOrThrow({ where: { id: order.id }, include: { lines: true, promotion: true } });
     });
   }
 
   async findOne(id: string, userId: string) {
-    const order = await this.prisma.order.findUnique({ where: { id }, include: { lines: true, payments: true } });
+    const order = await this.prisma.order.findUnique({ where: { id }, include: { lines: true, payments: true, promotion: true } });
     if (!order) throw new NotFoundException('الطلب غير موجود');
     await this.assertLocationInScope(userId, order.locationId);
     return order;
@@ -141,7 +157,7 @@ export class OrdersService {
       // vatNumber configured, since a missing invoicing setting must never
       // block an actual cash sale.
       await this.zatca.generateForOrder(tx, id);
-      return tx.order.findUniqueOrThrow({ where: { id }, include: { lines: true, payments: true } });
+      return tx.order.findUniqueOrThrow({ where: { id }, include: { lines: true, payments: true, promotion: true } });
     });
   }
 

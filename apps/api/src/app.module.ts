@@ -8,6 +8,7 @@ import { ItemsModule } from './items/items.module';
 import { KitchenModule } from './kitchen/kitchen.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductionModule } from './production/production.module';
+import { PromotionsModule } from './promotions/promotions.module';
 import { PurchasingModule } from './purchasing/purchasing.module';
 import { SalesModule } from './sales/sales.module';
 import { StocktakeModule } from './stocktake/stocktake.module';
@@ -36,6 +37,7 @@ import { UsersModule } from './users/users.module';
     TransfersModule,
     StocktakeModule,
     KitchenModule,
+    PromotionsModule,
   ],
 })
 export class AppModule {}

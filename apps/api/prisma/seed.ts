@@ -22,6 +22,7 @@ const PERMISSIONS: Array<{ code: string; label: string }> = [
   { code: 'production.manage', label: 'إدارة أوامر الإنتاج' },
   { code: 'transfers.manage', label: 'إدارة التحويلات بين المواقع' },
   { code: 'pos.void_order', label: 'إلغاء طلب من الكاشير' },
+  { code: 'promotions.manage', label: 'إدارة العروض والخصومات' },
 ];
 
 const ADMIN_PHONE = '+966500000000';
@@ -43,6 +44,7 @@ async function main() {
     'production.manage', // local prep as well as central-kitchen runs (decision #5: hybrid production location)
     'transfers.manage',
     'pos.void_order',
+    'promotions.manage',
   ];
   const cashierCodes: string[] = []; // base cashier operations don't need a permission check yet (sales module unbuilt)
 

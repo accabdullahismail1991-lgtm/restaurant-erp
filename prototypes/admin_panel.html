@@ -66,6 +66,7 @@
   .recipe-row select{flex:2;min-width:120px;}
   .recipe-row input{flex:1;min-width:80px;}
   .empty{color:var(--muted);font-size:12.5px;padding:10px 0;white-space:normal;}
+  .hint{color:var(--muted);font-size:12px;margin-top:10px;}
   #apiBaseRow{font-size:11px;color:rgba(255,255,255,.75);}
   #apiBaseRow input{width:180px;padding:4px 8px;font-size:11px;background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff;}
 </style>
@@ -105,6 +106,7 @@
     <button id="tab-purchasing" onclick="switchTab('purchasing')">🛒 المشتريات</button>
     <button id="tab-production" onclick="switchTab('production')">🏭 الإنتاج</button>
     <button id="tab-transfers" onclick="switchTab('transfers')">🚚 التحويلات</button>
+    <button id="tab-promotions" onclick="switchTab('promotions')">🎁 العروض</button>
   </nav>
   <main>
     <div id="globalMsg" class="msg" style="margin-bottom:14px"></div>
@@ -353,6 +355,43 @@
         </table></div>
       </div>
     </div>
+
+    <!-- PROMOTIONS -->
+    <div id="view-promotions" class="view hidden">
+      <div class="panel">
+        <h2>العروض الحالية</h2>
+        <div class="table-wrap"><table><thead><tr><th>الاسم</th><th>النوع</th><th>القيمة</th><th>القناة</th><th>الفترة</th><th>الحالة</th><th></th></tr></thead>
+          <tbody id="promotionsTable"></tbody>
+        </table></div>
+      </div>
+      <div class="panel">
+        <h2>➕ عرض جديد</h2>
+        <div class="row-form">
+          <div><label>الاسم</label><input id="promo-name" placeholder="خصم الافتتاح"></div>
+          <div><label>النوع</label>
+            <select id="promo-type">
+              <option value="PERCENTAGE_DISCOUNT">نسبة مئوية</option>
+              <option value="FIXED_DISCOUNT">مبلغ ثابت</option>
+            </select>
+          </div>
+          <div><label>القيمة (% أو ر.س حسب النوع)</label><input id="promo-value" type="number" step="0.01" placeholder="10"></div>
+          <div><label>مخصص لقناة (اختياري)</label>
+            <select id="promo-channel">
+              <option value="">كل القنوات</option>
+              <option value="DINE_IN">صالة</option>
+              <option value="TAKEAWAY">تيك أواي</option>
+              <option value="DRIVE_THRU">Drive-thru</option>
+              <option value="DELIVERY_PARTNER">توصيل خارجي</option>
+              <option value="BRAND_APP">تطبيق العلامة</option>
+            </select>
+          </div>
+          <div><label>يبدأ (اختياري)</label><input id="promo-starts" type="datetime-local"></div>
+          <div><label>ينتهي (اختياري)</label><input id="promo-ends" type="datetime-local"></div>
+          <div><button onclick="createPromotion()">إضافة</button></div>
+        </div>
+        <div class="hint">* أنواع "اشترِ واحصل على" و"الكومبو" غير مدعومة بعد في محرك تطبيق العروض تلقائيًا.</div>
+      </div>
+    </div>
   </main>
 </div>
 
@@ -434,7 +473,7 @@ function doLogout(message) {
   if (message) showMsg('loginMsg', 'ℹ️ ' + message, 'err');
 }
 
-const TABS = ['branches', 'ingredients', 'items', 'inventory', 'sales', 'purchasing', 'production', 'transfers'];
+const TABS = ['branches', 'ingredients', 'items', 'inventory', 'sales', 'purchasing', 'production', 'transfers', 'promotions'];
 function switchTab(name) {
   TABS.forEach((t) => {
     document.getElementById('tab-' + t).classList.toggle('active', t === name);
@@ -448,6 +487,7 @@ function switchTab(name) {
   if (name === 'purchasing') loadPurchasingTab();
   if (name === 'production') loadProductionTab();
   if (name === 'transfers') loadTransfersTab();
+  if (name === 'promotions') loadPromotions();
 }
 
 function flashGlobal(text, kind) { showMsg('globalMsg', text, kind); }
@@ -1155,6 +1195,63 @@ async function confirmTransferReceive(id) {
     await api(`/transfers/${id}/receive`, { method: 'POST', body: JSON.stringify({ lines }) });
     flashGlobal('✅ تم استلام التحويل', 'ok');
     loadTransfers(); loadInventoryBalances();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+
+/* ---------------- Promotions ---------------- */
+const PROMO_TYPE_LABEL = { PERCENTAGE_DISCOUNT: 'نسبة مئوية', FIXED_DISCOUNT: 'مبلغ ثابت', BOGO: 'اشترِ واحصل على', COMBO: 'كومبو' };
+const PROMO_CHANNEL_LABEL = { DINE_IN: 'صالة', TAKEAWAY: 'تيك أواي', DRIVE_THRU: 'Drive-thru', DELIVERY_PARTNER: 'توصيل خارجي', BRAND_APP: 'تطبيق العلامة' };
+async function loadPromotions() {
+  try {
+    const promotions = await api('/promotions');
+    document.getElementById('promotionsTable').innerHTML = promotions.length
+      ? promotions.map((p) => {
+          const valueLabel = p.type === 'PERCENTAGE_DISCOUNT' ? `${Number(p.value)}%` : `${Number(p.value).toFixed(2)} ر.س`;
+          const period = [p.startsAt ? new Date(p.startsAt).toLocaleDateString('ar-SA') : null, p.endsAt ? new Date(p.endsAt).toLocaleDateString('ar-SA') : null]
+            .filter(Boolean).join(' → ') || 'بلا حدود';
+          return `
+            <tr>
+              <td>${p.name}</td>
+              <td>${PROMO_TYPE_LABEL[p.type] || p.type}</td>
+              <td>${valueLabel}</td>
+              <td>${p.channelLimit ? (PROMO_CHANNEL_LABEL[p.channelLimit] || p.channelLimit) : 'كل القنوات'}</td>
+              <td>${period}</td>
+              <td>${p.isActive ? '✅ فعّال' : '⛔ معطّل'}</td>
+              <td><button class="link-btn" onclick="togglePromotion('${p.id}', ${!p.isActive})">${p.isActive ? 'تعطيل' : 'تفعيل'}</button></td>
+            </tr>
+          `;
+        }).join('')
+      : `<tr><td colspan="7" class="empty">لا توجد عروض بعد</td></tr>`;
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function createPromotion() {
+  const name = document.getElementById('promo-name').value.trim();
+  const type = document.getElementById('promo-type').value;
+  const valueRaw = document.getElementById('promo-value').value;
+  const channelLimit = document.getElementById('promo-channel').value;
+  const startsAt = document.getElementById('promo-starts').value;
+  const endsAt = document.getElementById('promo-ends').value;
+  if (!name) { flashGlobal('⚠️ اكتب اسم العرض', 'err'); return; }
+  if (!valueRaw) { flashGlobal('⚠️ اكتب قيمة الخصم', 'err'); return; }
+  try {
+    const body = { name, type, value: parseFloat(valueRaw) };
+    if (channelLimit) body.channelLimit = channelLimit;
+    if (startsAt) body.startsAt = new Date(startsAt).toISOString();
+    if (endsAt) body.endsAt = new Date(endsAt).toISOString();
+    await api('/promotions', { method: 'POST', body: JSON.stringify(body) });
+    document.getElementById('promo-name').value = '';
+    document.getElementById('promo-value').value = '';
+    document.getElementById('promo-starts').value = '';
+    document.getElementById('promo-ends').value = '';
+    flashGlobal('✅ تمت إضافة العرض', 'ok');
+    loadPromotions();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function togglePromotion(id, isActive) {
+  try {
+    await api('/promotions/' + id, { method: 'PATCH', body: JSON.stringify({ isActive }) });
+    flashGlobal(isActive ? '✅ تم تفعيل العرض' : '✅ تم تعطيل العرض', 'ok');
+    loadPromotions();
   } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
 }
 </script>
