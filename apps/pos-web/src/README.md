@@ -1,11 +1,18 @@
 # pos-web — واجهة الكاشير
 
-لم يُبنَ بعد كـ React app حقيقي. **لكن منطق الأعمال الأساسي (البيع يخصم المخزون حسب الوصفة)
-مُختبر فعليًا وشغّال** في النموذج الأولي HTML/JS المستقل الموجود في هذا المشروع:
-`prototypes/pos_prototype.html`
+React app حقيقي أونلاين (مبني ومُختبر e2e عبر Playwright ضد الـ API الحقيقي): تسجيل دخول
+(`context/AuthContext.tsx`)، فتح/إغلاق وردية (`context/ShiftContext.tsx`، يستعيد الوردية المفتوحة
+تلقائيًا عند إعادة تحميل الصفحة)، شاشة الكاشير الرئيسية (`screens/POSScreen.tsx`) مع شبكة المنيو
+(`components/MenuGrid.tsx`)، السلة (`components/CartPanel.tsx`)، شاشة الدفع
+(`components/PaymentModal.tsx`)، ولوحة طلبات الوردية (`components/OrdersPanel.tsx`).
 
-استخدم ذلك الملف كمرجع للمنطق (خصم المخزون، حساب الوصفة، الوردية) عند بناء مكوّنات React
-الفعلية هنا — لا تعيد اختراع المنطق من الصفر، بل انقله من JS مباشر إلى:
-- مكوّنات React (`<POSScreen />`, `<OrderTicket />`, `<InventoryView />`...)
-- استدعاءات API حقيقية بدل التعديل المباشر على state محلي
-- IndexedDB (عبر Dexie) بدل localStorage، لدعم Offline-first (القرار #2)
+`makeableCount` في `POSScreen.tsx` يُعيد إنتاج منطق تفجير الوصفة نفسه الموجود في الـ API
+(`docs/ARCHITECTURE.md` → "نقطة التكامل الأهم") لعرض تلميح توفر مخزون في الواجهة فقط -- السيرفر
+يبقى مصدر الحقيقة الوحيد ويتحقق من المخزون فعليًا وبذرية وقت `POST /orders`.
+
+`prototypes/pos_prototype.html` كان المرجع الأصلي لهذا المنطق قبل بناء الواجهة الفعلية، ولا يزال
+مفيدًا كنموذج HTML/JS مستقل لفهم التدفق سريعًا.
+
+**المتبقي (المرحلة 8، Offline-first)**: تحويل هذا التطبيق لـ PWA بـ IndexedDB (عبر Dexie، الحزمة
+مضافة بالفعل في `package.json`) + Sync Queue، بدل الاعتماد الكامل على اتصال أونلاين مباشر كما هو
+الآن (القرار #2 في `docs/DECISIONS.md`).

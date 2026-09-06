@@ -55,8 +55,17 @@
   تغطيه، أو انتظار موافقة الدور المحدد؛ رفض القرار يرجّع الجرد لإعادة العدّ (لا توجد حالة "مرفوض"
   نهائية في المخطط، فقط IN_PROGRESS/PENDING_APPROVAL/APPROVED)؛ الاعتماد يسوّي الفرق فعليًا عبر
   `InventoryService.consume`/`receive` نفسها. 16 اختبار e2e في `apps/api/test/stocktake.e2e-spec.ts`.
-- **كل الوحدات التشغيلية الأساسية (المراحل 1-7 + المرحلة 4 كاملة) مبنية ومُختبرة الآن.** المتبقي:
-  Frontend فعلي، آلية المزامنة Offline-first، تكامل ZATCA (توليد/توقيع الفاتورة فعليًا)،
+- **كل الوحدات التشغيلية الأساسية (المراحل 1-7 + المرحلة 4 كاملة) مبنية ومُختبرة الآن.**
+- **`apps/pos-web` أصبح تطبيق كاشير React حقيقي (أونلاين أولًا)**: تسجيل دخول (JWT access+refresh
+  مع تجديد تلقائي عند 401)، فتح/إغلاق وردية (يستعيد الوردية المفتوحة تلقائيًا عند إعادة تحميل
+  الصفحة بدل الاصطدام بقيد "وردية مفتوحة واحدة لكل فرع")، شبكة أصناف المنيو مع تلميح توفر مخزون
+  (`makeableCount` -- مبني على نفس منطق تفجير الوصفة في السيرفر، لكنه تلميح واجهة فقط؛ السيرفر هو
+  مصدر الحقيقة الوحيد وقت إنشاء الطلب فعليًا)، سلة + إجمالي تقديري (نفس نسبة ضريبة القيمة المضافة
+  15% المستخدمة في الباك-إند، ويُعرض صراحة كـ"تقديري" لأن الإجمالي الفعلي يُحسب عند `POST /orders`)،
+  شاشة دفع تعرض الإجمالي الحقيقي من السيرفر (نقدي/شبكة)، لوحة طلبات الوردية الحالية (دفع/إلغاء)
+  مبنية ومُختبرة e2e فعليًا عبر متصفح حقيقي (Playwright) ضد الـ API الحقيقي — لا يزال أونلاين فقط؛
+  Offline-first/IndexedDB مؤجّل للمرحلة 8 كما هو موثّق في `apps/pos-web/README.md` الأصلي.
+- المتبقي: آلية المزامنة Offline-first، تكامل ZATCA (توليد/توقيع الفاتورة فعليًا)،
   KDS/Multi-channel/Promotions/CRM، BI/Analytics متقدم — راجع `docs/ARCHITECTURE.md` لتفاصيل كل مرحلة.
 
 ## تشغيل المشروع محليًا
@@ -82,11 +91,21 @@ export $(cat .env.test | xargs) && npx prisma migrate deploy
 export $(cat .env.test | xargs) && npm run test:e2e
 ```
 
+## تشغيل واجهة الكاشير (`apps/pos-web`) محليًا
+
+```bash
+cd apps/pos-web
+cp .env.example .env    # عدّل VITE_API_BASE_URL لو الـ API مش على localhost:3000
+npm install
+npm run dev              # http://localhost:5173 -- يحتاج الـ API شغالة فعلًا (راجع أعلاه)
+```
+
 ## كيف تكمل من هنا (باستخدام Claude Code)
 
-1. كل الوحدات التشغيلية الأساسية (المراحل 1-7 + الجرد) مبنية ومُختبرة الآن. التالي في
-   `docs/ARCHITECTURE.md` → قسم "خطة التنفيذ المرحلية": **المرحلة 8 (Offline-first)** -- تحويل
-   الـ POS لـ PWA بـ IndexedDB + Sync Queue، فوق منطق مبيعات/مخزون مُختبر جيدًا أونلاين الآن.
+1. كل الوحدات التشغيلية الأساسية (المراحل 1-7 + الجرد) مبنية ومُختبرة الآن، وكذلك واجهة كاشير
+   React حقيقية أونلاين (`apps/pos-web`). التالي في `docs/ARCHITECTURE.md` → قسم "خطة التنفيذ
+   المرحلية": **المرحلة 8 (Offline-first)** -- تحويل `apps/pos-web` لـ PWA بـ IndexedDB + Sync
+   Queue، فوق منطق الواجهة والمبيعات/المخزون المُختبر جيدًا أونلاين الآن.
 2. لا تبدأ بكل الوحدات دفعة وحدة — كل وحدة يجب أن تُبنى وتُختبر (باختبارات e2e حقيقية، مو Unit
    tests وهمية فقط) قبل الانتقال للتالية، بنفس نمط المراحل 1-7.
 3. اتبع نفس نمط RBAC المستخدم في المراحل السابقة (`@RequirePermission('code')` + `PermissionsGuard`
@@ -109,7 +128,7 @@ export $(cat .env.test | xargs) && npm run test:e2e
 | Backend API | Node.js + TypeScript + NestJS |
 | قاعدة البيانات | PostgreSQL + Prisma ORM |
 | المصادقة | JWT (access 15m + refresh 7d)، RBAC مرن بجدول Role/Permission، Scope على مستوى الموقع |
-| Frontend (الكاشير) | React + Vite + TypeScript كـ PWA (لم يُبنَ بعد — راجع `apps/pos-web/src/README.md`) |
+| Frontend (الكاشير) | React + Vite + TypeScript -- مبني ومُختبر أونلاين (`apps/pos-web`)؛ تحويله لـ PWA بـ IndexedDB مؤجّل للمرحلة 8 |
 | الحاويات | Docker Compose للتطوير المحلي (اختياري -- سيرفر PostgreSQL محلي يعمل بنفس الكفاءة) |
 
 ## البنية
@@ -139,7 +158,11 @@ restaurant-erp/
 │   │   ├── src/modules/*/README.md            ← بقية الوحدات، لم تُبنَ بعد (كل واحدة README فقط)
 │   │   ├── test/reset-db.ts                    ← تصفير مشترك لكل الجداول التشغيلية، يستخدمه كل اختبار
 │   │   └── test/*.e2e-spec.ts                   ← اختبارات كل المراحل المبنية (100 اختبار)
-│   └── pos-web/               ← Frontend الكاشير (React + Vite PWA scaffold، لم يُبنَ بعد)
+│   └── pos-web/               ← Frontend الكاشير (React + Vite + TS، مبني ومُختبر أونلاين -- Offline-first لاحقًا)
+│   │   ├── src/api/            ← عميل API (JWT + تجديد تلقائي عند 401)
+│   │   ├── src/context/         ← Auth/Shift/Toast contexts
+│   │   ├── src/screens/          ← تسجيل الدخول، فتح الوردية، شاشة الكاشير الرئيسية
+│   │   └── src/components/        ← شبكة المنيو، السلة، شاشة الدفع، لوحة الطلبات
 ├── prototypes/
 │   ├── pos_prototype.html    ← النموذج الأولي HTML/JS المرجعي (منطق البيع/خصم المخزون)
 │   ├── login_demo.html        ← صفحة تجريبية بسيطة لتسجيل الدخول (Phase 1) ضد API حقيقي
