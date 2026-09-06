@@ -23,7 +23,11 @@ services:
     # makes a plain `npm install` skip devDependencies -- ts-node/typescript
     # (needed for the seed step below) live there, so this is required, not
     # just tidiness.
-    buildCommand: npm install --include=dev && npm run build --workspace=apps/api
+    # `prisma generate` must run explicitly before the build -- there's no
+    # postinstall hook for it, so without this step `nest build` compiles
+    # against a stale/empty @prisma/client and fails with "has no exported
+    # member 'X'" for every Prisma enum/type.
+    buildCommand: npm install --include=dev && npx prisma generate --schema=apps/api/prisma/schema.prisma && npm run build --workspace=apps/api
     # prisma/seed.ts is 100% idempotent (every write is an upsert -- see its
     # own comment), so running it on every single start is safe and means
     # the baseline roles/permissions/admin user are always self-healing,
