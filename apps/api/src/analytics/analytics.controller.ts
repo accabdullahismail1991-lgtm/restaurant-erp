@@ -54,4 +54,9 @@ export class AnalyticsController {
   lowStock(@CurrentUser() user: { userId: string }, @Query('locationId') locationId?: string) {
     return this.analytics.lowStock(user.userId, locationId);
   }
+
+  @Get('menu-item-costs')
+  menuItemCosts(@CurrentUser() user: { userId: string }, @Query('locationId') locationId?: string) {
+    return this.analytics.menuItemCosts(user.userId, locationId);
+  }
 }

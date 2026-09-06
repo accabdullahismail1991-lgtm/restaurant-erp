@@ -213,4 +213,43 @@ describe('Phase 11: analytics / BI (e2e)', () => {
     const res = await request(app.getHttpServer()).get(`/analytics/sales-summary?locationId=${locationId}&from=not-a-date`).set(auth(viewToken));
     expect(res.status).toBe(400);
   });
+
+  it('blocks menu-item-costs without analytics.view (403)', async () => {
+    const res = await request(app.getHttpServer()).get(`/analytics/menu-item-costs?locationId=${locationId}`).set(auth(noPermToken));
+    expect(res.status).toBe(403);
+  });
+
+  it('computes a live theoretical cost per menu item from the current real batch cost, not the sale', async () => {
+    const res = await request(app.getHttpServer()).get(`/analytics/menu-item-costs?locationId=${locationId}`).set(auth(viewToken));
+    expect(res.status).toBe(200);
+    const row = res.body.find((r: { menuItemId: string }) => r.menuItemId === menuItemId);
+    expect(row).toBeDefined();
+    // 20g/unit recipe line x the ingredient's real remaining-batch cost
+    // (1.00/g, unchanged by the earlier sale -- consuming quantity from a
+    // batch never changes ITS OWN unit cost) = 20, regardless of how many
+    // units were actually sold in any period.
+    expect(row.cost).toBe(20);
+    expect(row.price).toBe(50);
+    expect(row.costPercent).toBe(40);
+    expect(row.grossMargin).toBe(30);
+    expect(row.hasRecipe).toBe(true);
+  });
+
+  it('reflects a genuinely different per-location ingredient cost, not one shared number', async () => {
+    // otherLocationId's own batch of the SAME ingredient at a DIFFERENT
+    // unit cost -- proves this is a real per-location weighted average,
+    // not accidentally reading location-agnostic global batches.
+    await request(app.getHttpServer())
+      .post('/inventory/adjustments')
+      .set(auth(viewToken))
+      .send({ locationId: otherLocationId, ingredientId, quantity: 100, unitCost: 5.0 });
+    // otherLocationId now holds 980g @1.00 (remaining from setup) + 100g @5.00
+    // = (980*1 + 100*5) / 1080 = 1480/1080 ≈ 1.3704 per gram.
+    const res = await request(app.getHttpServer()).get(`/analytics/menu-item-costs?locationId=${otherLocationId}`).set(auth(viewToken));
+    expect(res.status).toBe(200);
+    const row = res.body.find((r: { menuItemId: string }) => r.menuItemId === menuItemId);
+    const expectedAvgCost = (980 * 1.0 + 100 * 5.0) / (980 + 100);
+    expect(row.cost).toBe(Math.round(20 * expectedAvgCost * 100) / 100);
+    expect(row.cost).not.toBe(20); // genuinely different from locationId's number above
+  });
 });

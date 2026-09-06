@@ -187,7 +187,7 @@
     <div id="view-items" class="view hidden">
       <div class="panel">
         <h2>أصناف المنيو الحالية</h2>
-        <div class="table-wrap"><table><thead><tr><th>الاسم</th><th>القسم</th><th>السعر</th><th>الحالة</th><th></th></tr></thead>
+        <div class="table-wrap"><table><thead><tr><th>الاسم</th><th>القسم</th><th>السعر</th><th>التكلفة الحالية</th><th>الحالة</th><th></th></tr></thead>
           <tbody id="itemsTable"></tbody>
         </table></div>
       </div>
@@ -873,20 +873,39 @@ async function loadItems() {
   try {
     if (!ingredientsCache.length) ingredientsCache = await api('/ingredients');
     itemsCache = await api('/items');
+
+    // Best-effort: cost is gated behind analytics.view (commercially
+    // sensitive, same as every other cost/margin number in this app),
+    // unlike the item list itself which any logged-in user can see. A
+    // user without that permission still sees the item catalog fine --
+    // just a '-' in the cost column instead of the whole tab breaking.
+    let costByItem = {};
+    try {
+      const costs = await api('/analytics/menu-item-costs');
+      costByItem = Object.fromEntries(costs.map((c) => [c.menuItemId, c]));
+    } catch (e) { /* no analytics.view -- costByItem stays empty, rendered as '-' below */ }
+
     document.getElementById('itemsTable').innerHTML = itemsCache.length
-      ? itemsCache.map((m) => `
+      ? itemsCache.map((m) => {
+          const c = costByItem[m.id];
+          const costCell = c
+            ? `${c.cost.toFixed(2)} <span style="color:var(--muted);font-size:11px">(${c.costPercent.toFixed(0)}% من السعر)</span>`
+            : '<span class="empty">-</span>';
+          return `
         <tr>
           <td>${m.name}</td><td>${m.category}</td><td>${Number(m.price).toFixed(2)}</td>
+          <td>${costCell}</td>
           <td><span class="pill ${m.isActive ? 'semi' : 'inactive'}">${m.isActive ? 'نشط' : 'غير نشط'}</span></td>
           <td>
             <button class="link-btn" onclick="toggleItemEdit('${m.id}')">✏️ تعديل</button>
             <button class="link-btn" onclick="toggleItemRecipe('${m.id}')">📋 الوصفة</button>
           </td>
         </tr>
-        <tr id="edit-item-row-${m.id}" class="hidden"><td colspan="5"><div class="recipe-box" id="edit-item-box-${m.id}"></div></td></tr>
-        <tr id="mrecipe-row-${m.id}" class="hidden"><td colspan="5"><div class="recipe-box" id="mrecipe-box-${m.id}"></div></td></tr>
-      `).join('')
-      : `<tr><td colspan="5" class="empty">لا توجد أصناف منيو بعد</td></tr>`;
+        <tr id="edit-item-row-${m.id}" class="hidden"><td colspan="6"><div class="recipe-box" id="edit-item-box-${m.id}"></div></td></tr>
+        <tr id="mrecipe-row-${m.id}" class="hidden"><td colspan="6"><div class="recipe-box" id="mrecipe-box-${m.id}"></div></td></tr>
+      `;
+        }).join('')
+      : `<tr><td colspan="6" class="empty">لا توجد أصناف منيو بعد</td></tr>`;
   } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
 }
 async function createItem() {

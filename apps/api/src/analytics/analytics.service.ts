@@ -230,4 +230,60 @@ export class AnalyticsService {
         lowStockThreshold: round2(Number(row.ingredient!.lowStockThreshold)),
       }));
   }
+
+  // Per-item theoretical cost -- NOT the same thing as foodCostCore's COGS
+  // (that's real consumption from actual sales in a period). This is a
+  // live snapshot: "what would this item cost to make right now", from
+  // each recipe ingredient's CURRENT weighted-average batch cost --
+  // exactly the same real-batch-cost basis inventoryValuationCore already
+  // uses, not a separate estimate. A recipe ingredient that is itself a
+  // semi-finished item (multi-level BOM, decision #4) doesn't need
+  // recursive explosion here: once it's actually been produced at least
+  // once, ProductionOrder.complete() already materialized ITS real cost
+  // into its own InventoryBatch rows, so looking up its batch cost
+  // directly already reflects its true production cost. An ingredient
+  // with zero batches (never purchased/produced) costs 0 here -- an
+  // honest "no cost data yet", not a crash.
+  async menuItemCosts(userId: string, locationId?: string) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.menuItemCostsCore(ids);
+  }
+
+  private async menuItemCostsCore(ids: string[] | undefined) {
+    const batches = await this.prisma.inventoryBatch.findMany({
+      where: { locationId: ids ? { in: ids } : undefined, quantity: { gt: 0 } },
+      select: { ingredientId: true, quantity: true, unitCost: true },
+    });
+    const byIngredient = new Map<string, { qty: number; value: number }>();
+    for (const b of batches) {
+      const cur = byIngredient.get(b.ingredientId) ?? { qty: 0, value: 0 };
+      cur.qty += Number(b.quantity);
+      cur.value += Number(b.quantity) * Number(b.unitCost);
+      byIngredient.set(b.ingredientId, cur);
+    }
+    const avgCost = (ingredientId: string) => {
+      const c = byIngredient.get(ingredientId);
+      return c && c.qty > 0 ? c.value / c.qty : 0;
+    };
+
+    const items = await this.prisma.menuItem.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true, price: true, recipe: { select: { ingredientId: true, quantity: true } } },
+      orderBy: { name: 'asc' },
+    });
+
+    return items.map((item) => {
+      const cost = round2(item.recipe.reduce((s, l) => s + Number(l.quantity) * avgCost(l.ingredientId), 0));
+      const price = round2(Number(item.price));
+      return {
+        menuItemId: item.id,
+        name: item.name,
+        price,
+        cost,
+        costPercent: price > 0 ? round2((cost / price) * 100) : 0,
+        grossMargin: round2(price - cost),
+        hasRecipe: item.recipe.length > 0,
+      };
+    });
+  }
 }
