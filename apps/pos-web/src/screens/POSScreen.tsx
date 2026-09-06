@@ -1,13 +1,61 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, ApiError } from '../api/client';
+import { api, ApiError, isNetworkError } from '../api/client';
 import { CartLine, InventoryBalance, Location, MenuItem, Order, OrderChannel, RecipeLine } from '../api/types';
+import { VAT_RATE } from '../constants';
 import { useShift } from '../context/ShiftContext';
 import { useToast } from '../context/ToastContext';
+import {
+  cacheBalances,
+  cacheItems,
+  cacheRecipe,
+  createLocalOrder,
+  getCachedBalances,
+  getCachedItems,
+  getCachedRecipe,
+  onOfflineChange,
+  queueActionForServerOrder,
+  queueLocalPayment,
+  queueLocalVoid,
+} from '../offline/store';
+import { runSync } from '../offline/syncEngine';
+import { DisplayOrder, LocalOrder } from '../offline/types';
+import { db } from '../offline/db';
 import Header from '../components/Header';
 import MenuGrid from '../components/MenuGrid';
 import CartPanel from '../components/CartPanel';
 import PaymentModal from '../components/PaymentModal';
 import OrdersPanel from '../components/OrdersPanel';
+
+// What's opened in the payment modal: either a real server order (grand
+// total is authoritative) or a not-yet-synced LocalOrder (grand total is
+// still just the client-side estimate -- see CartPanel's own disclaimer).
+export type PayTarget = { kind: 'server'; order: Order } | { kind: 'local'; order: LocalOrder };
+
+function localOrderToDisplay(o: LocalOrder): DisplayOrder {
+  const status = o.voided ? 'VOIDED' : o.paid ? 'PAID' : 'SENT_TO_KITCHEN';
+  return {
+    id: `local:${o.localId}`,
+    isLocal: true,
+    localId: o.localId,
+    createdAt: o.createdAt,
+    status,
+    grandTotal: o.estimatedGrandTotal.toFixed(2),
+    lineCount: o.lines.reduce((s, l) => s + l.quantity, 0),
+    offlineState: o.status === 'sync_failed' ? 'sync_failed' : 'queued',
+    syncError: o.syncError,
+  };
+}
+
+function serverOrderToDisplay(o: Order): DisplayOrder {
+  return {
+    id: o.id,
+    isLocal: false,
+    createdAt: o.createdAt,
+    status: o.status,
+    grandTotal: o.grandTotal,
+    lineCount: (o.lines ?? []).reduce((s, l) => s + l.quantity, 0),
+  };
+}
 
 export default function POSScreen() {
   const { shift } = useShift();
@@ -16,37 +64,78 @@ export default function POSScreen() {
   const [items, setItems] = useState<MenuItem[]>([]);
   const [recipesByItem, setRecipesByItem] = useState<Map<string, RecipeLine[]>>(new Map());
   const [balances, setBalances] = useState<Map<string, number>>(new Map());
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [serverOrders, setServerOrders] = useState<Order[]>([]);
+  const [localOrders, setLocalOrders] = useState<LocalOrder[]>([]);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [channel, setChannel] = useState<OrderChannel>('DINE_IN');
   const [checkingOut, setCheckingOut] = useState(false);
-  const [payingOrder, setPayingOrder] = useState<Order | null>(null);
+  const [payingOrder, setPayingOrder] = useState<PayTarget | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   const locationId = shift!.locationId;
 
+  const refreshLocalOrders = useCallback(async () => {
+    const rows = await db.localOrders.where('shiftId').equals(shift!.id).toArray();
+    setLocalOrders(rows);
+  }, [shift]);
+
+  useEffect(() => {
+    void refreshLocalOrders();
+  }, [refreshLocalOrders]);
+
   const loadBalances = useCallback(async () => {
-    const list = await api<InventoryBalance[]>(`/inventory/balances?locationId=${locationId}`);
-    setBalances(new Map(list.map((b) => [b.ingredientId, Number(b.quantity)])));
+    try {
+      const list = await api<InventoryBalance[]>(`/inventory/balances?locationId=${locationId}`);
+      const map = new Map(list.map((b) => [b.ingredientId, Number(b.quantity)]));
+      setBalances(map);
+      await cacheBalances(locationId, map);
+    } catch (err) {
+      if (!isNetworkError(err)) throw err;
+      const cached = await getCachedBalances(locationId);
+      if (cached) setBalances(cached);
+    }
   }, [locationId]);
 
   const loadOrders = useCallback(async () => {
-    const list = await api<Order[]>(`/orders?locationId=${locationId}`);
-    const shiftOrders = list.filter((o) => o.shiftId === shift!.id);
-    // The list endpoint omits nested `lines` (matches the API's general
-    // list-vs-detail contract); fetch full detail per order so OrdersPanel
-    // has the line data it needs.
-    const detailed = await Promise.all(
-      shiftOrders.map(async (o) => {
-        try {
-          return await api<Order>(`/orders/${o.id}`);
-        } catch {
-          return o; // fall back to the summary shape rather than breaking the whole list
-        }
-      }),
-    );
-    setOrders(detailed);
+    try {
+      const list = await api<Order[]>(`/orders?locationId=${locationId}`);
+      const shiftOrders = list.filter((o) => o.shiftId === shift!.id);
+      // The list endpoint omits nested `lines` (matches the API's general
+      // list-vs-detail contract); fetch full detail per order so OrdersPanel
+      // has the line data it needs.
+      const detailed = await Promise.all(
+        shiftOrders.map(async (o) => {
+          try {
+            return await api<Order>(`/orders/${o.id}`);
+          } catch {
+            return o; // fall back to the summary shape rather than breaking the whole list
+          }
+        }),
+      );
+      setServerOrders(detailed);
+    } catch (err) {
+      if (!isNetworkError(err)) throw err;
+      // Offline -- keep whatever server orders we last had; the queued
+      // localOrders already reflect anything created/paid/voided since then.
+    }
   }, [locationId, shift]);
+
+  // The sync engine (NetworkContext) runs independently of this component
+  // and can settle a LocalOrder (create it, pay/void it, then delete the
+  // now-redundant local row) at any time, including while this screen just
+  // sits idle after reconnecting. Without this, a just-synced order would
+  // vanish from the list the moment its local row is deleted, instead of
+  // reappearing as the real server record -- refetch both server lists on
+  // every local-store change so they stay the source of truth again.
+  useEffect(
+    () =>
+      onOfflineChange(() => {
+        void refreshLocalOrders();
+        void loadOrders();
+        void loadBalances();
+      }),
+    [refreshLocalOrders, loadOrders, loadBalances],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -59,11 +148,13 @@ export default function POSScreen() {
         if (cancelled) return;
         setLocation(loc);
         setItems(activeItems);
+        await cacheItems(locationId, activeItems);
 
         const recipeEntries: Array<[string, RecipeLine[]]> = await Promise.all(
           activeItems.map(async (item): Promise<[string, RecipeLine[]]> => {
             try {
               const lines = await api<RecipeLine[]>(`/items/${item.id}/recipe`);
+              await cacheRecipe(item.id, lines);
               return [item.id, lines];
             } catch {
               return [item.id, []]; // don't let one item's recipe fetch break the whole screen
@@ -75,7 +166,23 @@ export default function POSScreen() {
 
         await Promise.all([loadBalances(), loadOrders()]);
       } catch (err) {
-        showToast(err instanceof ApiError ? err.message : 'تعذّر تحميل بيانات نقطة البيع', 'err');
+        if (isNetworkError(err)) {
+          // No connection at all for the initial load -- fall back to
+          // whatever was cached from the last time we were online.
+          const [cachedItems, cachedBalancesMap] = await Promise.all([getCachedItems(locationId), getCachedBalances(locationId)]);
+          if (cancelled) return;
+          if (cachedItems) {
+            setItems(cachedItems);
+            const entries: Array<[string, RecipeLine[]]> = await Promise.all(
+              cachedItems.map(async (item): Promise<[string, RecipeLine[]]> => [item.id, (await getCachedRecipe(item.id)) ?? []]),
+            );
+            setRecipesByItem(new Map(entries));
+          }
+          if (cachedBalancesMap) setBalances(cachedBalancesMap);
+          showToast('📴 لا يوجد اتصال -- تم تحميل آخر بيانات محفوظة محليًا', 'err');
+        } else {
+          showToast(err instanceof ApiError ? err.message : 'تعذّر تحميل بيانات نقطة البيع', 'err');
+        }
       } finally {
         if (!cancelled) setLoaded(true);
       }
@@ -133,38 +240,99 @@ export default function POSScreen() {
   const checkout = async () => {
     if (!cart.length) return;
     setCheckingOut(true);
+    const linesPayload = cart.map((l) => ({ menuItemId: l.menuItem.id, quantity: l.quantity }));
+    const subtotal = cart.reduce((s, l) => s + Number(l.menuItem.price) * l.quantity, 0);
+    const estimatedGrandTotal = subtotal * (1 + VAT_RATE);
     try {
       const order = await api<Order>('/orders', {
         method: 'POST',
-        body: JSON.stringify({
-          locationId,
-          shiftId: shift!.id,
-          channel,
-          lines: cart.map((l) => ({ menuItemId: l.menuItem.id, quantity: l.quantity })),
-        }),
+        body: JSON.stringify({ locationId, shiftId: shift!.id, channel, lines: linesPayload }),
       });
       showToast('✅ تم إنشاء الطلب', 'ok');
       setCart([]);
-      setPayingOrder(order);
+      setPayingOrder({ kind: 'server', order });
       await Promise.all([loadBalances(), loadOrders()]);
     } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'تعذّر إنشاء الطلب', 'err');
+      if (isNetworkError(err)) {
+        const local = await createLocalOrder({ locationId, shiftId: shift!.id, channel, lines: linesPayload, estimatedGrandTotal });
+        showToast('📴 لا يوجد اتصال -- تم حفظ الطلب محليًا وسيُزامن تلقائيًا', 'ok');
+        setCart([]);
+        setPayingOrder({ kind: 'local', order: local });
+        await refreshLocalOrders();
+      } else {
+        showToast(err instanceof ApiError ? err.message : 'تعذّر إنشاء الطلب', 'err');
+      }
     } finally {
       setCheckingOut(false);
     }
   };
 
-  const voidOrder = async (order: Order) => {
+  const payLocalOrder = async (localId: string, payment: { method: 'CASH' | 'CARD'; mode: 'MANUAL' | 'INTEGRATED'; amount: number }) => {
+    await queueLocalPayment(localId, payment);
+    await refreshLocalOrders();
+    void runSync(); // resolves immediately if we're actually online already
+  };
+
+  const voidOrder = async (displayOrder: DisplayOrder) => {
     try {
-      await api(`/orders/${order.id}/void`, { method: 'POST' });
+      if (displayOrder.isLocal && displayOrder.localId) {
+        await queueLocalVoid(displayOrder.localId);
+        await refreshLocalOrders();
+        void runSync();
+        showToast('✅ سيُلغى الطلب عند مزامنته', 'ok');
+        return;
+      }
+      await api(`/orders/${displayOrder.id}/void`, { method: 'POST' });
       showToast('✅ تم إلغاء الطلب', 'ok');
       await Promise.all([loadBalances(), loadOrders()]);
     } catch (err) {
+      if (isNetworkError(err)) {
+        // Order already exists server-side, but the void call itself hit a
+        // real network failure -- queue it through the same sync path
+        // instead of just reporting failure and losing the intent.
+        const order = serverOrders.find((o) => o.id === displayOrder.id);
+        if (order) {
+          await queueActionForServerOrder({
+            serverId: order.id,
+            locationId: order.locationId,
+            shiftId: order.shiftId!,
+            channel: order.channel,
+            lines: order.lines.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity })),
+            grandTotal: Number(order.grandTotal),
+            pendingVoid: true,
+          });
+          await refreshLocalOrders();
+          void runSync();
+          showToast('📴 لا يوجد اتصال -- سيُلغى الطلب عند عودة الاتصال', 'ok');
+          return;
+        }
+      }
       showToast(err instanceof ApiError ? err.message : 'تعذّر إلغاء الطلب', 'err');
     }
   };
 
+  const payDisplayOrder = (displayOrder: DisplayOrder) => {
+    if (displayOrder.isLocal && displayOrder.localId) {
+      const local = localOrders.find((o) => o.localId === displayOrder.localId);
+      if (local) setPayingOrder({ kind: 'local', order: local });
+      return;
+    }
+    const order = serverOrders.find((o) => o.id === displayOrder.id);
+    if (order) setPayingOrder({ kind: 'server', order });
+  };
+
   const categorizedItems = useMemo(() => items, [items]);
+
+  const displayOrders = useMemo<DisplayOrder[]>(() => {
+    const local = localOrders.map(localOrderToDisplay);
+    // A local row can reference a real serverId already (e.g. the order was
+    // created fine but a follow-up pay/void is what's actually queued) --
+    // hide the server list's copy of it until the local row is fully
+    // settled and removed, so the same sale doesn't show twice.
+    const localServerIds = new Set(localOrders.map((o) => o.serverId).filter((id): id is string => !!id));
+    const server = serverOrders.filter((o) => !localServerIds.has(o.id)).map(serverOrderToDisplay);
+    return [...local, ...server].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [localOrders, serverOrders]);
 
   if (!loaded) return <div className="loading-screen">جارٍ تحميل نقطة البيع...</div>;
 
@@ -185,14 +353,32 @@ export default function POSScreen() {
             busy={checkingOut}
           />
         </div>
-        <OrdersPanel orders={orders} onPay={setPayingOrder} onVoid={voidOrder} />
+        <OrdersPanel orders={displayOrders} onPay={payDisplayOrder} onVoid={voidOrder} />
       </main>
       {payingOrder && (
         <PaymentModal
-          order={payingOrder}
+          target={payingOrder}
           onClose={() => setPayingOrder(null)}
-          onPaid={async () => {
-            showToast('✅ تم الدفع', 'ok');
+          onPaid={async (payment, { queued }) => {
+            if (payingOrder.kind === 'local') {
+              await payLocalOrder(payingOrder.order.localId, payment);
+            } else if (queued) {
+              // Order was created online fine, but this pay call itself
+              // just hit a real network failure -- queue it for later.
+              const order = payingOrder.order;
+              await queueActionForServerOrder({
+                serverId: order.id,
+                locationId: order.locationId,
+                shiftId: order.shiftId!,
+                channel: order.channel,
+                lines: order.lines.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity })),
+                grandTotal: Number(order.grandTotal),
+                pendingPayment: payment,
+              });
+              await refreshLocalOrders();
+              void runSync();
+            }
+            showToast(queued ? '📴 لا يوجد اتصال -- سيُسجَّل الدفع عند عودة الاتصال' : '✅ تم الدفع', 'ok');
             setPayingOrder(null);
             await loadOrders();
           }}

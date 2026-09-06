@@ -1,9 +1,11 @@
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ShiftProvider, useShift } from './context/ShiftContext';
 import { ToastProvider, useToast } from './context/ToastContext';
+import { NetworkProvider } from './context/NetworkContext';
 import LoginScreen from './screens/LoginScreen';
 import ShiftOpenScreen from './screens/ShiftOpenScreen';
 import POSScreen from './screens/POSScreen';
+import OfflineBanner from './components/OfflineBanner';
 
 function Toast() {
   const { toast } = useToast();
@@ -26,8 +28,11 @@ export default function App() {
     <ToastProvider>
       <AuthProvider>
         <ShiftProvider>
-          <Gate />
-          <Toast />
+          <NetworkProvider>
+            <OfflineBanner />
+            <Gate />
+            <Toast />
+          </NetworkProvider>
         </ShiftProvider>
       </AuthProvider>
     </ToastProvider>

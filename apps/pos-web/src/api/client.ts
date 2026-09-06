@@ -6,6 +6,16 @@
 
 export class ApiError extends Error {}
 
+// fetch() rejects with a TypeError specifically when the network request
+// itself never reached a server (offline, DNS failure, connection refused)
+// -- as opposed to ApiError, which means the server WAS reached and
+// responded with a real rejection (4xx/5xx). Callers that queue actions
+// for offline sync must tell these apart: only a genuine network failure
+// should be queued, never a server-side rejection like insufficient stock.
+export function isNetworkError(err: unknown): boolean {
+  return err instanceof TypeError;
+}
+
 const STORAGE_KEY = 'pos_web_auth_v1';
 
 interface StoredAuth {

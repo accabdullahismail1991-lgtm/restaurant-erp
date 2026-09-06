@@ -118,6 +118,14 @@ tr:last-child td { border-bottom: none; }
 .badge.paid { background: var(--success-bg); color: var(--success); }
 .badge.pending { background: rgba(201, 147, 42, 0.15); color: var(--accent); }
 .badge.voided { background: var(--danger-bg); color: var(--danger); }
+.badge.offline-tag { background: rgba(91, 86, 76, 0.15); color: var(--ink-soft); margin-inline-start: 4px; }
+.badge.offline-tag.failed { background: var(--danger-bg); color: var(--danger); }
+
+.offline-banner { padding: 8px 16px; text-align: center; font-size: 12.5px; font-weight: 600; background: rgba(201, 147, 42, 0.18); color: var(--accent); display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+.offline-banner.offline { background: var(--danger-bg); color: var(--danger); }
+.offline-banner .warn { color: var(--danger); }
+
+.estimate-note { font-size: 11px; color: var(--ink-soft); margin: 8px 0; }
 
 .modal-backdrop { position: fixed; inset: 0; background: rgba(20, 18, 14, 0.45); display: flex; align-items: center; justify-content: center; z-index: 40; padding: 16px; }
 .modal-card { background: var(--paper); border-radius: 14px; padding: 24px; width: 100%; max-width: 380px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3); }

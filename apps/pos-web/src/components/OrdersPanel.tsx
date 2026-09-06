@@ -1,6 +1,7 @@
-import { Order } from '../api/types';
+import { DisplayOrder } from '../offline/types';
+import { OrderStatus } from '../api/types';
 
-const STATUS_LABEL: Record<Order['status'], { text: string; cls: string }> = {
+const STATUS_LABEL: Record<OrderStatus, { text: string; cls: string }> = {
   OPEN: { text: 'مفتوح', cls: '' },
   SENT_TO_KITCHEN: { text: 'قيد التحضير', cls: 'pending' },
   READY: { text: 'جاهز', cls: 'pending' },
@@ -9,9 +10,9 @@ const STATUS_LABEL: Record<Order['status'], { text: string; cls: string }> = {
 };
 
 interface Props {
-  orders: Order[];
-  onPay: (order: Order) => void;
-  onVoid: (order: Order) => void;
+  orders: DisplayOrder[];
+  onPay: (order: DisplayOrder) => void;
+  onVoid: (order: DisplayOrder) => void;
 }
 
 export default function OrdersPanel({ orders, onPay, onVoid }: Props) {
@@ -33,34 +34,41 @@ export default function OrdersPanel({ orders, onPay, onVoid }: Props) {
               </tr>
             </thead>
             <tbody>
-              {orders
-                // API already returns orders newest-first (createdAt desc)
-                .map((o) => {
-                  const status = STATUS_LABEL[o.status];
-                  const count = (o.lines ?? []).reduce((s, l) => s + l.quantity, 0);
-                  return (
-                    <tr key={o.id}>
-                      <td>{new Date(o.createdAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</td>
-                      <td>{count}</td>
-                      <td>{Number(o.grandTotal).toFixed(2)}</td>
-                      <td>
-                        <span className={`badge ${status.cls}`}>{status.text}</span>
-                      </td>
-                      <td>
-                        {o.status === 'SENT_TO_KITCHEN' && (
-                          <>
-                            <button className="btn" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => onPay(o)}>
-                              💵 دفع
-                            </button>{' '}
-                            <button className="btn danger" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => onVoid(o)}>
-                              إلغاء
-                            </button>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+              {/* API already returns orders newest-first (createdAt desc); local queued
+                  orders are sorted in alongside them the same way (POSScreen). */}
+              {orders.map((o) => {
+                const status = STATUS_LABEL[o.status];
+                const canAct = o.status === 'SENT_TO_KITCHEN' && o.offlineState !== 'sync_failed';
+                return (
+                  <tr key={o.id}>
+                    <td>{new Date(o.createdAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</td>
+                    <td>{o.lineCount}</td>
+                    <td>{Number(o.grandTotal).toFixed(2)}</td>
+                    <td>
+                      <span className={`badge ${status.cls}`}>{status.text}</span>
+                      {o.offlineState === 'queued' && <span className="badge offline-tag"> غير متزامن</span>}
+                      {o.offlineState === 'sync_failed' && (
+                        <span className="badge offline-tag failed" title={o.syncError ?? ''}>
+                          {' '}
+                          بحاجة مراجعة
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      {canAct && (
+                        <>
+                          <button className="btn" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => onPay(o)}>
+                            💵 دفع
+                          </button>{' '}
+                          <button className="btn danger" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => onVoid(o)}>
+                            إلغاء
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

@@ -1,6 +1,5 @@
 import { CartLine, OrderChannel } from '../api/types';
-
-const VAT_RATE = 0.15; // matches the API's own constant -- display estimate only, the server computes the authoritative total.
+import { VAT_RATE } from '../constants';
 
 const CHANNEL_LABEL: Record<OrderChannel, string> = {
   DINE_IN: 'صالة',
