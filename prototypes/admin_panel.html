@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Restaurant ERP — لوحة التحكم</title>
+<style>
+  :root{
+    --ink:#1a2030; --muted:#68748a; --border:#e3e6ee; --bg:#f2f3f8; --card:#ffffff;
+    --brand:#3730a3; --brand-dark:#2b2680; --danger:#d0453f; --ok:#1f9d68; --card2:#f5f6fa;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,'Segoe UI',Tahoma,Arial,sans-serif;background:var(--bg);color:var(--ink);}
+  .hidden{display:none !important;}
+
+  /* ---- login screen ---- */
+  #loginScreen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;}
+  .login-card{background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 30px rgba(20,20,40,.08);
+    width:100%;max-width:400px;padding:32px 28px;}
+  .login-card h1{font-size:18px;margin:0 0 20px;}
+  label{display:block;font-size:12.5px;font-weight:600;color:var(--ink);margin:12px 0 6px;}
+  input,select{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13.5px;
+    background:#fafbfe;color:var(--ink);font-family:inherit;}
+  input:focus,select:focus{outline:2px solid var(--brand);outline-offset:1px;border-color:var(--brand);}
+  button{padding:9px 16px;border:none;border-radius:8px;background:var(--brand);color:#fff;
+    font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;}
+  button:hover{background:var(--brand-dark);}
+  button.ghost{background:none;color:var(--brand);border:1px solid var(--brand);}
+  button.danger{background:var(--danger);}
+  button:disabled{opacity:.6;cursor:default;}
+  .full{width:100%;margin-top:16px;}
+  .msg{margin-top:14px;padding:10px 12px;border-radius:8px;font-size:12px;line-height:1.7;display:none;}
+  .msg.err{display:block;background:rgba(208,69,63,.08);border:1px solid rgba(208,69,63,.35);color:#a5322d;}
+  .msg.ok{display:block;background:rgba(31,157,104,.08);border:1px solid rgba(31,157,104,.35);color:#0f6b45;}
+
+  /* ---- app shell ---- */
+  #appScreen{min-height:100vh;display:flex;flex-direction:column;}
+  header{background:var(--brand);color:#fff;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;}
+  header h1{font-size:16px;margin:0;}
+  header .who{font-size:12px;opacity:.85;}
+  nav{background:var(--card);border-bottom:1px solid var(--border);display:flex;gap:4px;padding:0 20px;}
+  nav button{background:none;color:var(--muted);border:none;border-radius:0;padding:12px 16px;font-weight:600;border-bottom:2px solid transparent;}
+  nav button.active{color:var(--brand);border-bottom-color:var(--brand);}
+  nav button:hover{background:var(--card2);}
+  main{flex:1;padding:24px;max-width:1100px;width:100%;margin:0 auto;}
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:18px;}
+  .panel h2{font-size:14.5px;margin:0 0 14px;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);}
+  th{color:var(--muted);font-weight:600;font-size:12px;}
+  tr:last-child td{border-bottom:none;}
+  .row-form{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:10px;}
+  .row-form > div{flex:1;min-width:140px;}
+  .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;}
+  .pill.raw{background:rgba(55,48,163,.1);color:var(--brand);}
+  .pill.semi{background:rgba(31,157,104,.1);color:var(--ok);}
+  .link-btn{background:none;border:none;color:var(--brand);font-size:12px;font-weight:700;cursor:pointer;padding:0;}
+  .link-btn:hover{text-decoration:underline;}
+  .recipe-box{margin-top:10px;background:var(--card2);border-radius:8px;padding:12px;display:none;}
+  .recipe-row{display:flex;gap:8px;align-items:center;margin-bottom:6px;}
+  .recipe-row select{flex:2;}
+  .recipe-row input{flex:1;}
+  .empty{color:var(--muted);font-size:12.5px;padding:10px 0;}
+  #apiBaseRow{font-size:11px;color:rgba(255,255,255,.75);}
+  #apiBaseRow input{width:180px;padding:4px 8px;font-size:11px;background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff;}
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div id="loginScreen">
+  <div class="login-card">
+    <h1>🍽️ Restaurant ERP — لوحة التحكم</h1>
+    <label>عنوان الـ API</label>
+    <input id="apiBase" value="http://localhost:3000">
+    <label>رقم الجوال</label>
+    <input id="phone" value="+966500000000">
+    <label>كلمة المرور</label>
+    <input id="password" type="password" value="ChangeMe123!">
+    <button class="full" id="loginBtn" onclick="doLogin()">تسجيل الدخول</button>
+    <div id="loginMsg" class="msg"></div>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="appScreen" class="hidden">
+  <header>
+    <h1>🍽️ Restaurant ERP</h1>
+    <div style="display:flex;align-items:center;gap:16px">
+      <span class="who" id="whoAmI"></span>
+      <button class="ghost" style="background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.4)" onclick="doLogout()">خروج</button>
+    </div>
+  </header>
+  <nav>
+    <button id="tab-branches" class="active" onclick="switchTab('branches')">🏢 الفروع</button>
+    <button id="tab-ingredients" onclick="switchTab('ingredients')">🥕 الأصناف الخام والنصف مصنّعة</button>
+    <button id="tab-items" onclick="switchTab('items')">📋 أصناف المنيو</button>
+  </nav>
+  <main>
+    <div id="globalMsg" class="msg" style="margin-bottom:14px"></div>
+
+    <!-- BRANCHES -->
+    <div id="view-branches" class="view">
+      <div class="panel">
+        <h2>الفروع الحالية</h2>
+        <table><thead><tr><th>الاسم</th><th>النوع</th><th>العنوان</th><th>الحالة</th></tr></thead>
+          <tbody id="branchesTable"></tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <h2>➕ إضافة فرع جديد</h2>
+        <div class="row-form">
+          <div><label>الاسم</label><input id="b-name" placeholder="فرع الرياض"></div>
+          <div><label>النوع</label>
+            <select id="b-type">
+              <option value="BRANCH">فرع</option>
+              <option value="CENTRAL_KITCHEN">مطبخ مركزي</option>
+              <option value="WAREHOUSE">مستودع</option>
+            </select>
+          </div>
+          <div><label>العنوان (اختياري)</label><input id="b-address" placeholder="شارع الملك فهد"></div>
+          <div><button onclick="createBranch()">إضافة</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- INGREDIENTS -->
+    <div id="view-ingredients" class="view hidden">
+      <div class="panel">
+        <h2>الأصناف الحالية</h2>
+        <table><thead><tr><th>الاسم</th><th>الوحدة</th><th>النوع</th><th>حد أدنى</th><th></th></tr></thead>
+          <tbody id="ingredientsTable"></tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <h2>➕ إضافة صنف جديد</h2>
+        <div class="row-form">
+          <div><label>الاسم</label><input id="i-name" placeholder="طماطم"></div>
+          <div><label>الوحدة</label><input id="i-unit" placeholder="g / ml / pcs"></div>
+          <div><label>النوع</label>
+            <select id="i-kind">
+              <option value="RAW_MATERIAL">خامة</option>
+              <option value="SEMI_FINISHED">نصف مصنّع</option>
+            </select>
+          </div>
+          <div><label>الحد الأدنى للتنبيه</label><input id="i-threshold" type="number" value="0"></div>
+          <div><button onclick="createIngredient()">إضافة</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ITEMS -->
+    <div id="view-items" class="view hidden">
+      <div class="panel">
+        <h2>أصناف المنيو الحالية</h2>
+        <table><thead><tr><th>الاسم</th><th>القسم</th><th>السعر</th><th></th></tr></thead>
+          <tbody id="itemsTable"></tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <h2>➕ إضافة صنف منيو جديد</h2>
+        <div class="row-form">
+          <div><label>الاسم</label><input id="m-name" placeholder="بيتزا مارجريتا"></div>
+          <div><label>القسم</label><input id="m-category" placeholder="رئيسي"></div>
+          <div><label>السعر</label><input id="m-price" type="number" step="0.01" placeholder="35"></div>
+          <div><button onclick="createItem()">إضافة</button></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+let accessToken = null;
+let ingredientsCache = [];
+
+function apiBase() { return document.getElementById('apiBase').value.trim().replace(/\/$/, ''); }
+
+async function api(path, options) {
+  options = options || {};
+  options.headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers || {});
+  if (accessToken) options.headers['Authorization'] = 'Bearer ' + accessToken;
+  const res = await fetch(apiBase() + path, options);
+  let data = null;
+  try { data = await res.json(); } catch (e) { /* empty body */ }
+  if (!res.ok) {
+    if (res.status === 401) { doLogout('انتهت صلاحية الجلسة، سجّل الدخول تاني'); }
+    throw new Error((data && data.message) ? (Array.isArray(data.message) ? data.message.join('، ') : data.message) : ('HTTP ' + res.status));
+  }
+  return data;
+}
+
+function showMsg(id, text, kind) {
+  const el = document.getElementById(id);
+  el.className = 'msg ' + kind;
+  el.textContent = text;
+  if (kind === 'ok') setTimeout(() => { el.className = 'msg'; }, 4000);
+}
+
+async function doLogin() {
+  const phone = document.getElementById('phone').value.trim();
+  const password = document.getElementById('password').value;
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true; btn.textContent = 'جارٍ الدخول...';
+  try {
+    const res = await fetch(apiBase() + '/auth/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || ('HTTP ' + res.status));
+    accessToken = data.accessToken;
+    document.getElementById('whoAmI').textContent = phone;
+    document.getElementById('loginScreen').classList.add('hidden');
+    document.getElementById('appScreen').classList.remove('hidden');
+    switchTab('branches');
+  } catch (e) {
+    showMsg('loginMsg', '❌ ' + e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = 'تسجيل الدخول';
+  }
+}
+
+function doLogout(message) {
+  accessToken = null;
+  document.getElementById('appScreen').classList.add('hidden');
+  document.getElementById('loginScreen').classList.remove('hidden');
+  if (message) showMsg('loginMsg', 'ℹ️ ' + message, 'err');
+}
+
+function switchTab(name) {
+  ['branches', 'ingredients', 'items'].forEach((t) => {
+    document.getElementById('tab-' + t).classList.toggle('active', t === name);
+    document.getElementById('view-' + t).classList.toggle('hidden', t !== name);
+  });
+  if (name === 'branches') loadBranches();
+  if (name === 'ingredients') loadIngredients();
+  if (name === 'items') loadItems();
+}
+
+function flashGlobal(text, kind) { showMsg('globalMsg', text, kind); }
+
+/* ---------------- Branches ---------------- */
+async function loadBranches() {
+  try {
+    const branches = await api('/locations');
+    const typeLabel = { BRANCH: 'فرع', CENTRAL_KITCHEN: 'مطبخ مركزي', WAREHOUSE: 'مستودع' };
+    document.getElementById('branchesTable').innerHTML = branches.length
+      ? branches.map((b) => `<tr><td>${b.name}</td><td>${typeLabel[b.type] || b.type}</td><td>${b.address || '-'}</td><td>${b.isActive ? '✅ نشط' : '⛔ معطّل'}</td></tr>`).join('')
+      : `<tr><td colspan="4" class="empty">لا توجد فروع بعد</td></tr>`;
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function createBranch() {
+  const name = document.getElementById('b-name').value.trim();
+  const type = document.getElementById('b-type').value;
+  const address = document.getElementById('b-address').value.trim();
+  if (!name) { flashGlobal('⚠️ اكتب اسم الفرع', 'err'); return; }
+  try {
+    await api('/locations', { method: 'POST', body: JSON.stringify(address ? { name, type, address } : { name, type }) });
+    document.getElementById('b-name').value = ''; document.getElementById('b-address').value = '';
+    flashGlobal('✅ تمت إضافة الفرع', 'ok');
+    loadBranches();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+
+/* ---------------- Ingredients ---------------- */
+async function loadIngredients() {
+  try {
+    ingredientsCache = await api('/ingredients');
+    renderIngredientsTable();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+function renderIngredientsTable() {
+  document.getElementById('ingredientsTable').innerHTML = ingredientsCache.length
+    ? ingredientsCache.map((i) => `
+      <tr>
+        <td>${i.name}</td><td>${i.unit}</td>
+        <td><span class="pill ${i.kind === 'SEMI_FINISHED' ? 'semi' : 'raw'}">${i.kind === 'SEMI_FINISHED' ? 'نصف مصنّع' : 'خامة'}</span></td>
+        <td>${i.lowStockThreshold}</td>
+        <td>${i.kind === 'SEMI_FINISHED' ? `<button class="link-btn" onclick="toggleIngredientRecipe('${i.id}')">📋 الوصفة</button>` : ''}</td>
+      </tr>
+      ${i.kind === 'SEMI_FINISHED' ? `<tr id="recipe-row-${i.id}" class="hidden"><td colspan="5"><div class="recipe-box" id="recipe-box-${i.id}"></div></td></tr>` : ''}
+    `).join('')
+    : `<tr><td colspan="5" class="empty">لا توجد أصناف بعد</td></tr>`;
+}
+async function createIngredient() {
+  const name = document.getElementById('i-name').value.trim();
+  const unit = document.getElementById('i-unit').value.trim();
+  const kind = document.getElementById('i-kind').value;
+  const lowStockThreshold = parseFloat(document.getElementById('i-threshold').value) || 0;
+  if (!name || !unit) { flashGlobal('⚠️ اكتب الاسم والوحدة', 'err'); return; }
+  try {
+    await api('/ingredients', { method: 'POST', body: JSON.stringify({ name, unit, kind, lowStockThreshold }) });
+    document.getElementById('i-name').value = ''; document.getElementById('i-unit').value = '';
+    flashGlobal('✅ تمت إضافة الصنف', 'ok');
+    loadIngredients();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+
+async function toggleIngredientRecipe(id) {
+  const row = document.getElementById('recipe-row-' + id);
+  const box = document.getElementById('recipe-box-' + id);
+  const opening = row.classList.contains('hidden');
+  row.classList.toggle('hidden');
+  if (!opening) return;
+  box.innerHTML = '<div class="empty">جارٍ التحميل...</div>';
+  try {
+    const lines = await api('/ingredients/' + id + '/recipe');
+    renderRecipeEditor(box, id, lines, 'ingredient');
+  } catch (e) { box.innerHTML = '❌ ' + e.message; }
+}
+
+/* ---------------- Items ---------------- */
+async function loadItems() {
+  try {
+    if (!ingredientsCache.length) ingredientsCache = await api('/ingredients');
+    const items = await api('/items');
+    document.getElementById('itemsTable').innerHTML = items.length
+      ? items.map((m) => `
+        <tr>
+          <td>${m.name}</td><td>${m.category}</td><td>${Number(m.price).toFixed(2)}</td>
+          <td><button class="link-btn" onclick="toggleItemRecipe('${m.id}')">📋 الوصفة</button></td>
+        </tr>
+        <tr id="mrecipe-row-${m.id}" class="hidden"><td colspan="4"><div class="recipe-box" id="mrecipe-box-${m.id}"></div></td></tr>
+      `).join('')
+      : `<tr><td colspan="4" class="empty">لا توجد أصناف منيو بعد</td></tr>`;
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function createItem() {
+  const name = document.getElementById('m-name').value.trim();
+  const category = document.getElementById('m-category').value.trim();
+  const price = parseFloat(document.getElementById('m-price').value);
+  if (!name || !category || !price) { flashGlobal('⚠️ اكتب الاسم والقسم والسعر', 'err'); return; }
+  try {
+    await api('/items', { method: 'POST', body: JSON.stringify({ name, category, price }) });
+    document.getElementById('m-name').value = ''; document.getElementById('m-category').value = ''; document.getElementById('m-price').value = '';
+    flashGlobal('✅ تمت إضافة الصنف', 'ok');
+    loadItems();
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+async function toggleItemRecipe(id) {
+  const row = document.getElementById('mrecipe-row-' + id);
+  const box = document.getElementById('mrecipe-box-' + id);
+  const opening = row.classList.contains('hidden');
+  row.classList.toggle('hidden');
+  if (!opening) return;
+  box.innerHTML = '<div class="empty">جارٍ التحميل...</div>';
+  try {
+    const lines = await api('/items/' + id + '/recipe');
+    renderRecipeEditor(box, id, lines, 'item');
+  } catch (e) { box.innerHTML = '❌ ' + e.message; }
+}
+
+/* ---------------- Shared recipe editor (used by both ingredients & items) ---------------- */
+function renderRecipeEditor(box, parentId, lines, parentKind) {
+  const options = ingredientsCache.map((i) => `<option value="${i.id}">${i.name} (${i.unit})</option>`).join('');
+  const rowsHtml = (lines.length ? lines : [{ ingredient: { id: '' }, quantity: '' }]).map((l) => `
+    <div class="recipe-row">
+      <select class="rq-ing">${options}</select>
+      <input class="rq-qty" type="number" step="0.001" value="${l.quantity || ''}" placeholder="الكمية">
+      <button class="link-btn" onclick="this.closest('.recipe-row').remove()">✕</button>
+    </div>
+  `).join('');
+  box.innerHTML = `
+    <div id="rows-${parentId}">${rowsHtml}</div>
+    <div style="margin-top:8px;display:flex;gap:8px">
+      <button class="ghost" onclick="addRecipeRow('${parentId}')">➕ مكوّن</button>
+      <button onclick="saveRecipe('${parentId}','${parentKind}')">💾 حفظ الوصفة</button>
+    </div>
+  `;
+  // pre-select the saved ingredient for each existing line
+  const rowEls = box.querySelectorAll('.recipe-row');
+  lines.forEach((l, idx) => { if (rowEls[idx] && l.ingredient) rowEls[idx].querySelector('.rq-ing').value = l.ingredient.id; });
+}
+function addRecipeRow(parentId) {
+  const options = ingredientsCache.map((i) => `<option value="${i.id}">${i.name} (${i.unit})</option>`).join('');
+  const container = document.getElementById('rows-' + parentId);
+  const div = document.createElement('div');
+  div.className = 'recipe-row';
+  div.innerHTML = `<select class="rq-ing">${options}</select><input class="rq-qty" type="number" step="0.001" placeholder="الكمية"><button class="link-btn" onclick="this.closest('.recipe-row').remove()">✕</button>`;
+  container.appendChild(div);
+}
+async function saveRecipe(parentId, parentKind) {
+  const container = document.getElementById('rows-' + parentId);
+  const lines = Array.from(container.querySelectorAll('.recipe-row')).map((row) => ({
+    ingredientId: row.querySelector('.rq-ing').value,
+    quantity: parseFloat(row.querySelector('.rq-qty').value),
+  })).filter((l) => l.ingredientId && l.quantity > 0);
+  const path = (parentKind === 'ingredient' ? '/ingredients/' : '/items/') + parentId + '/recipe';
+  try {
+    await api(path, { method: 'PUT', body: JSON.stringify({ lines }) });
+    flashGlobal('✅ تم حفظ الوصفة', 'ok');
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+</script>
+</body>
+</html>
