@@ -23,6 +23,7 @@ const PERMISSIONS: Array<{ code: string; label: string }> = [
   { code: 'transfers.manage', label: 'إدارة التحويلات بين المواقع' },
   { code: 'pos.void_order', label: 'إلغاء طلب من الكاشير' },
   { code: 'promotions.manage', label: 'إدارة العروض والخصومات' },
+  { code: 'analytics.view', label: 'عرض التقارير التحليلية (مبيعات/تكلفة/مخزون)' },
 ];
 
 const ADMIN_PHONE = '+966500000000';
@@ -45,6 +46,7 @@ async function main() {
     'transfers.manage',
     'pos.void_order',
     'promotions.manage',
+    'analytics.view',
   ];
   const cashierCodes: string[] = []; // base cashier operations don't need a permission check yet (sales module unbuilt)
 

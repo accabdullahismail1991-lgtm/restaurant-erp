@@ -67,6 +67,10 @@
   .recipe-row input{flex:1;min-width:80px;}
   .empty{color:var(--muted);font-size:12.5px;padding:10px 0;white-space:normal;}
   .hint{color:var(--muted);font-size:12px;margin-top:10px;}
+  .stats-row{display:flex;flex-wrap:wrap;gap:12px;}
+  .stat-tile{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;min-width:130px;}
+  .stat-tile .label{font-size:11.5px;color:var(--muted);margin-bottom:4px;}
+  .stat-tile .value{font-size:19px;font-weight:700;}
   #apiBaseRow{font-size:11px;color:rgba(255,255,255,.75);}
   #apiBaseRow input{width:180px;padding:4px 8px;font-size:11px;background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff;}
 </style>
@@ -108,6 +112,7 @@
     <button id="tab-transfers" onclick="switchTab('transfers')">🚚 التحويلات</button>
     <button id="tab-promotions" onclick="switchTab('promotions')">🎁 العروض</button>
     <button id="tab-customers" onclick="switchTab('customers')">👤 العملاء</button>
+    <button id="tab-analytics" onclick="switchTab('analytics')">📊 التقارير</button>
   </nav>
   <main>
     <div id="globalMsg" class="msg" style="margin-bottom:14px"></div>
@@ -415,6 +420,50 @@
         <div class="hint">* نقطة واحدة لكل 10 ر.س من إجمالي الفاتورة عند الدفع، وقيمة النقطة عند الاستبدال 0.10 ر.س.</div>
       </div>
     </div>
+
+    <!-- ANALYTICS / BI -->
+    <div id="view-analytics" class="view hidden">
+      <div class="panel">
+        <h2>عوامل التصفية</h2>
+        <div class="row-form">
+          <div><label>الموقع</label><select id="an-location"><option value="">كل المواقع</option></select></div>
+          <div><label>من تاريخ</label><input id="an-from" type="date"></div>
+          <div><label>إلى تاريخ</label><input id="an-to" type="date"></div>
+          <div><button onclick="loadAnalytics()">تحديث التقارير</button></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>ملخص المبيعات</h2>
+        <div id="an-summary-cards" class="stats-row"></div>
+        <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>القناة</th><th>عدد الطلبات</th><th>الإيراد</th></tr></thead>
+          <tbody id="an-channel-table"></tbody>
+        </table></div>
+      </div>
+      <div class="panel">
+        <h2>الأصناف الأكثر مبيعًا</h2>
+        <div class="table-wrap"><table><thead><tr><th>الصنف</th><th>الكمية</th><th>الإيراد</th></tr></thead>
+          <tbody id="an-topitems-table"></tbody>
+        </table></div>
+      </div>
+      <div class="panel">
+        <h2>تكلفة الطعام (Food Cost)</h2>
+        <div id="an-foodcost-cards" class="stats-row"></div>
+        <div class="hint">* التكلفة محسوبة من التكلفة الفعلية لدفعات المخزون التي استُهلكت فعليًا، وليست تقديرًا نظريًا من الوصفة.</div>
+      </div>
+      <div class="panel">
+        <h2>تقييم المخزون الحالي</h2>
+        <div class="table-wrap"><table><thead><tr><th>الخامة</th><th>الكمية</th><th>القيمة</th></tr></thead>
+          <tbody id="an-valuation-table"></tbody>
+        </table></div>
+        <div id="an-valuation-total" style="margin-top:8px;font-weight:700"></div>
+      </div>
+      <div class="panel">
+        <h2>تنبيهات انخفاض المخزون</h2>
+        <div class="table-wrap"><table><thead><tr><th>الخامة</th><th>الموقع</th><th>الكمية الحالية</th><th>الحد الأدنى</th></tr></thead>
+          <tbody id="an-lowstock-table"></tbody>
+        </table></div>
+      </div>
+    </div>
   </main>
 </div>
 
@@ -496,7 +545,7 @@ function doLogout(message) {
   if (message) showMsg('loginMsg', 'ℹ️ ' + message, 'err');
 }
 
-const TABS = ['branches', 'ingredients', 'items', 'inventory', 'sales', 'purchasing', 'production', 'transfers', 'promotions', 'customers'];
+const TABS = ['branches', 'ingredients', 'items', 'inventory', 'sales', 'purchasing', 'production', 'transfers', 'promotions', 'customers', 'analytics'];
 function switchTab(name) {
   TABS.forEach((t) => {
     document.getElementById('tab-' + t).classList.toggle('active', t === name);
@@ -512,6 +561,7 @@ function switchTab(name) {
   if (name === 'transfers') loadTransfersTab();
   if (name === 'promotions') loadPromotions();
   if (name === 'customers') loadCustomers();
+  if (name === 'analytics') { document.getElementById('an-location').innerHTML = '<option value="">كل المواقع</option>' + locationOptions(); loadAnalytics(); }
 }
 
 function flashGlobal(text, kind) { showMsg('globalMsg', text, kind); }
@@ -1343,6 +1393,65 @@ async function redeemCustomerPoints(id) {
     flashGlobal(`✅ تم استبدال ${res.pointsRedeemed} نقطة بقيمة ${res.cashValue.toFixed(2)} ر.س`, 'ok');
     loadCustomers();
     toggleCustomerDetail(id); toggleCustomerDetail(id); // close then reopen to refresh the ledger box
+  } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
+}
+
+/* ---------------- Analytics / BI ---------------- */
+const AN_CHANNEL_LABEL = { DINE_IN: 'صالة', TAKEAWAY: 'تيك أواي', DRIVE_THRU: 'Drive-thru', DELIVERY_PARTNER: 'توصيل خارجي', BRAND_APP: 'تطبيق العلامة' };
+function anQuery() {
+  const locationId = document.getElementById('an-location').value;
+  const from = document.getElementById('an-from').value;
+  const to = document.getElementById('an-to').value;
+  const params = new URLSearchParams();
+  if (locationId) params.set('locationId', locationId);
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  return params.toString();
+}
+function statTile(label, value) { return `<div class="stat-tile"><div class="label">${label}</div><div class="value">${value}</div></div>`; }
+async function loadAnalytics() {
+  const qs = anQuery();
+  try {
+    const [summary, topItems, foodCost, valuation, lowStock] = await Promise.all([
+      api('/analytics/sales-summary?' + qs),
+      api('/analytics/top-items?' + qs),
+      api('/analytics/food-cost?' + qs),
+      api('/analytics/inventory-valuation?' + (document.getElementById('an-location').value ? 'locationId=' + document.getElementById('an-location').value : '')),
+      api('/analytics/low-stock?' + (document.getElementById('an-location').value ? 'locationId=' + document.getElementById('an-location').value : '')),
+    ]);
+
+    document.getElementById('an-summary-cards').innerHTML = [
+      statTile('عدد الطلبات', summary.orderCount),
+      statTile('الإيراد', summary.revenue.toFixed(2)),
+      statTile('صافي المبيعات', summary.netSales.toFixed(2)),
+      statTile('ضريبة القيمة المضافة', summary.vatCollected.toFixed(2)),
+      statTile('الخصومات', summary.discountGiven.toFixed(2)),
+      statTile('متوسط الطلب', summary.averageOrderValue.toFixed(2)),
+    ].join('');
+    document.getElementById('an-channel-table').innerHTML = summary.byChannel.length
+      ? summary.byChannel.map((c) => `<tr><td>${AN_CHANNEL_LABEL[c.channel] || c.channel}</td><td>${c.orderCount}</td><td>${c.revenue.toFixed(2)}</td></tr>`).join('')
+      : `<tr><td colspan="3" class="empty">لا توجد مبيعات في هذه الفترة</td></tr>`;
+
+    document.getElementById('an-topitems-table').innerHTML = topItems.length
+      ? topItems.map((i) => `<tr><td>${i.name}</td><td>${i.quantity}</td><td>${i.revenue.toFixed(2)}</td></tr>`).join('')
+      : `<tr><td colspan="3" class="empty">لا توجد مبيعات في هذه الفترة</td></tr>`;
+
+    document.getElementById('an-foodcost-cards').innerHTML = [
+      statTile('صافي المبيعات', foodCost.netSales.toFixed(2)),
+      statTile('تكلفة البضاعة المباعة', foodCost.cogs.toFixed(2)),
+      statTile('هامش الربح', foodCost.grossMargin.toFixed(2)),
+      statTile('نسبة تكلفة الطعام', foodCost.foodCostPercent.toFixed(1) + '%'),
+      statTile('نسبة هامش الربح', foodCost.grossMarginPercent.toFixed(1) + '%'),
+    ].join('');
+
+    document.getElementById('an-valuation-table').innerHTML = valuation.lines.length
+      ? valuation.lines.map((l) => `<tr><td>${l.name}</td><td>${l.quantity} ${l.unit}</td><td>${l.value.toFixed(2)}</td></tr>`).join('')
+      : `<tr><td colspan="3" class="empty">لا يوجد مخزون بعد</td></tr>`;
+    document.getElementById('an-valuation-total').textContent = 'الإجمالي: ' + valuation.totalValue.toFixed(2) + ' ر.س';
+
+    document.getElementById('an-lowstock-table').innerHTML = lowStock.length
+      ? lowStock.map((r) => `<tr><td>${r.name}</td><td>${r.locationName}</td><td>${r.quantity} ${r.unit}</td><td>${r.lowStockThreshold} ${r.unit}</td></tr>`).join('')
+      : `<tr><td colspan="4" class="empty">لا توجد تنبيهات انخفاض مخزون</td></tr>`;
   } catch (e) { flashGlobal('❌ ' + e.message, 'err'); }
 }
 </script>
