@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { AppController } from './app.controller';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { AuthModule } from './auth/auth.module';
 import { BranchesModule } from './branches/branches.module';
@@ -47,5 +48,6 @@ import { UsersModule } from './users/users.module';
     AnalyticsModule,
     ReportsModule,
   ],
+  controllers: [AppController],
 })
 export class AppModule {}

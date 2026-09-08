@@ -33,7 +33,7 @@ services:
     # the baseline roles/permissions/admin user are always self-healing,
     # not a manual one-time step you can forget.
     startCommand: npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma && npm run prisma:seed --workspace=apps/api && node apps/api/dist/src/main.js
-    healthCheckPath: /auth/login
+    healthCheckPath: /
     envVars:
       - key: DATABASE_URL
         fromDatabase:
