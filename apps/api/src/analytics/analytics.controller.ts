@@ -59,4 +59,24 @@ export class AnalyticsController {
   menuItemCosts(@CurrentUser() user: { userId: string }, @Query('locationId') locationId?: string) {
     return this.analytics.menuItemCosts(user.userId, locationId);
   }
+
+  @Get('purchasing-summary')
+  purchasingSummary(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.analytics.purchasingSummary(user.userId, locationId, from, to);
+  }
+
+  @Get('returns-summary')
+  returnsSummary(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.analytics.returnsSummary(user.userId, locationId, from, to);
+  }
 }

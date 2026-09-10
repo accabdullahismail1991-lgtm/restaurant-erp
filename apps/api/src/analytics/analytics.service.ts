@@ -286,4 +286,75 @@ export class AnalyticsService {
       };
     });
   }
+
+  // Purchasing spend by supplier -- only these downstream statuses count
+  // as real committed spend; DRAFT/REJECTED/CANCELLED never happened
+  // financially, so a report that included them would overstate what was
+  // actually spent.
+  private static readonly COMMITTED_PO_STATUSES = ['APPROVED', 'SENT_TO_SUPPLIER', 'RECEIVED'];
+
+  async purchasingSummary(userId: string, locationId?: string, from?: string, to?: string) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.purchasingSummaryCore(ids, from, to);
+  }
+
+  private async purchasingSummaryCore(ids: string[] | undefined, from?: string, to?: string) {
+    const { gte, lte } = this.parseRange(from, to);
+    const pos = await this.prisma.purchaseOrder.findMany({
+      where: { locationId: ids ? { in: ids } : undefined, createdAt: gte || lte ? { gte, lte } : undefined },
+      select: { totalAmount: true, status: true, supplier: { select: { name: true } } },
+    });
+
+    const committed = pos.filter((po) => AnalyticsService.COMMITTED_PO_STATUSES.includes(po.status));
+    const totalSpend = round2(committed.reduce((s, po) => s + Number(po.totalAmount), 0));
+
+    const byStatusMap = new Map<string, number>();
+    for (const po of pos) byStatusMap.set(po.status, (byStatusMap.get(po.status) ?? 0) + 1);
+
+    const bySupplierMap = new Map<string, number>();
+    for (const po of committed) bySupplierMap.set(po.supplier.name, (bySupplierMap.get(po.supplier.name) ?? 0) + Number(po.totalAmount));
+
+    return {
+      orderCount: pos.length,
+      totalSpend,
+      byStatus: [...byStatusMap.entries()].map(([status, count]) => ({ status, count })),
+      topSuppliers: [...bySupplierMap.entries()]
+        .map(([supplierName, spend]) => ({ supplierName, spend: round2(spend) }))
+        .sort((a, b) => b.spend - a.spend)
+        .slice(0, 10),
+    };
+  }
+
+  // Refunds and which items customers actually bring back -- the one
+  // angle a flat "سجل المرتجعات" history list can't answer on its own.
+  async returnsSummary(userId: string, locationId?: string, from?: string, to?: string) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.returnsSummaryCore(ids, from, to);
+  }
+
+  private async returnsSummaryCore(ids: string[] | undefined, from?: string, to?: string) {
+    const { gte, lte } = this.parseRange(from, to);
+    const returns = await this.prisma.orderReturn.findMany({
+      where: { order: { locationId: ids ? { in: ids } : undefined }, createdAt: gte || lte ? { gte, lte } : undefined },
+      select: { refundTotal: true, lines: { select: { quantity: true, orderLine: { select: { menuItem: { select: { name: true } } } } } } },
+    });
+
+    const totalRefund = round2(returns.reduce((s, r) => s + Number(r.refundTotal), 0));
+    const byItemMap = new Map<string, number>();
+    for (const r of returns) {
+      for (const l of r.lines) {
+        const name = l.orderLine.menuItem.name;
+        byItemMap.set(name, (byItemMap.get(name) ?? 0) + l.quantity);
+      }
+    }
+
+    return {
+      returnCount: returns.length,
+      totalRefund,
+      topReturnedItems: [...byItemMap.entries()]
+        .map(([name, quantity]) => ({ name, quantity }))
+        .sort((a, b) => b.quantity - a.quantity)
+        .slice(0, 10),
+    };
+  }
 }
