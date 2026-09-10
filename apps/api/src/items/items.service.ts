@@ -108,4 +108,43 @@ export class ItemsService {
       });
     });
   }
+
+  // Merges the item's per-channel overrides with its base price so the UI
+  // never has to know which channels are overridden vs falling back --
+  // price is always the effective one, isOverridden just flags whether a
+  // "remove" action would do anything.
+  async getChannelPrices(id: string) {
+    const item = await this.findOne(id);
+    const [channels, overrides] = await Promise.all([
+      this.prisma.salesChannel.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } }),
+      this.prisma.menuItemChannelPrice.findMany({ where: { menuItemId: id } }),
+    ]);
+    const overrideMap = new Map(overrides.map((o) => [o.channelId, o.price]));
+    return {
+      basePrice: item.price,
+      channels: channels.map((c) => ({
+        channelId: c.id,
+        channelName: c.name,
+        price: overrideMap.get(c.id) ?? item.price,
+        isOverridden: overrideMap.has(c.id),
+      })),
+    };
+  }
+
+  async setChannelPrice(id: string, channelId: string, price: number) {
+    await this.findOne(id);
+    const channel = await this.prisma.salesChannel.findUnique({ where: { id: channelId } });
+    if (!channel) throw new NotFoundException('قناة البيع غير موجودة');
+    return this.prisma.menuItemChannelPrice.upsert({
+      where: { menuItemId_channelId: { menuItemId: id, channelId } },
+      create: { menuItemId: id, channelId, price },
+      update: { price },
+    });
+  }
+
+  async removeChannelPrice(id: string, channelId: string) {
+    await this.findOne(id);
+    await this.prisma.menuItemChannelPrice.deleteMany({ where: { menuItemId: id, channelId } });
+    return { removed: true };
+  }
 }

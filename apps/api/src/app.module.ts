@@ -16,6 +16,7 @@ import { PromotionsModule } from './promotions/promotions.module';
 import { PurchasingModule } from './purchasing/purchasing.module';
 import { ReportsModule } from './reports/reports.module';
 import { SalesModule } from './sales/sales.module';
+import { SalesChannelsModule } from './sales-channels/sales-channels.module';
 import { StocktakeModule } from './stocktake/stocktake.module';
 import { TransfersModule } from './transfers/transfers.module';
 import { UsersModule } from './users/users.module';
@@ -38,6 +39,7 @@ import { UsersModule } from './users/users.module';
     ItemsModule,
     InventoryModule,
     SalesModule,
+    SalesChannelsModule,
     PurchasingModule,
     ProductionModule,
     TransfersModule,

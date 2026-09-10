@@ -29,6 +29,14 @@ export class CreateOrderDto {
   @IsString()
   customerId?: string;
 
+  // Separate from `channel` above (the general dine-in/takeaway/delivery
+  // classification used by analytics/promotions) -- this picks a specific
+  // SalesChannel price list (e.g. "هنجر ستيشن") so order lines are priced
+  // by that channel's overrides instead of each item's base price.
+  @IsOptional()
+  @IsString()
+  salesChannelId?: string;
+
   @IsOptional()
   @IsNumber()
   @Min(0)

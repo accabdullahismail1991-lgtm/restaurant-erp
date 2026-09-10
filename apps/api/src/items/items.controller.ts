@@ -18,6 +18,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermission } from '../auth/require-permission.decorator';
 import { SetRecipeDto } from '../ingredients/dto/set-recipe.dto';
+import { SetChannelPriceDto } from '../sales-channels/dto/set-channel-price.dto';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
 import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
 import { ItemsService } from './items.service';
@@ -81,5 +82,25 @@ export class ItemsController {
   @RequirePermission('items.manage')
   removeImage(@Param('id') id: string) {
     return this.items.removeImage(id);
+  }
+
+  // Not gated behind items.manage -- reading the effective per-channel
+  // price list is display data (same visibility as the item's own base
+  // price), only setting/removing an override is a management action.
+  @Get(':id/channel-prices')
+  getChannelPrices(@Param('id') id: string) {
+    return this.items.getChannelPrices(id);
+  }
+
+  @Put(':id/channel-prices/:channelId')
+  @RequirePermission('items.manage')
+  setChannelPrice(@Param('id') id: string, @Param('channelId') channelId: string, @Body() dto: SetChannelPriceDto) {
+    return this.items.setChannelPrice(id, channelId, dto.price);
+  }
+
+  @Delete(':id/channel-prices/:channelId')
+  @RequirePermission('items.manage')
+  removeChannelPrice(@Param('id') id: string, @Param('channelId') channelId: string) {
+    return this.items.removeChannelPrice(id, channelId);
   }
 }

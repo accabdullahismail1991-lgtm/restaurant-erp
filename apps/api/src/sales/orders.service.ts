@@ -59,7 +59,24 @@ export class OrdersService {
       if (!customer) throw new BadRequestException('العميل غير موجود');
     }
 
-    const subtotal = round2(dto.lines.reduce((sum, l) => sum + Number(byId.get(l.menuItemId)!.price) * l.quantity, 0));
+    // salesChannelId (a specific price list, e.g. "هنجر ستيشن") is separate
+    // from dto.channel (the general dine-in/takeaway/delivery/app
+    // classification above, used for promotions/analytics) -- when set,
+    // it overrides the unit price used for both the subtotal and every
+    // OrderLine below, falling back to each item's base price for any
+    // item that has no override on that channel.
+    let priceOverrides = new Map<string, number>();
+    if (dto.salesChannelId) {
+      const channel = await this.prisma.salesChannel.findUnique({ where: { id: dto.salesChannelId } });
+      if (!channel || !channel.isActive) throw new BadRequestException('قناة البيع غير موجودة أو غير مفعّلة');
+      const overrides = await this.prisma.menuItemChannelPrice.findMany({
+        where: { channelId: dto.salesChannelId, menuItemId: { in: menuItemIds } },
+      });
+      priceOverrides = new Map(overrides.map((o) => [o.menuItemId, Number(o.price)]));
+    }
+    const effectivePrice = (menuItemId: string) => priceOverrides.get(menuItemId) ?? Number(byId.get(menuItemId)!.price);
+
+    const subtotal = round2(dto.lines.reduce((sum, l) => sum + effectivePrice(l.menuItemId) * l.quantity, 0));
 
     // A manual discountTotal from the cashier always wins -- the
     // Promotions engine (docs/DECISIONS.md #14, a calculation layer
@@ -86,6 +103,7 @@ export class OrdersService {
           customerId: dto.customerId,
           shiftId: dto.shiftId,
           channel: dto.channel,
+          salesChannelId: dto.salesChannelId,
           status: OrderStatus.SENT_TO_KITCHEN,
           servedById: userId,
           subtotal,
@@ -99,7 +117,7 @@ export class OrdersService {
       for (const line of dto.lines) {
         const menuItem = byId.get(line.menuItemId)!;
         await tx.orderLine.create({
-          data: { orderId: order.id, menuItemId: menuItem.id, quantity: line.quantity, unitPrice: menuItem.price },
+          data: { orderId: order.id, menuItemId: menuItem.id, quantity: line.quantity, unitPrice: effectivePrice(menuItem.id) },
         });
 
         // Non-recursive: a menu item's recipe only lists its DIRECT
