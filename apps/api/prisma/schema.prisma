@@ -32,6 +32,12 @@ model Location {
   // (not failed -- a sale should never be blocked by a missing setting)
   // when this isn't set; see ZatcaService.generateForOrder.
   vatNumber String?
+  // ZATCA Invoice Counter Value (ICV): a simple, monotonically increasing
+  // integer identifying this location's Nth reported invoice -- required
+  // alongside the Previous Invoice Hash (PIH) chain on Order below so each
+  // invoice's XML can reference "invoice N-1 at this location" per ZATCA's
+  // chaining rule. Incremented atomically inside ZatcaService.generateForOrder.
+  zatcaInvoiceCounter Int          @default(0)
   isActive  Boolean      @default(true)
   createdAt DateTime     @default(now())
 
@@ -588,6 +594,16 @@ model Order {
   zatcaXml         String?      @db.Text
   zatcaPublicKey   String?      @db.Text
   zatcaSyncStatus  String       @default("PENDING")
+  // Invoice Counter Value (ICV) and Previous Invoice Hash (PIH): ZATCA's
+  // chaining requirement so every reported invoice references the one
+  // immediately before it at the same location (tamper-evidence -- you
+  // can't delete/reorder an invoice without breaking the chain). PIH is
+  // base64 of the HEX STRING of the previous invoice's hash (not raw
+  // bytes -- a documented ZATCA quirk, different from the QR's tag 6
+  // which IS raw bytes); the very first invoice at a location uses
+  // ZATCA's published genesis value for SHA-256("0") (see zatca.service.ts).
+  zatcaInvoiceCounter     Int?
+  zatcaPreviousInvoiceHash String?  @db.Text
   createdAt        DateTime     @default(now())
   paidAt           DateTime?
 

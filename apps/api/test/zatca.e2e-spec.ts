@@ -152,6 +152,15 @@ describe('Phase 9: ZATCA invoice generation (e2e)', () => {
     expect(tags.get(6)!.equals(recomputedHash)).toBe(true);
     expect(tags.get(7)!.equals(Buffer.from(paid.zatcaSignature, 'base64'))).toBe(true);
     expect(tags.get(8)!.equals(publicKeyDer)).toBe(true);
+
+    // 5) ZATCA chaining: this is the FIRST invoice ever generated at this
+    // location, so it must get ICV=1 and reference the published genesis
+    // PIH value (there's no real predecessor to hash yet).
+    expect(paid.zatcaInvoiceCounter).toBe(1);
+    expect(paid.zatcaPreviousInvoiceHash).toBe('NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ==');
+    expect(parsed.Invoice['cac:AdditionalDocumentReference'][0]['cbc:ID']).toBe('ICV');
+    expect(Number(parsed.Invoice['cac:AdditionalDocumentReference'][0]['cbc:UUID'])).toBe(1);
+    expect(parsed.Invoice['cac:AdditionalDocumentReference'][1]['cbc:ID']).toBe('PIH');
   });
 
   it('GET /orders/:id reflects the same generated invoice fields (persisted, not just returned once)', async () => {
@@ -159,6 +168,16 @@ describe('Phase 9: ZATCA invoice generation (e2e)', () => {
     const res = await request(app.getHttpServer()).get(`/orders/${paid.id}`).set(auth(adminToken));
     expect(res.body.zatcaSyncStatus).toBe('GENERATED');
     expect(res.body.zatcaQrCode).toBe(paid.zatcaQrCode);
+
+    // ZATCA chaining continues: this is the SECOND invoice at the same
+    // location, so ICV must advance to 2 and its PIH must be
+    // base64(hex(first invoice's own hash)) -- a genuine recomputation
+    // from the prior order in the DB, not a trust-the-field assertion.
+    expect(paid.zatcaInvoiceCounter).toBe(2);
+    const firstOrders = await prisma.order.findMany({ where: { locationId, zatcaInvoiceCounter: 1 } });
+    expect(firstOrders.length).toBe(1);
+    const expectedPih = Buffer.from(Buffer.from(firstOrders[0].zatcaInvoiceHash!, 'base64').toString('hex')).toString('base64');
+    expect(paid.zatcaPreviousInvoiceHash).toBe(expectedPih);
   });
 
   it('honestly reports ZATCA submission as unavailable rather than faking success', async () => {
@@ -166,5 +185,21 @@ describe('Phase 9: ZATCA invoice generation (e2e)', () => {
     const res = await request(app.getHttpServer()).post(`/orders/${paid.id}/zatca/submit`).set(auth(adminToken));
     expect(res.status).toBe(503);
     expect(res.body.message).toContain('ZATCA');
+  });
+
+  it('chains independently per location -- a second location with its own vatNumber starts its own ICV=1/genesis-PIH chain', async () => {
+    const otherLocation = await prisma.location.create({ data: { name: 'فرع ثانٍ لاختبار السلسلة', type: 'BRANCH', vatNumber: '399999999900010' } });
+    const otherShiftRes = await request(app.getHttpServer()).post('/shifts').set(auth(adminToken)).send({ locationId: otherLocation.id, openingFloat: 100 });
+    const paid = await payFreshOrder(otherLocation.id, otherShiftRes.body.id);
+    expect(paid.zatcaInvoiceCounter).toBe(1);
+    expect(paid.zatcaPreviousInvoiceHash).toBe('NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ==');
+  });
+
+  it('the invoice view model (GET /orders/:id) includes seller/location details and item names for a printable invoice', async () => {
+    const paid = await payFreshOrder(locationId, shiftId);
+    const res = await request(app.getHttpServer()).get(`/orders/${paid.id}`).set(auth(adminToken));
+    expect(res.body.location.name).toBe('فرع اختبار الفوترة');
+    expect(res.body.location.vatNumber).toBe(VAT_NUMBER);
+    expect(res.body.lines[0].menuItem.name).toBe('وجبة اختبار ZATCA');
   });
 });

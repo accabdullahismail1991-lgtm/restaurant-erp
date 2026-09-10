@@ -10,7 +10,14 @@ import { buildQr } from './qr.util';
 const VAT_RATE = 0.15;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-type Db = Pick<PrismaService, 'order' | 'menuItem'>;
+// base64(hex(SHA-256("0"))) -- ZATCA's published Previous Invoice Hash
+// value for the very first invoice in a chain (there is no real
+// predecessor to reference yet). Verified by direct computation, not
+// copied blind: crypto.createHash('sha256').update('0').digest('hex')
+// then Buffer.from(thatHexString).toString('base64').
+const ZATCA_GENESIS_PIH = 'NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ==';
+
+type Db = Pick<PrismaService, 'order' | 'menuItem' | 'location'>;
 
 // Phase 9 (docs/DECISIONS.md #3): every paid order gets a ZATCA Simplified
 // Tax Invoice generated and digitally signed LOCALLY, at sale time -- that
@@ -73,7 +80,7 @@ export class ZatcaService {
   async generateForOrder(tx: Db, orderId: string): Promise<void> {
     const order = await tx.order.findUniqueOrThrow({
       where: { id: orderId },
-      include: { lines: true, location: true },
+      include: { lines: true, location: true, customer: true },
     });
     if (!order.location.vatNumber) {
       this.logger.warn(`تخطّي توليد فاتورة ZATCA للطلب ${orderId} -- الموقع "${order.location.name}" بلا رقم ضريبي مُعدّ`);
@@ -97,6 +104,27 @@ export class ZatcaService {
     const uuid = order.zatcaUuid ?? randomUUID();
     const issueDateTime = order.paidAt ?? new Date();
 
+    // ZATCA chaining: this location's Nth reported invoice (ICV), and the
+    // hash of its immediate predecessor at this SAME location (PIH) --
+    // never across locations, since each location's vatNumber makes it its
+    // own reporting unit. The increment happens inside the same
+    // transaction pay() already runs generateForOrder in, so two orders at
+    // the same location paid concurrently still get distinct, gap-free
+    // counters (Postgres serializes the row update).
+    const previousInvoice = await tx.order.findFirst({
+      where: { locationId: order.locationId, zatcaInvoiceCounter: { not: null } },
+      orderBy: { zatcaInvoiceCounter: 'desc' },
+      select: { zatcaInvoiceHash: true },
+    });
+    const previousInvoiceHash = previousInvoice?.zatcaInvoiceHash
+      ? Buffer.from(Buffer.from(previousInvoice.zatcaInvoiceHash, 'base64').toString('hex')).toString('base64')
+      : ZATCA_GENESIS_PIH;
+    const updatedLocation = await tx.location.update({
+      where: { id: order.locationId },
+      data: { zatcaInvoiceCounter: { increment: 1 } },
+    });
+    const invoiceCounter = updatedLocation.zatcaInvoiceCounter;
+
     const xml = buildInvoiceXml({
       invoiceId: order.id,
       uuid,
@@ -108,6 +136,9 @@ export class ZatcaService {
       vatTotal: Number(order.vatTotal),
       grandTotal: Number(order.grandTotal),
       lines: invoiceLines,
+      invoiceCounter,
+      previousInvoiceHash,
+      buyerName: order.customer?.name ?? undefined,
     });
 
     const { privateKey, publicKeyDer } = this.getKeyPair();
@@ -136,6 +167,8 @@ export class ZatcaService {
         zatcaPublicKey: publicKeyDer.toString('base64'),
         zatcaQrCode: qrCode,
         zatcaSyncStatus: 'GENERATED',
+        zatcaInvoiceCounter: invoiceCounter,
+        zatcaPreviousInvoiceHash: previousInvoiceHash,
       },
     });
   }

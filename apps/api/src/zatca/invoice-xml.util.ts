@@ -27,6 +27,14 @@ export interface InvoiceXmlInput {
   vatTotal: number;
   grandTotal: number;
   lines: InvoiceLineInput[];
+  // ZATCA chaining (see zatca.service.ts): ICV is this location's Nth
+  // reported invoice; PIH is base64(hex string) of invoice N-1's hash, or
+  // ZATCA's published genesis value for the very first invoice.
+  invoiceCounter: number;
+  previousInvoiceHash: string;
+  // Optional -- a Simplified Tax Invoice (B2C) never requires it, but a
+  // customer attached to the sale (Phase 10c loyalty) is worth recording.
+  buyerName?: string;
 }
 
 function escapeXml(value: string): string {
@@ -65,6 +73,17 @@ export function buildInvoiceXml(input: InvoiceXmlInput): string {
     )
     .join('');
 
+  const buyerParty = input.buyerName
+    ? `
+  <cac:AccountingCustomerParty>
+    <cac:Party>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>${escapeXml(input.buyerName)}</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingCustomerParty>`
+    : '';
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
   <cbc:ProfileID>reporting:1.0</cbc:ProfileID>
@@ -75,6 +94,16 @@ export function buildInvoiceXml(input: InvoiceXmlInput): string {
   <cbc:InvoiceTypeCode name="0200000">388</cbc:InvoiceTypeCode>
   <cbc:DocumentCurrencyCode>SAR</cbc:DocumentCurrencyCode>
   <cbc:TaxCurrencyCode>SAR</cbc:TaxCurrencyCode>
+  <cac:AdditionalDocumentReference>
+    <cbc:ID>ICV</cbc:ID>
+    <cbc:UUID>${input.invoiceCounter}</cbc:UUID>
+  </cac:AdditionalDocumentReference>
+  <cac:AdditionalDocumentReference>
+    <cbc:ID>PIH</cbc:ID>
+    <cac:Attachment>
+      <cbc:EmbeddedDocumentBinaryObject mimeCode="text/plain">${input.previousInvoiceHash}</cbc:EmbeddedDocumentBinaryObject>
+    </cac:Attachment>
+  </cac:AdditionalDocumentReference>
   <cac:AccountingSupplierParty>
     <cac:Party>
       <cac:PartyTaxScheme>
@@ -87,7 +116,7 @@ export function buildInvoiceXml(input: InvoiceXmlInput): string {
         <cbc:RegistrationName>${escapeXml(input.sellerName)}</cbc:RegistrationName>
       </cac:PartyLegalEntity>
     </cac:Party>
-  </cac:AccountingSupplierParty>
+  </cac:AccountingSupplierParty>${buyerParty}
   <cac:TaxTotal>
     <cbc:TaxAmount currencyID="SAR">${money(input.vatTotal)}</cbc:TaxAmount>
   </cac:TaxTotal>

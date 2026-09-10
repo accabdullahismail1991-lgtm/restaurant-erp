@@ -142,7 +142,17 @@ export class OrdersService {
   }
 
   async findOne(id: string, userId: string) {
-    const order = await this.prisma.order.findUnique({ where: { id }, include: { lines: true, payments: true, promotion: true } });
+    const order = await this.prisma.order.findUnique({
+      where: { id },
+      include: {
+        lines: { include: { menuItem: { select: { name: true } } } },
+        payments: true,
+        promotion: true,
+        location: { select: { name: true, address: true, vatNumber: true } },
+        customer: { select: { name: true, phone: true } },
+        servedBy: { select: { id: true, name: true } },
+      },
+    });
     if (!order) throw new NotFoundException('الطلب غير موجود');
     await this.assertLocationInScope(userId, order.locationId);
     return order;
