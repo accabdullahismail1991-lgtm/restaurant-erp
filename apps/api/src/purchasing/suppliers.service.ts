@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { bulkImportRows } from '../common/bulk-import.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSupplierDto } from './dto/create-supplier.dto';
 
@@ -8,6 +9,10 @@ export class SuppliersService {
 
   create(dto: CreateSupplierDto) {
     return this.prisma.supplier.create({ data: dto });
+  }
+
+  bulkImport(rows: unknown[]) {
+    return bulkImportRows(CreateSupplierDto, rows, (dto) => this.create(dto));
   }
 
   findAll() {

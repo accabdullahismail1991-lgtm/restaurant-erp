@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { bulkImportRows } from '../common/bulk-import.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { SetRecipeDto } from '../ingredients/dto/set-recipe.dto';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
@@ -33,6 +34,10 @@ export class ItemsService {
 
   create(dto: CreateMenuItemDto) {
     return this.prisma.menuItem.create({ data: dto, select: MENU_ITEM_SELECT }).then(withHasImage);
+  }
+
+  bulkImport(rows: unknown[]) {
+    return bulkImportRows(CreateMenuItemDto, rows, (dto) => this.create(dto));
   }
 
   async findAll() {

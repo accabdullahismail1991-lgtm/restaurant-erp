@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { bulkImportRows } from '../common/bulk-import.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
@@ -20,6 +21,10 @@ export class CustomersService {
     const existing = await this.prisma.customer.findUnique({ where: { phone: dto.phone } });
     if (existing) throw new ConflictException('رقم الجوال مستخدم بالفعل لعميل آخر');
     return this.prisma.customer.create({ data: { phone: dto.phone, name: dto.name } });
+  }
+
+  bulkImport(rows: unknown[]) {
+    return bulkImportRows(CreateCustomerDto, rows, (dto) => this.create(dto));
   }
 
   findAll(phone?: string) {

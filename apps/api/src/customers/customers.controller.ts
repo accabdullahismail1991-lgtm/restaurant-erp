@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
+import { BulkImportBodyDto } from '../common/bulk-import.util';
 import { CreateCustomerDto } from './dto/create-customer.dto';
 import { RedeemPointsDto } from './dto/redeem-points.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
@@ -17,6 +18,11 @@ export class CustomersController {
   @Post()
   create(@Body() dto: CreateCustomerDto) {
     return this.customers.create(dto);
+  }
+
+  @Post('bulk-import')
+  bulkImport(@Body() body: BulkImportBodyDto) {
+    return this.customers.bulkImport(body.rows);
   }
 
   @Get()

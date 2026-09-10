@@ -3,6 +3,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermission } from '../auth/require-permission.decorator';
+import { BulkImportBodyDto } from '../common/bulk-import.util';
 import { BranchesService } from './branches.service';
 import { CreateLocationDto } from './dto/create-location.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
@@ -16,6 +17,12 @@ export class BranchesController {
   @RequirePermission('branches.manage')
   create(@Body() dto: CreateLocationDto) {
     return this.branches.create(dto);
+  }
+
+  @Post('bulk-import')
+  @RequirePermission('branches.manage')
+  bulkImport(@Body() body: BulkImportBodyDto) {
+    return this.branches.bulkImport(body.rows);
   }
 
   // Listing/reading a location only requires being logged in -- scope

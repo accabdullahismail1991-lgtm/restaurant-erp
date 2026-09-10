@@ -17,6 +17,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermission } from '../auth/require-permission.decorator';
+import { BulkImportBodyDto } from '../common/bulk-import.util';
 import { SetRecipeDto } from '../ingredients/dto/set-recipe.dto';
 import { SetChannelPriceDto } from '../sales-channels/dto/set-channel-price.dto';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
@@ -32,6 +33,12 @@ export class ItemsController {
   @RequirePermission('items.manage')
   create(@Body() dto: CreateMenuItemDto) {
     return this.items.create(dto);
+  }
+
+  @Post('bulk-import')
+  @RequirePermission('items.manage')
+  bulkImport(@Body() body: BulkImportBodyDto) {
+    return this.items.bulkImport(body.rows);
   }
 
   @Get()

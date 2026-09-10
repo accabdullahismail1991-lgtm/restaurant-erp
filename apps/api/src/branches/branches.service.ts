@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { bulkImportRows } from '../common/bulk-import.util';
 import { scopedLocationIds } from '../common/location-scope.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLocationDto } from './dto/create-location.dto';
@@ -10,6 +11,10 @@ export class BranchesService {
 
   create(dto: CreateLocationDto) {
     return this.prisma.location.create({ data: dto });
+  }
+
+  bulkImport(rows: unknown[]) {
+    return bulkImportRows(CreateLocationDto, rows, (dto) => this.create(dto));
   }
 
   async findAll(userId: string) {
