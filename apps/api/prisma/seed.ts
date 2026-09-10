@@ -22,6 +22,7 @@ const PERMISSIONS: Array<{ code: string; label: string }> = [
   { code: 'production.manage', label: 'إدارة أوامر الإنتاج' },
   { code: 'transfers.manage', label: 'إدارة التحويلات بين المواقع' },
   { code: 'pos.void_order', label: 'إلغاء طلب من الكاشير' },
+  { code: 'pos.return_order', label: 'تسجيل مرتجع عميل' },
   { code: 'promotions.manage', label: 'إدارة العروض والخصومات' },
   { code: 'analytics.view', label: 'عرض التقارير التحليلية (مبيعات/تكلفة/مخزون)' },
 ];
@@ -48,6 +49,7 @@ async function main() {
     'production.manage', // local prep as well as central-kitchen runs (decision #5: hybrid production location)
     'transfers.manage',
     'pos.void_order',
+    'pos.return_order',
     'promotions.manage',
     'analytics.view',
   ];
