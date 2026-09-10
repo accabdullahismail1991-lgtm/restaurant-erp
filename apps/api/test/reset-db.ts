@@ -14,6 +14,8 @@ import { PrismaService } from '../src/prisma/prisma.service';
 export async function resetDatabase(prisma: PrismaService) {
   await prisma.generatedReport.deleteMany({});
   await prisma.approval.deleteMany({});
+  await prisma.purchaseReturnLine.deleteMany({});
+  await prisma.purchaseReturn.deleteMany({});
   await prisma.purchaseOrderLine.deleteMany({});
   await prisma.purchaseOrder.deleteMany({});
   await prisma.approvalRule.deleteMany({});

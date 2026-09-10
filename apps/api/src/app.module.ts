@@ -14,6 +14,7 @@ import { KitchenModule } from './kitchen/kitchen.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductionModule } from './production/production.module';
 import { PromotionsModule } from './promotions/promotions.module';
+import { PurchaseReturnsModule } from './purchase-returns/purchase-returns.module';
 import { PurchasingModule } from './purchasing/purchasing.module';
 import { ReportsModule } from './reports/reports.module';
 import { ReturnsModule } from './returns/returns.module';
@@ -44,6 +45,7 @@ import { UsersModule } from './users/users.module';
     SalesChannelsModule,
     ReturnsModule,
     PurchasingModule,
+    PurchaseReturnsModule,
     ProductionModule,
     TransfersModule,
     StocktakeModule,

@@ -58,12 +58,14 @@ model User {
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
 
-  roles          UserRole[]
-  locationScopes UserLocationScope[]
-  shiftsOpened   Shift[]             @relation("ShiftOpenedBy")
-  ordersServed   Order[]             @relation("OrderServedBy")
-  approvals      Approval[]
-  returnsCreated OrderReturn[]
+  roles                 UserRole[]
+  locationScopes        UserLocationScope[]
+  shiftsOpened          Shift[]             @relation("ShiftOpenedBy")
+  shiftsClosed          Shift[]             @relation("ShiftClosedBy")
+  ordersServed          Order[]             @relation("OrderServedBy")
+  approvals             Approval[]
+  returnsCreated        OrderReturn[]
+  purchaseReturnsCreated PurchaseReturn[]
 }
 
 model Role {
@@ -334,6 +336,7 @@ model PurchaseOrder {
   supplier  Supplier            @relation(fields: [supplierId], references: [id])
   lines     PurchaseOrderLine[]
   approvals Approval[]
+  returns   PurchaseReturn[]
 }
 
 model PurchaseOrderLine {
@@ -343,8 +346,39 @@ model PurchaseOrderLine {
   quantity        Decimal @db.Decimal(12, 3)
   unitCost        Decimal @db.Decimal(12, 4)
 
-  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
-  ingredient    Ingredient    @relation(fields: [ingredientId], references: [id])
+  purchaseOrder PurchaseOrder       @relation(fields: [purchaseOrderId], references: [id])
+  ingredient    Ingredient          @relation(fields: [ingredientId], references: [id])
+  returnLines   PurchaseReturnLine[]
+}
+
+// مرتجع لمورد -- فقط لأمر شراء "مُستلم" (RECEIVED)، جزئي أو كامل حسب الكمية
+// لكل سطر. عكس OrderReturn تمامًا في اتجاه المخزون: هنا نُخرج (consume) ما
+// كان قد دخل فعلاً عبر receive()، بدل أن نُعيده. مبلغ الاسترداد يُحتسب من
+// unitCost الأصلي في سطر أمر الشراء (ما دفعناه فعلاً للمورد)، وليس من متوسط
+// تكلفة المخزون الحالي (المتغيّر بدفعات لاحقة)، لأن هذا مبلغ مستحق على
+// المورد تحديدًا لا قيمة مخزون عامة.
+model PurchaseReturn {
+  id              String   @id @default(cuid())
+  purchaseOrderId String
+  reason          String?
+  totalAmount     Decimal  @db.Decimal(12, 2)
+  createdById     String
+  createdAt       DateTime @default(now())
+
+  purchaseOrder PurchaseOrder        @relation(fields: [purchaseOrderId], references: [id])
+  createdBy     User                 @relation(fields: [createdById], references: [id])
+  lines         PurchaseReturnLine[]
+}
+
+model PurchaseReturnLine {
+  id                  String  @id @default(cuid())
+  purchaseReturnId    String
+  purchaseOrderLineId String
+  quantity            Decimal @db.Decimal(12, 3)
+  amount              Decimal @db.Decimal(12, 2)
+
+  purchaseReturn    PurchaseReturn    @relation(fields: [purchaseReturnId], references: [id])
+  purchaseOrderLine PurchaseOrderLine @relation(fields: [purchaseOrderLineId], references: [id])
 }
 
 // قواعد الموافقة — غير مبرمجة بالكود، تُدار من لوحة تحكم (القرار #8)
@@ -487,6 +521,7 @@ model Shift {
   id             String    @id @default(cuid())
   locationId     String
   openedById     String
+  closedById     String?
   openingFloat   Decimal   @db.Decimal(12, 2)
   closingCounted Decimal?  @db.Decimal(12, 2) // ما تم عدّه فعليًا عند الإغلاق
   expectedCash   Decimal?  @db.Decimal(12, 2) // ما يُفترض وجوده حسابيًا
@@ -496,6 +531,7 @@ model Shift {
 
   location Location @relation(fields: [locationId], references: [id])
   openedBy User     @relation("ShiftOpenedBy", fields: [openedById], references: [id])
+  closedBy User?    @relation("ShiftClosedBy", fields: [closedById], references: [id])
   orders   Order[]
 }
 

@@ -19,6 +19,7 @@ const PERMISSIONS: Array<{ code: string; label: string }> = [
   { code: 'purchasing.approve_po', label: 'اعتماد أوامر الشراء' },
   { code: 'purchasing.create_po', label: 'إنشاء أوامر شراء' },
   { code: 'purchasing.manage_rules', label: 'إدارة مصفوفة الموافقات (Approval Matrix)' },
+  { code: 'purchasing.return_po', label: 'تسجيل مرتجع لمورد' },
   { code: 'production.manage', label: 'إدارة أوامر الإنتاج' },
   { code: 'transfers.manage', label: 'إدارة التحويلات بين المواقع' },
   { code: 'pos.void_order', label: 'إلغاء طلب من الكاشير' },
@@ -46,6 +47,7 @@ async function main() {
     'inventory.adjust',
     'purchasing.create_po',
     'purchasing.approve_po', // local/small POs -- the Approval Matrix's own role check still gates by amount tier
+    'purchasing.return_po',
     'production.manage', // local prep as well as central-kitchen runs (decision #5: hybrid production location)
     'transfers.manage',
     'pos.void_order',

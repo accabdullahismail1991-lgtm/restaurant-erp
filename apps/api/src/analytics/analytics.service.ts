@@ -357,4 +357,123 @@ export class AnalyticsService {
         .slice(0, 10),
     };
   }
+
+  // What goes back OUT to suppliers -- the mirror of returnsSummary above,
+  // but valued at what we actually paid (PurchaseReturn.totalAmount is
+  // derived from each PurchaseOrderLine's own unitCost, not a blended
+  // inventory cost), since this is a credit owed BY a specific supplier.
+  async purchaseReturnsSummary(userId: string, locationId?: string, from?: string, to?: string) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.purchaseReturnsSummaryCore(ids, from, to);
+  }
+
+  private async purchaseReturnsSummaryCore(ids: string[] | undefined, from?: string, to?: string) {
+    const { gte, lte } = this.parseRange(from, to);
+    const returns = await this.prisma.purchaseReturn.findMany({
+      where: { purchaseOrder: { locationId: ids ? { in: ids } : undefined }, createdAt: gte || lte ? { gte, lte } : undefined },
+      select: {
+        totalAmount: true,
+        lines: { select: { quantity: true, purchaseOrderLine: { select: { ingredient: { select: { name: true } } } } } },
+      },
+    });
+
+    const totalAmount = round2(returns.reduce((s, r) => s + Number(r.totalAmount), 0));
+    const byIngredientMap = new Map<string, number>();
+    for (const r of returns) {
+      for (const l of r.lines) {
+        const name = l.purchaseOrderLine.ingredient.name;
+        byIngredientMap.set(name, (byIngredientMap.get(name) ?? 0) + Number(l.quantity));
+      }
+    }
+
+    return {
+      returnCount: returns.length,
+      totalAmount,
+      topReturnedIngredients: [...byIngredientMap.entries()]
+        .map(([name, quantity]) => ({ name, quantity }))
+        .sort((a, b) => b.quantity - a.quantity)
+        .slice(0, 10),
+    };
+  }
+
+  // Per-cashier accountability: how many shifts each cashier ran in the
+  // window, how much they actually rang up (PAID orders on shifts THEY
+  // opened), and their cumulative cash variance -- the number a branch
+  // manager actually wants when deciding who to talk to about a shortfall
+  // pattern, rather than eyeballing the raw shifts list one row at a time.
+  async shiftsSummary(userId: string, locationId?: string, from?: string, to?: string) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.shiftsSummaryCore(ids, from, to);
+  }
+
+  private async shiftsSummaryCore(ids: string[] | undefined, from?: string, to?: string) {
+    const { gte, lte } = this.parseRange(from, to);
+    const shifts = await this.prisma.shift.findMany({
+      where: { locationId: ids ? { in: ids } : undefined, openedAt: gte || lte ? { gte, lte } : undefined },
+      select: {
+        closedAt: true,
+        variance: true,
+        openedBy: { select: { id: true, name: true } },
+        orders: { where: { status: OrderStatus.PAID }, select: { grandTotal: true } },
+      },
+    });
+
+    const byCashierMap = new Map<string, { cashierId: string; cashierName: string; shiftsCount: number; totalSales: number; totalVariance: number }>();
+    for (const s of shifts) {
+      const cur = byCashierMap.get(s.openedBy.id) ?? {
+        cashierId: s.openedBy.id,
+        cashierName: s.openedBy.name,
+        shiftsCount: 0,
+        totalSales: 0,
+        totalVariance: 0,
+      };
+      cur.shiftsCount += 1;
+      cur.totalSales += s.orders.reduce((sum, o) => sum + Number(o.grandTotal), 0);
+      cur.totalVariance += s.variance !== null ? Number(s.variance) : 0;
+      byCashierMap.set(s.openedBy.id, cur);
+    }
+
+    return {
+      shiftsCount: shifts.length,
+      openShiftsCount: shifts.filter((s) => !s.closedAt).length,
+      byCashier: [...byCashierMap.values()]
+        .map((c) => ({ ...c, totalSales: round2(c.totalSales), totalVariance: round2(c.totalVariance) }))
+        .sort((a, b) => b.totalSales - a.totalSales),
+    };
+  }
+
+  // Revenue split by how customers actually paid -- CASH still needs
+  // physical till reconciliation (ShiftsService.close()), CARD/WALLET
+  // settle through their own terminal, so seeing the split matters
+  // operationally, not just for BI.
+  async paymentMethodsSummary(userId: string, locationId?: string, from?: string, to?: string) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.paymentMethodsSummaryCore(ids, from, to);
+  }
+
+  private async paymentMethodsSummaryCore(ids: string[] | undefined, from?: string, to?: string) {
+    const { gte, lte } = this.parseRange(from, to);
+    const payments = await this.prisma.payment.findMany({
+      where: {
+        order: { locationId: ids ? { in: ids } : undefined, status: OrderStatus.PAID },
+        createdAt: gte || lte ? { gte, lte } : undefined,
+      },
+      select: { method: true, amount: true },
+    });
+
+    const byMethodMap = new Map<string, { count: number; total: number }>();
+    for (const p of payments) {
+      const cur = byMethodMap.get(p.method) ?? { count: 0, total: 0 };
+      cur.count += 1;
+      cur.total += Number(p.amount);
+      byMethodMap.set(p.method, cur);
+    }
+
+    return {
+      totalAmount: round2([...byMethodMap.values()].reduce((s, v) => s + v.total, 0)),
+      byMethod: [...byMethodMap.entries()]
+        .map(([method, v]) => ({ method, count: v.count, total: round2(v.total) }))
+        .sort((a, b) => b.total - a.total),
+    };
+  }
 }

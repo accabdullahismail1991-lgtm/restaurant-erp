@@ -158,6 +158,10 @@ export class OrdersService {
         locationId: locationId ? locationId : allowedIds ? { in: allowedIds } : undefined,
         status,
       },
+      include: {
+        servedBy: { select: { id: true, name: true } },
+        payments: { select: { method: true, amount: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
   }

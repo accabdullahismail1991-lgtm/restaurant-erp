@@ -29,7 +29,10 @@ export class ShiftsService {
   }
 
   async findOne(id: string, userId: string) {
-    const shift = await this.prisma.shift.findUnique({ where: { id } });
+    const shift = await this.prisma.shift.findUnique({
+      where: { id },
+      include: { openedBy: { select: { id: true, name: true } }, closedBy: { select: { id: true, name: true } } },
+    });
     if (!shift) throw new NotFoundException('الوردية غير موجودة');
     await this.assertLocationInScope(userId, shift.locationId);
     return shift;
@@ -45,6 +48,7 @@ export class ShiftsService {
         locationId: locationId ? locationId : allowedIds ? { in: allowedIds } : undefined,
         closedAt: openOnly ? null : undefined,
       },
+      include: { openedBy: { select: { id: true, name: true } }, closedBy: { select: { id: true, name: true } } },
       orderBy: { openedAt: 'desc' },
     });
   }
@@ -66,7 +70,8 @@ export class ShiftsService {
 
     return this.prisma.shift.update({
       where: { id },
-      data: { closingCounted: dto.closingCounted, expectedCash, variance, closedAt: new Date() },
+      data: { closingCounted: dto.closingCounted, expectedCash, variance, closedAt: new Date(), closedById: userId },
+      include: { openedBy: { select: { id: true, name: true } }, closedBy: { select: { id: true, name: true } } },
     });
   }
 }

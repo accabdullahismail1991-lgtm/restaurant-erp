@@ -79,4 +79,34 @@ export class AnalyticsController {
   ) {
     return this.analytics.returnsSummary(user.userId, locationId, from, to);
   }
+
+  @Get('purchase-returns-summary')
+  purchaseReturnsSummary(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.analytics.purchaseReturnsSummary(user.userId, locationId, from, to);
+  }
+
+  @Get('shifts-summary')
+  shiftsSummary(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.analytics.shiftsSummary(user.userId, locationId, from, to);
+  }
+
+  @Get('payment-methods-summary')
+  paymentMethodsSummary(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.analytics.paymentMethodsSummary(user.userId, locationId, from, to);
+  }
 }
