@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import * as fs from 'fs';
 import * as path from 'path';
 import * as ExcelJS from 'exceljs';
 import PDFDocument = require('pdfkit');
@@ -7,7 +8,24 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { scopedLocationIds } from '../common/location-scope.util';
 import { PrismaService } from '../prisma/prisma.service';
 
-const ARABIC_FONT_PATH = path.join(process.cwd(), 'assets', 'fonts', 'NotoSansArabic.ttf');
+// __dirname sits at apps/api/src/reports when run via ts-node/ts-jest, but
+// at apps/api/dist/src/reports once compiled -- one directory level deeper
+// -- so both distances up to apps/api are tried. This must not depend on
+// process.cwd(): Render's startCommand runs `node apps/api/dist/src/main.js`
+// from the repo root, not from apps/api, so a cwd-relative path resolves to
+// the wrong place in production even though it happens to work under the
+// test runner (which does start with cwd = apps/api).
+function resolveArabicFontPath(): string {
+  const candidates = [
+    path.join(__dirname, '..', '..', 'assets', 'fonts', 'NotoSansArabic.ttf'),
+    path.join(__dirname, '..', '..', '..', 'assets', 'fonts', 'NotoSansArabic.ttf'),
+    path.join(process.cwd(), 'assets', 'fonts', 'NotoSansArabic.ttf'),
+    path.join(process.cwd(), 'apps', 'api', 'assets', 'fonts', 'NotoSansArabic.ttf'),
+  ];
+  return candidates.find((p) => fs.existsSync(p)) ?? candidates[0];
+}
+
+const ARABIC_FONT_PATH = resolveArabicFontPath();
 
 interface DailyReportData {
   locationId: string | null;
@@ -49,44 +67,76 @@ export class ReportsService {
   // Excel is the fully Arabic-correct format -- exceljs just writes UTF-8
   // strings into cells, and Excel (or any real spreadsheet app) does its
   // own text shaping/BiDi rendering. No caveats here.
+  //
+  // Odoo/Foodics-style formatting layer below (header fill + white bold
+  // text, frozen header row, money columns as #,##0.00, a bold TOTAL row
+  // under every table) is pure exceljs styling/number-format metadata --
+  // it never re-encodes the Arabic strings themselves, so it carries none
+  // of the risk buildPdf()'s comment below describes.
+  private styleHeaderRow(row: ExcelJS.Row) {
+    row.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF37309F' } };
+    row.alignment = { horizontal: 'right' };
+  }
+  private styleTotalRow(row: ExcelJS.Row) {
+    row.font = { bold: true };
+    row.border = { top: { style: 'medium', color: { argb: 'FF37309F' } } };
+  }
   private async buildXlsx(data: DailyReportData): Promise<Buffer> {
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Restaurant ERP';
     wb.created = new Date();
+    const moneyFmt = '#,##0.00';
 
-    const summary = wb.addWorksheet('ملخص المبيعات');
-    summary.columns = [{ width: 26 }, { width: 20 }];
-    summary.addRow(['الموقع', data.locationName]);
+    const summary = wb.addWorksheet('ملخص المبيعات', { views: [{ rightToLeft: true, state: 'frozen', ySplit: 4 }] });
+    summary.columns = [{ width: 26 }, { width: 20 }, { width: 20 }];
+    summary.addRow(['الموقع', data.locationName]).font = { bold: true };
     summary.addRow(['الفترة', `${data.periodStart.toISOString().slice(0, 10)} → ${data.periodEnd.toISOString().slice(0, 10)}`]);
-    summary.addRow([]);
-    summary.addRow(['المؤشر', 'القيمة']).font = { bold: true };
+    summary.addRow(['أُنشئ في', new Date().toLocaleString('ar-SA')]);
+    this.styleHeaderRow(summary.addRow(['المؤشر', 'القيمة']));
     summary.addRow(['عدد الطلبات', data.salesSummary.orderCount]);
-    summary.addRow(['الإيراد', data.salesSummary.revenue]);
-    summary.addRow(['صافي المبيعات', data.salesSummary.netSales]);
-    summary.addRow(['ضريبة القيمة المضافة', data.salesSummary.vatCollected]);
-    summary.addRow(['الخصومات', data.salesSummary.discountGiven]);
-    summary.addRow(['متوسط قيمة الطلب', data.salesSummary.averageOrderValue]);
+    summary.addRow(['الإيراد', data.salesSummary.revenue]).getCell(2).numFmt = moneyFmt;
+    summary.addRow(['صافي المبيعات', data.salesSummary.netSales]).getCell(2).numFmt = moneyFmt;
+    summary.addRow(['ضريبة القيمة المضافة', data.salesSummary.vatCollected]).getCell(2).numFmt = moneyFmt;
+    summary.addRow(['الخصومات', data.salesSummary.discountGiven]).getCell(2).numFmt = moneyFmt;
+    summary.addRow(['متوسط قيمة الطلب', data.salesSummary.averageOrderValue]).getCell(2).numFmt = moneyFmt;
     summary.addRow([]);
-    summary.addRow(['القناة', 'عدد الطلبات', 'الإيراد']).font = { bold: true };
-    for (const c of data.salesSummary.byChannel) summary.addRow([c.channel, c.orderCount, c.revenue]);
+    this.styleHeaderRow(summary.addRow(['القناة', 'عدد الطلبات', 'الإيراد']));
+    for (const c of data.salesSummary.byChannel) summary.addRow([c.channel, c.orderCount, c.revenue]).getCell(3).numFmt = moneyFmt;
+    const channelTotalRow = summary.addRow([
+      'الإجمالي',
+      data.salesSummary.byChannel.reduce((s, c) => s + c.orderCount, 0),
+      data.salesSummary.byChannel.reduce((s, c) => s + c.revenue, 0),
+    ]);
+    this.styleTotalRow(channelTotalRow);
+    channelTotalRow.getCell(3).numFmt = moneyFmt;
 
-    const items = wb.addWorksheet('الأصناف الأكثر مبيعًا');
+    const items = wb.addWorksheet('الأصناف الأكثر مبيعًا', { views: [{ rightToLeft: true, state: 'frozen', ySplit: 1 }] });
     items.columns = [{ width: 30 }, { width: 12 }, { width: 14 }];
-    items.addRow(['الصنف', 'الكمية', 'الإيراد']).font = { bold: true };
-    for (const i of data.topItems) items.addRow([i.name, i.quantity, i.revenue]);
+    this.styleHeaderRow(items.addRow(['الصنف', 'الكمية', 'الإيراد']));
+    for (const i of data.topItems) items.addRow([i.name, i.quantity, i.revenue]).getCell(3).numFmt = moneyFmt;
+    if (data.topItems.length) {
+      const itemsTotalRow = items.addRow([
+        'الإجمالي',
+        data.topItems.reduce((s, i) => s + i.quantity, 0),
+        data.topItems.reduce((s, i) => s + i.revenue, 0),
+      ]);
+      this.styleTotalRow(itemsTotalRow);
+      itemsTotalRow.getCell(3).numFmt = moneyFmt;
+    }
 
-    const foodCost = wb.addWorksheet('تكلفة الطعام');
+    const foodCost = wb.addWorksheet('تكلفة الطعام', { views: [{ rightToLeft: true }] });
     foodCost.columns = [{ width: 26 }, { width: 16 }];
-    foodCost.addRow(['المؤشر', 'القيمة']).font = { bold: true };
-    foodCost.addRow(['صافي المبيعات', data.foodCost.netSales]);
-    foodCost.addRow(['تكلفة البضاعة المباعة', data.foodCost.cogs]);
-    foodCost.addRow(['هامش الربح', data.foodCost.grossMargin]);
-    foodCost.addRow(['نسبة تكلفة الطعام %', data.foodCost.foodCostPercent]);
-    foodCost.addRow(['نسبة هامش الربح %', data.foodCost.grossMarginPercent]);
+    this.styleHeaderRow(foodCost.addRow(['المؤشر', 'القيمة']));
+    foodCost.addRow(['صافي المبيعات', data.foodCost.netSales]).getCell(2).numFmt = moneyFmt;
+    foodCost.addRow(['تكلفة البضاعة المباعة', data.foodCost.cogs]).getCell(2).numFmt = moneyFmt;
+    foodCost.addRow(['هامش الربح', data.foodCost.grossMargin]).getCell(2).numFmt = moneyFmt;
+    foodCost.addRow(['نسبة تكلفة الطعام %', data.foodCost.foodCostPercent]).getCell(2).numFmt = '0.0"%"';
+    foodCost.addRow(['نسبة هامش الربح %', data.foodCost.grossMarginPercent]).getCell(2).numFmt = '0.0"%"';
 
-    const lowStock = wb.addWorksheet('نقص المخزون');
+    const lowStock = wb.addWorksheet('نقص المخزون', { views: [{ rightToLeft: true, state: 'frozen', ySplit: 1 }] });
     lowStock.columns = [{ width: 26 }, { width: 20 }, { width: 14 }, { width: 14 }];
-    lowStock.addRow(['الخامة', 'الموقع', 'الكمية الحالية', 'الحد الأدنى']).font = { bold: true };
+    this.styleHeaderRow(lowStock.addRow(['الخامة', 'الموقع', 'الكمية الحالية', 'الحد الأدنى']));
     for (const r of data.lowStock) lowStock.addRow([r.name, r.locationName, r.quantity, r.lowStockThreshold]);
 
     const buffer = await wb.xlsx.writeBuffer();
@@ -104,54 +154,85 @@ export class ReportsService {
   // (so it at least renders as recognizable glyphs rather than blank
   // boxes), with this same caveat about letter joining. The Excel export
   // above is the fully Arabic-correct format for real use.
+  // Section dividers/boxes/footer below are pdfkit vector primitives
+  // (.rect/.moveTo/.lineTo) -- they carry none of the Arabic-shaping risk
+  // the comment above describes, so this is safe ground to make the
+  // layout read like a real report (Odoo/Foodics-style header band +
+  // ruled sections + footer) without touching how any text is drawn.
+  private pdfSectionHeading(doc: PDFKit.PDFDocument, title: string) {
+    const x = doc.page.margins.left;
+    const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    doc.moveDown(0.5);
+    const y = doc.y;
+    doc.font('Helvetica-Bold').fontSize(13).fillColor('#37309F').text(title, x, y);
+    doc.moveTo(x, doc.y + 2).lineTo(x + width, doc.y + 2).lineWidth(1).strokeColor('#37309F').stroke();
+    doc.fillColor('#000000');
+    doc.moveDown(0.4);
+  }
   private buildPdf(data: DailyReportData): Promise<Buffer> {
+    const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     return new Promise((resolve, reject) => {
-      const doc = new PDFDocument({ margin: 40 });
+      const doc = new PDFDocument({ margin: 40, bufferPages: true });
       doc.registerFont('arabic', ARABIC_FONT_PATH);
       const chunks: Buffer[] = [];
       doc.on('data', (c: Buffer) => chunks.push(c));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      doc.font('Helvetica-Bold').fontSize(18).text('Daily Report', { align: 'left' });
-      doc.font('arabic').fontSize(11).text(data.locationName, { align: 'left' });
-      doc.font('Helvetica').fontSize(10).text(`Period: ${data.periodStart.toISOString().slice(0, 10)} - ${data.periodEnd.toISOString().slice(0, 10)}`);
-      doc.moveDown();
+      // Header band: a filled bar with the report title, same accent color
+      // the admin panel's own reports use (var(--brand): #37309F).
+      const bandHeight = 56;
+      doc.rect(0, 0, doc.page.width, bandHeight).fill('#37309F');
+      doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(18).text('Daily Report', doc.page.margins.left, 16);
+      doc.font('arabic').fontSize(11).text(data.locationName, doc.page.margins.left, 38);
+      doc.fillColor('#000000').y = bandHeight + 16;
+      doc.font('Helvetica').fontSize(10).fillColor('#555555')
+        .text(`Period: ${data.periodStart.toISOString().slice(0, 10)} - ${data.periodEnd.toISOString().slice(0, 10)}    |    Generated: ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`);
+      doc.fillColor('#000000');
 
-      doc.font('Helvetica-Bold').fontSize(14).text('Sales Summary');
+      this.pdfSectionHeading(doc, 'Sales Summary');
       doc.font('Helvetica').fontSize(10);
       doc.text(`Orders: ${data.salesSummary.orderCount}`);
-      doc.text(`Revenue: ${data.salesSummary.revenue.toFixed(2)} SAR`);
-      doc.text(`Net sales: ${data.salesSummary.netSales.toFixed(2)} SAR`);
-      doc.text(`VAT collected: ${data.salesSummary.vatCollected.toFixed(2)} SAR`);
-      doc.text(`Discounts given: ${data.salesSummary.discountGiven.toFixed(2)} SAR`);
-      doc.text(`Average order value: ${data.salesSummary.averageOrderValue.toFixed(2)} SAR`);
-      doc.moveDown();
+      doc.text(`Revenue: ${fmt(data.salesSummary.revenue)} SAR`);
+      doc.text(`Net sales: ${fmt(data.salesSummary.netSales)} SAR`);
+      doc.text(`VAT collected: ${fmt(data.salesSummary.vatCollected)} SAR`);
+      doc.text(`Discounts given: ${fmt(data.salesSummary.discountGiven)} SAR`);
+      doc.font('Helvetica-Bold').text(`Average order value: ${fmt(data.salesSummary.averageOrderValue)} SAR`);
 
-      doc.font('Helvetica-Bold').fontSize(14).text('Top Items');
+      this.pdfSectionHeading(doc, 'Top Items');
       doc.font('Helvetica').fontSize(10);
       for (const i of data.topItems) {
         doc.font('arabic').text(`${i.name}: `, { continued: true });
-        doc.font('Helvetica').text(`qty ${i.quantity}, revenue ${i.revenue.toFixed(2)} SAR`);
+        doc.font('Helvetica').text(`qty ${i.quantity}, revenue ${fmt(i.revenue)} SAR`);
       }
       if (!data.topItems.length) doc.text('No sales in this period.');
-      doc.moveDown();
 
-      doc.font('Helvetica-Bold').fontSize(14).text('Food Cost');
+      this.pdfSectionHeading(doc, 'Food Cost');
       doc.font('Helvetica').fontSize(10);
-      doc.text(`Net sales: ${data.foodCost.netSales.toFixed(2)} SAR`);
-      doc.text(`COGS: ${data.foodCost.cogs.toFixed(2)} SAR`);
-      doc.text(`Gross margin: ${data.foodCost.grossMargin.toFixed(2)} SAR (${data.foodCost.grossMarginPercent.toFixed(1)}%)`);
+      doc.text(`Net sales: ${fmt(data.foodCost.netSales)} SAR`);
+      doc.text(`COGS: ${fmt(data.foodCost.cogs)} SAR`);
+      doc.text(`Gross margin: ${fmt(data.foodCost.grossMargin)} SAR (${data.foodCost.grossMarginPercent.toFixed(1)}%)`);
       doc.text(`Food cost: ${data.foodCost.foodCostPercent.toFixed(1)}%`);
-      doc.moveDown();
 
-      doc.font('Helvetica-Bold').fontSize(14).text('Low Stock Alerts');
+      this.pdfSectionHeading(doc, 'Low Stock Alerts');
       doc.font('Helvetica').fontSize(10);
       for (const r of data.lowStock) {
         doc.font('arabic').text(`${r.name} (${r.locationName}): `, { continued: true });
         doc.font('Helvetica').text(`${r.quantity} / min ${r.lowStockThreshold}`);
       }
       if (!data.lowStock.length) doc.text('Nothing below threshold.');
+
+      // Footer on every page: page number, added last (bufferPages: true
+      // lets pdfkit report the final page count only once generation is done).
+      const pageCount = doc.bufferedPageRange().count;
+      for (let i = 0; i < pageCount; i++) {
+        doc.switchToPage(i);
+        doc.font('Helvetica').fontSize(8).fillColor('#888888')
+          .text(`Page ${i + 1} of ${pageCount}`, doc.page.margins.left, doc.page.height - 30, {
+            width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+            align: 'center',
+          });
+      }
 
       doc.end();
     });
