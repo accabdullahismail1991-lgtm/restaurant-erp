@@ -4,6 +4,7 @@ import { scopedLocationIds } from '../common/location-scope.util';
 import { CustomersService, EARN_CURRENCY_PER_POINT } from '../customers/customers.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ProductionOrdersService } from '../production/production-orders.service';
 import { PromotionsService } from '../promotions/promotions.service';
 import { ZatcaService } from '../zatca/zatca.service';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -20,6 +21,7 @@ export class OrdersService {
     private readonly zatca: ZatcaService,
     private readonly promotions: PromotionsService,
     private readonly customers: CustomersService,
+    private readonly production: ProductionOrdersService,
   ) {}
 
   private async assertLocationInScope(userId: string, locationId: string) {
@@ -136,7 +138,7 @@ export class OrdersService {
         // docs/ARCHITECTURE.md's "Sales <-> Items <-> Inventory" section.
         const recipeLines = await tx.recipeLine.findMany({ where: { menuItemId: menuItem.id } });
         for (const recipeLine of recipeLines) {
-          await this.inventory.consume(tx, {
+          const { shortfall } = await this.inventory.consume(tx, {
             locationId: dto.locationId,
             ingredientId: recipeLine.ingredientId,
             quantity: Number(recipeLine.quantity) * line.quantity,
@@ -144,6 +146,19 @@ export class OrdersService {
             refId: order.id,
             allowNegative: location.allowNegativeStock,
           });
+          // Only reachable when allowNegativeStock let this sale go
+          // through with no real stock behind it -- raises a production
+          // need for this shift instead of leaving it as a silent
+          // negative InventoryBalance (applyShortfall itself is a no-op
+          // for a RAW_MATERIAL, which has no "production" concept).
+          if (shortfall > 0) {
+            await this.production.applyShortfall(tx, {
+              locationId: dto.locationId,
+              shiftId: dto.shiftId,
+              outputIngredientId: recipeLine.ingredientId,
+              quantity: shortfall,
+            });
+          }
         }
       }
 

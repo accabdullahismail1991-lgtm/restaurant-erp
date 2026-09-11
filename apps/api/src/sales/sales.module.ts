@@ -3,6 +3,7 @@ import { AuthModule } from '../auth/auth.module';
 import { CustomersModule } from '../customers/customers.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { PaymentMethodsModule } from '../payment-methods/payment-methods.module';
+import { ProductionModule } from '../production/production.module';
 import { PromotionsModule } from '../promotions/promotions.module';
 import { ZatcaModule } from '../zatca/zatca.module';
 import { OrdersController } from './orders.controller';
@@ -11,7 +12,7 @@ import { ShiftsController } from './shifts.controller';
 import { ShiftsService } from './shifts.service';
 
 @Module({
-  imports: [AuthModule, InventoryModule, ZatcaModule, PromotionsModule, CustomersModule, PaymentMethodsModule],
+  imports: [AuthModule, InventoryModule, ZatcaModule, PromotionsModule, CustomersModule, PaymentMethodsModule, ProductionModule],
   controllers: [ShiftsController, OrdersController],
   providers: [ShiftsService, OrdersService],
 })

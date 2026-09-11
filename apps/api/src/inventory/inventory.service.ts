@@ -107,7 +107,12 @@ export class InventoryService {
       totalCost = totalCost.add(c.quantity.mul(c.unitCost));
     }
     await this.bumpBalance(db, args.locationId, args.ingredientId, -args.quantity);
-    return { totalCost };
+    // Whatever's left in `remaining` here only survived the loop above
+    // because allowNegative let it through -- callers that care whether
+    // they just sold into stock that doesn't really exist (Sales, to
+    // raise a production need) read it from here instead of re-deriving
+    // it themselves.
+    return { totalCost, shortfall: remaining.gt(0) ? remaining.toNumber() : 0 };
   }
 
   // Reverses exactly the batch-level movements a prior consume() made for
