@@ -588,6 +588,14 @@ enum OrderStatus {
   VOIDED
 }
 
+// نقدية: تُدفع عند البيع (الوضع الافتراضي). آجلة: تُفوتر لعميل محدد ليُسوَّى
+// حسابه لاحقًا -- تتطلب customerId (القرار في orders.service.ts create()).
+// لا تُغيّر أي منطق دفع/تعليق موجود، هي تصنيف على الفاتورة فقط.
+enum InvoiceType {
+  CASH
+  CREDIT
+}
+
 model Order {
   id               String       @id @default(cuid())
   locationId       String
@@ -599,6 +607,7 @@ model Order {
   // (MenuItemChannelPrice) بدل السعر الأساسي، منفصل تمامًا عن OrderChannel
   // أعلاه (التصنيف العام لأغراض العروض/التحليلات).
   salesChannelId   String?
+  invoiceType      InvoiceType  @default(CASH)
   status           OrderStatus  @default(OPEN)
   servedById       String?
   subtotal         Decimal      @db.Decimal(12, 2)

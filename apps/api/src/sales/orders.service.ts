@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { OrderStatus } from '@prisma/client';
+import { InvoiceType, OrderStatus } from '@prisma/client';
 import { scopedLocationIds } from '../common/location-scope.util';
 import { CustomersService, EARN_CURRENCY_PER_POINT } from '../customers/customers.service';
 import { InventoryService } from '../inventory/inventory.service';
@@ -45,6 +45,12 @@ export class OrdersService {
     if (!location) throw new NotFoundException('الموقع غير موجود');
     if (location.requireCustomerForOrders && !dto.customerId) {
       throw new BadRequestException('هذا الفرع يُلزم اختيار العميل عند إنشاء الطلب');
+    }
+    const invoiceType = dto.invoiceType ?? InvoiceType.CASH;
+    // A CREDIT (آجل) invoice is billed to a specific customer's account by
+    // definition -- there's no one else to collect it from later.
+    if (invoiceType === InvoiceType.CREDIT && !dto.customerId) {
+      throw new BadRequestException('الفاتورة الآجلة تتطلب اختيار عميل');
     }
 
     const shift = await this.prisma.shift.findUnique({ where: { id: dto.shiftId } });
@@ -115,6 +121,7 @@ export class OrdersService {
           shiftId: dto.shiftId,
           channel: dto.channel,
           salesChannelId: dto.salesChannelId,
+          invoiceType,
           status: OrderStatus.SENT_TO_KITCHEN,
           servedById: userId,
           subtotal,

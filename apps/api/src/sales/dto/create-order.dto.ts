@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import { ArrayMinSize, IsArray, IsIn, IsInt, IsNumber, IsOptional, IsPositive, IsString, Min, ValidateNested } from 'class-validator';
-import { OrderChannel } from '@prisma/client';
+import { InvoiceType, OrderChannel } from '@prisma/client';
 
 export class CreateOrderLineDto {
   @IsString()
@@ -28,6 +28,13 @@ export class CreateOrderDto {
   @IsOptional()
   @IsString()
   customerId?: string;
+
+  // Defaults to CASH -- CREDIT (آجل) requires customerId, enforced in
+  // OrdersService.create() since it billed to a specific customer's
+  // account by definition.
+  @IsOptional()
+  @IsIn(Object.values(InvoiceType))
+  invoiceType?: InvoiceType;
 
   // Separate from `channel` above (the general dine-in/takeaway/delivery
   // classification used by analytics/promotions) -- this picks a specific
