@@ -1,4 +1,18 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  StreamableFile,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
@@ -42,5 +56,27 @@ export class BranchesController {
   @RequirePermission('branches.manage')
   update(@Param('id') id: string, @Body() dto: UpdateLocationDto) {
     return this.branches.update(id, dto);
+  }
+
+  // Not gated behind analytics.view -- a branch logo is display data (same
+  // visibility as its name/address), printed on every invoice/report.
+  @Get(':id/logo')
+  async getLogo(@Param('id') id: string) {
+    const { data, mimeType } = await this.branches.getLogo(id);
+    return new StreamableFile(data, { type: mimeType });
+  }
+
+  @Post(':id/logo')
+  @RequirePermission('branches.manage')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }))
+  uploadLogo(@Param('id') id: string, @UploadedFile() file?: Express.Multer.File) {
+    if (!file) throw new BadRequestException('لم يتم إرفاق أي شعار');
+    return this.branches.setLogo(id, file);
+  }
+
+  @Delete(':id/logo')
+  @RequirePermission('branches.manage')
+  removeLogo(@Param('id') id: string) {
+    return this.branches.removeLogo(id);
   }
 }

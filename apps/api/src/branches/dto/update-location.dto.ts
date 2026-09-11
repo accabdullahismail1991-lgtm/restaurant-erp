@@ -35,4 +35,12 @@ export class UpdateLocationDto {
   @IsOptional()
   @IsBoolean()
   allowNegativeStock?: boolean;
+
+  @IsOptional()
+  @IsString()
+  invoiceHeaderNote?: string;
+
+  @IsOptional()
+  @IsString()
+  invoiceFooterNote?: string;
 }

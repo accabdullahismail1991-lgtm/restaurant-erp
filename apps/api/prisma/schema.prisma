@@ -54,6 +54,15 @@ model Location {
   // (default off) since oversold stock is a real operational risk most
   // branches should NOT silently accept.
   allowNegativeStock Boolean @default(false)
+  // Per-branch invoice/receipt customization -- logo stored the same way
+  // MenuItem.imageData is (bytea, no object storage configured here);
+  // header/footer are free text printed above/below the line items on the
+  // cashier invoice (e.g. a welcome line, a return policy, social handles).
+  // All optional: an invoice prints fine with none of this set.
+  logoData         Bytes?
+  logoMimeType     String?
+  invoiceHeaderNote String?
+  invoiceFooterNote String?
   isActive  Boolean      @default(true)
   createdAt DateTime     @default(now())
 
@@ -561,6 +570,10 @@ model Shift {
   variance       Decimal?  @db.Decimal(12, 2) // Over/Short
   openedAt       DateTime  @default(now())
   closedAt       DateTime?
+  // آخر رقم فاتورة صادر لهذه الوردية -- يُزاد ذريًا (increment) عند كل طلب
+  // جديد بدل عدّ الطلبات الموجودة، لتفادي تعارض رقمين متطابقين لو وصل
+  // طلبان في نفس اللحظة (orders.service.ts create()).
+  lastOrderSequence Int    @default(0)
 
   location Location @relation(fields: [locationId], references: [id])
   openedBy User     @relation("ShiftOpenedBy", fields: [openedById], references: [id])
@@ -608,6 +621,13 @@ model Order {
   // أعلاه (التصنيف العام لأغراض العروض/التحليلات).
   salesChannelId   String?
   invoiceType      InvoiceType  @default(CASH)
+  // أرقام فاتورة قابلة للقراءة، منفصلة تمامًا عن zatcaInvoiceCounter (وهو
+  // تسلسل ZATCA الرسمي على مستوى الفرع بأكمله ولا يجوز كسره). shiftSequence
+  // يبدأ من 1 مع كل وردية جديدة (لا علاقة له بمعرّف/اسم الوردية نفسه)،
+  // dailySequence يبدأ من 1 مع كل يوم تقويمي جديد لنفس الفرع، عبر كل
+  // الورديات في ذلك اليوم. تُحسب ذريًا داخل معاملة create() في orders.service.ts.
+  shiftSequence    Int?
+  dailySequence    Int?
   status           OrderStatus  @default(OPEN)
   servedById       String?
   subtotal         Decimal      @db.Decimal(12, 2)
@@ -655,6 +675,18 @@ model Order {
   payments     Payment[]
   returns      OrderReturn[]
   activityLog  OrderActivityLog[]
+}
+
+// عدّاد يومي منفصل لكل فرع -- صف واحد لكل (locationId, date)، يُزاد ذريًا عبر
+// upsert (INSERT ... ON CONFLICT DO UPDATE) في orders.service.ts create() بدل
+// عدّ طلبات اليوم الحالي، لتفادي رقمين متطابقين لو وصل طلبان من فرعين
+// مختلفين -- أو نفس الفرع -- في نفس اللحظة تمامًا.
+model DailyInvoiceCounter {
+  locationId String
+  date       DateTime @db.Date
+  counter    Int      @default(0)
+
+  @@id([locationId, date])
 }
 
 // سجل حركة صغير لأحداث الطلب التي لا تُشتقّ من حقول الطلب نفسها (بخلاف

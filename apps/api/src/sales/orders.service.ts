@@ -113,6 +113,25 @@ export class OrdersService {
     const grandTotal = round2(subtotal - discountTotal + vatTotal);
 
     return this.prisma.$transaction(async (tx) => {
+      // Two independent, human-readable invoice numbers -- neither is
+      // zatcaInvoiceCounter (Location's official ZATCA chain, never touched
+      // here). Both are assigned via a single atomic UPDATE/UPSERT
+      // (increment on a row Postgres locks for the update), the same safe
+      // pattern ZatcaService already uses for its own counter -- a
+      // count-then-insert here would let two orders arriving at the same
+      // instant land on the same number.
+      const { lastOrderSequence: shiftSequence } = await tx.shift.update({
+        where: { id: dto.shiftId },
+        data: { lastOrderSequence: { increment: 1 } },
+      });
+      const today = new Date();
+      today.setUTCHours(0, 0, 0, 0);
+      const { counter: dailySequence } = await tx.dailyInvoiceCounter.upsert({
+        where: { locationId_date: { locationId: dto.locationId, date: today } },
+        create: { locationId: dto.locationId, date: today, counter: 1 },
+        update: { counter: { increment: 1 } },
+      });
+
       const order = await tx.order.create({
         data: {
           locationId: dto.locationId,
@@ -122,6 +141,8 @@ export class OrdersService {
           channel: dto.channel,
           salesChannelId: dto.salesChannelId,
           invoiceType,
+          shiftSequence,
+          dailySequence,
           status: OrderStatus.SENT_TO_KITCHEN,
           servedById: userId,
           subtotal,
@@ -180,7 +201,9 @@ export class OrdersService {
         lines: { include: { menuItem: { select: { name: true } } } },
         payments: true,
         promotion: true,
-        location: { select: { name: true, address: true, vatNumber: true, vatRate: true } },
+        location: {
+          select: { name: true, address: true, vatNumber: true, vatRate: true, logoMimeType: true, invoiceHeaderNote: true, invoiceFooterNote: true },
+        },
         customer: { select: { name: true, phone: true } },
         servedBy: { select: { id: true, name: true } },
         activityLog: { orderBy: { createdAt: 'desc' }, include: { createdBy: { select: { name: true } } } },
