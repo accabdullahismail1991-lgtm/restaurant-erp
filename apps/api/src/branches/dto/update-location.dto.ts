@@ -1,4 +1,4 @@
-import { IsBoolean, IsEnum, IsOptional, IsString, Matches } from 'class-validator';
+import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
 import { LocationType } from '@prisma/client';
 
 export class UpdateLocationDto {
@@ -25,4 +25,14 @@ export class UpdateLocationDto {
   @IsOptional()
   @IsBoolean()
   requireCustomerForOrders?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  vatRate?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  allowNegativeStock?: boolean;
 }

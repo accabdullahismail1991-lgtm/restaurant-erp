@@ -109,4 +109,14 @@ export class AnalyticsController {
   ) {
     return this.analytics.paymentMethodsSummary(user.userId, locationId, from, to);
   }
+
+  @Get('production-summary')
+  productionSummary(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.analytics.productionSummary(user.userId, locationId, from, to);
+  }
 }

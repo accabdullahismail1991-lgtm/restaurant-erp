@@ -66,6 +66,22 @@ export class ShiftsService {
     const shift = await this.findOne(id, userId);
     if (shift.closedAt) throw new BadRequestException('الوردية مغلقة بالفعل');
 
+    // Every sales invoice tied to this shift must be settled one way or
+    // another (paid or voided) before the till can be reconciled and
+    // closed -- an order left OPEN/SENT_TO_KITCHEN/READY (including one
+    // explicitly "معلّقة/held" via OrdersService.hold()) has no payment
+    // recorded yet, so expectedCash below would silently be wrong (missing
+    // whatever that sale eventually collects) if closing were allowed
+    // regardless.
+    const unpaidCount = await this.prisma.order.count({
+      where: { shiftId: id, status: { notIn: [OrderStatus.PAID, OrderStatus.VOIDED] } },
+    });
+    if (unpaidCount > 0) {
+      throw new BadRequestException(
+        `لا يمكن إغلاق الوردية -- يوجد ${unpaidCount} فاتورة غير مكتملة (غير مدفوعة أو معلّقة) على هذه الوردية، أكمل دفعها أو ألغِها أولًا`,
+      );
+    }
+
     const cashMethodCodes = await this.paymentMethods.cashMethodCodes();
     const cashPayments = await this.prisma.payment.aggregate({
       where: { method: { in: cashMethodCodes }, order: { shiftId: id, status: OrderStatus.PAID } },

@@ -39,8 +39,16 @@ describe('Returns (e2e)', () => {
     await prisma.permission.deleteMany({ where: { code: 'pos.return_order' } });
 
     const returnPerm = await prisma.permission.create({ data: { code: 'pos.return_order', label: 'تسجيل مرتجع عميل' } });
+    // pos.void_order may already exist (seeded globally / created by another
+    // suite sharing this DB) -- upsert rather than create so this doesn't
+    // collide with its unique `code` regardless of run order.
+    const voidPerm = await prisma.permission.upsert({
+      where: { code: 'pos.void_order' },
+      update: {},
+      create: { code: 'pos.void_order', label: 'إلغاء طلب' },
+    });
     const role = await prisma.role.create({ data: { name: 'Returns-Test-Manager' } });
-    await prisma.rolePermission.create({ data: { roleId: role.id, permissionId: returnPerm.id } });
+    await prisma.rolePermission.createMany({ data: [returnPerm, voidPerm].map((p) => ({ roleId: role.id, permissionId: p.id })) });
     await prisma.role.create({ data: { name: 'Returns-Test-NoPerm' } });
 
     const makeUser = async (phone: string, roleId?: string) => {
@@ -123,6 +131,8 @@ describe('Returns (e2e)', () => {
       .send({ orderId: orderRes.body.id, lines: [{ orderLineId: unpaidLineId, quantity: 1 }] });
     expect(res.status).toBe(400);
 
+    // Void it (never paid) so it doesn't block this shift's close below.
+    await request(app.getHttpServer()).post(`/orders/${orderRes.body.id}/void`).set(auth(manageToken));
     await request(app.getHttpServer()).post(`/shifts/${shiftId}/close`).set(auth(manageToken)).send({ closingCounted: 200 });
   });
 

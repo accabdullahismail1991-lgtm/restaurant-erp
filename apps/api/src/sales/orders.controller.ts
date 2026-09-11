@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermission } from '../auth/require-permission.decorator';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { HoldOrderDto } from './dto/hold-order.dto';
 import { PayOrderDto } from './dto/pay-order.dto';
 import { OrdersService } from './orders.service';
 
@@ -42,6 +43,12 @@ export class OrdersController {
   @HttpCode(200)
   pay(@Param('id') id: string, @Body() dto: PayOrderDto, @CurrentUser() user: { userId: string }) {
     return this.orders.pay(id, dto, user.userId);
+  }
+
+  @Post(':id/hold')
+  @HttpCode(200)
+  hold(@Param('id') id: string, @Body() dto: HoldOrderDto, @CurrentUser() user: { userId: string }) {
+    return this.orders.hold(id, dto, user.userId);
   }
 
   @Post(':id/void')

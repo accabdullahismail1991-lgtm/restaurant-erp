@@ -1,4 +1,4 @@
-import { IsBoolean, IsEnum, IsOptional, IsString, Matches } from 'class-validator';
+import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
 import { LocationType } from '@prisma/client';
 
 export class CreateLocationDto {
@@ -22,4 +22,15 @@ export class CreateLocationDto {
   @IsOptional()
   @IsBoolean()
   requireCustomerForOrders?: boolean;
+
+  // Percentage, e.g. 15 for 15% -- see Location.vatRate in schema.prisma.
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  vatRate?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  allowNegativeStock?: boolean;
 }

@@ -70,13 +70,16 @@ export class InventoryService {
   // simplification for both valuation methods: WEIGHTED_AVERAGE ingredients
   // still get a real per-movement cost (the depleted batches' own unitCost),
   // it's just not recomputed into a single rolling average yet. Throws if
-  // the location doesn't have enough stock -- no oversell for this
-  // online-only phase (offline/negative-balance reconciliation is Phase 8).
-  // Returns the total cost of what it actually depleted (sum of each
-  // touched batch's own unitCost x quantity taken from it) -- Production
-  // uses this to cost the batch it produces from these inputs; Sales and
-  // manual waste both just ignore it.
-  async consume(db: Db, args: { locationId: string; ingredientId: string; quantity: number; reason: string; refId?: string }) {
+  // the location doesn't have enough stock, UNLESS `allowNegative` is set
+  // (Location.allowNegativeStock, a per-branch opt-in) -- in which case the
+  // shortfall is simply not backed by any real batch: the balance still
+  // goes negative (bumpBalance always applies the FULL requested quantity),
+  // but the shortfall contributes no cost since there's no real unitCost to
+  // attribute it to. Returns the total cost of what it actually depleted
+  // (sum of each touched batch's own unitCost x quantity taken from it) --
+  // Production uses this to cost the batch it produces from these inputs;
+  // Sales and manual waste both just ignore it.
+  async consume(db: Db, args: { locationId: string; ingredientId: string; quantity: number; reason: string; refId?: string; allowNegative?: boolean }) {
     let remaining = new Prisma.Decimal(args.quantity);
     const batches = await db.inventoryBatch.findMany({
       where: { locationId: args.locationId, ingredientId: args.ingredientId, quantity: { gt: 0 } },
@@ -91,7 +94,7 @@ export class InventoryService {
       remaining = remaining.sub(take);
     }
 
-    if (remaining.gt(0)) {
+    if (remaining.gt(0) && !args.allowNegative) {
       throw new BadRequestException(`رصيد المخزون غير كافٍ للصنف المطلوب (الناقص: ${remaining.toString()})`);
     }
 

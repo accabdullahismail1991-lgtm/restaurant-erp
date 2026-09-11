@@ -7,7 +7,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { buildInvoiceXml } from './invoice-xml.util';
 import { buildQr } from './qr.util';
 
-const VAT_RATE = 0.15;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 // base64(hex(SHA-256("0"))) -- ZATCA's published Previous Invoice Hash
@@ -89,6 +88,7 @@ export class ZatcaService {
 
     const menuItems = await tx.menuItem.findMany({ where: { id: { in: order.lines.map((l) => l.menuItemId) } } });
     const nameById = new Map(menuItems.map((m) => [m.id, m.name]));
+    const vatRate = Number(order.location.vatRate) / 100;
 
     const invoiceLines = order.lines.map((line) => {
       const lineSubtotal = round2(Number(line.unitPrice) * line.quantity);
@@ -97,7 +97,7 @@ export class ZatcaService {
         quantity: line.quantity,
         unitPrice: Number(line.unitPrice),
         lineTotal: lineSubtotal,
-        lineVat: round2(lineSubtotal * VAT_RATE),
+        lineVat: round2(lineSubtotal * vatRate),
       };
     });
 

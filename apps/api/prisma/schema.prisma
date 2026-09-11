@@ -43,6 +43,17 @@ model Location {
   // different case from a walk-in dine-in branch that mostly doesn't.
   // Enforced server-side in OrdersService.create(), not just in the UI.
   requireCustomerForOrders Boolean @default(false)
+  // Percentage (e.g. 15.00 for 15%), replacing what used to be a single
+  // hardcoded 0.15 constant duplicated across OrdersService/ZatcaService/
+  // the admin panel's invoice renderer. One rate per branch (not per item)
+  // per the simplest-viable design -- still lets each branch configure a
+  // different rate if it operates under a different tax jurisdiction.
+  vatRate   Decimal      @default(15) @db.Decimal(5, 2)
+  // Lets this branch keep selling a menu item past zero stock instead of
+  // OrdersService rejecting the order -- an explicit per-branch opt-in
+  // (default off) since oversold stock is a real operational risk most
+  // branches should NOT silently accept.
+  allowNegativeStock Boolean @default(false)
   isActive  Boolean      @default(true)
   createdAt DateTime     @default(now())
 
@@ -77,6 +88,7 @@ model User {
   approvals             Approval[]
   returnsCreated        OrderReturn[]
   purchaseReturnsCreated PurchaseReturn[]
+  orderActivityLogs      OrderActivityLog[]
 }
 
 model Role {
@@ -622,6 +634,24 @@ model Order {
   lines        OrderLine[]
   payments     Payment[]
   returns      OrderReturn[]
+  activityLog  OrderActivityLog[]
+}
+
+// سجل حركة صغير لأحداث الطلب التي لا تُشتقّ من حقول الطلب نفسها (بخلاف
+// createdAt/paidAt) -- حاليًا يسجّل فقط "تعليق الفاتورة" (HELD): الكاشير
+// يضغط تعليق بدل الدفع فورًا، فيبقى الطلب بحالته الحالية (غير مدفوع) لكن مع
+// أثر صريح لمن علّقها ومتى ولماذا، بدل الاعتماد على مجرد "لم يُدفع بعد" التي
+// لا تُفرّق بين "لم يصل الكاشير له بعد" و"عُلّق عمدًا".
+model OrderActivityLog {
+  id        String   @id @default(cuid())
+  orderId   String
+  action    String // "HELD" حاليًا فقط
+  note      String?
+  createdById String
+  createdAt DateTime @default(now())
+
+  order     Order @relation(fields: [orderId], references: [id])
+  createdBy User  @relation(fields: [createdById], references: [id])
 }
 
 // حالة تحضير كل عنصر بشكل مستقل — ضرورية لـ KDS (القرار #11)

@@ -7,10 +7,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PromotionsService } from '../promotions/promotions.service';
 import { ZatcaService } from '../zatca/zatca.service';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { HoldOrderDto } from './dto/hold-order.dto';
 import { PayOrderDto } from './dto/pay-order.dto';
 
-// KSA standard VAT rate (docs/DECISIONS.md #3: ZATCA compliance).
-const VAT_RATE = 0.15;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 @Injectable()
@@ -98,7 +97,11 @@ export class OrdersService {
       promotionId = applicable?.promotion.id ?? null;
     }
     if (discountTotal > subtotal) throw new BadRequestException('قيمة الخصم أكبر من إجمالي الفاتورة');
-    const vatTotal = round2((subtotal - discountTotal) * VAT_RATE);
+    // Per-branch rate (docs/DECISIONS.md #3 originally hardcoded 15% --
+    // now Location.vatRate, a percentage e.g. 15.00) so a branch under a
+    // different tax jurisdiction isn't stuck with KSA's default.
+    const vatRate = Number(location.vatRate) / 100;
+    const vatTotal = round2((subtotal - discountTotal) * vatRate);
     const grandTotal = round2(subtotal - discountTotal + vatTotal);
 
     return this.prisma.$transaction(async (tx) => {
@@ -139,6 +142,7 @@ export class OrdersService {
             quantity: Number(recipeLine.quantity) * line.quantity,
             reason: 'SALE',
             refId: order.id,
+            allowNegative: location.allowNegativeStock,
           });
         }
       }
@@ -154,9 +158,10 @@ export class OrdersService {
         lines: { include: { menuItem: { select: { name: true } } } },
         payments: true,
         promotion: true,
-        location: { select: { name: true, address: true, vatNumber: true } },
+        location: { select: { name: true, address: true, vatNumber: true, vatRate: true } },
         customer: { select: { name: true, phone: true } },
         servedBy: { select: { id: true, name: true } },
+        activityLog: { orderBy: { createdAt: 'desc' }, include: { createdBy: { select: { name: true } } } },
       },
     });
     if (!order) throw new NotFoundException('الطلب غير موجود');
@@ -177,9 +182,24 @@ export class OrdersService {
       include: {
         servedBy: { select: { id: true, name: true } },
         payments: { select: { method: true, amount: true } },
+        _count: { select: { activityLog: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  // Explicitly parks an unpaid order instead of paying it now -- unlike
+  // just "not paid yet" (which doesn't distinguish "cashier hasn't gotten
+  // to it" from "deliberately held"), this leaves an audit trail (who,
+  // when, optional note) via OrderActivityLog. Status is unchanged; the
+  // order stays exactly as payable as before -- ShiftsService.close()
+  // is what actually blocks on it remaining unpaid.
+  async hold(id: string, dto: HoldOrderDto, userId: string) {
+    const order = await this.findOne(id, userId);
+    if (order.status === OrderStatus.PAID) throw new BadRequestException('الطلب مدفوع بالفعل، لا يمكن تعليقه');
+    if (order.status === OrderStatus.VOIDED) throw new BadRequestException('الطلب ملغى، لا يمكن تعليقه');
+    await this.prisma.orderActivityLog.create({ data: { orderId: id, action: 'HELD', note: dto.note, createdById: userId } });
+    return this.findOne(id, userId);
   }
 
   async pay(id: string, dto: PayOrderDto, userId: string) {

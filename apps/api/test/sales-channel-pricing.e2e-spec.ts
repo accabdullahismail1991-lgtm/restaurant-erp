@@ -159,6 +159,10 @@ describe('Sales channel pricing (e2e)', () => {
     const line2 = orderRes.body.lines.find((l: { menuItemId: string }) => l.menuItemId === secondMenuItemId);
     expect(Number(line2.unitPrice)).toBe(5);
 
+    await request(app.getHttpServer())
+      .post(`/orders/${orderRes.body.id}/pay`)
+      .set(auth(manageToken))
+      .send({ payments: [{ method: 'CASH', mode: 'MANUAL', amount: Number(orderRes.body.grandTotal) }] });
     await request(app.getHttpServer()).post(`/shifts/${shiftId}/close`).set(auth(manageToken)).send({ closingCounted: 200 });
   });
 

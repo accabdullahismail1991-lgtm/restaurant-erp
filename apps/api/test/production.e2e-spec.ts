@@ -45,9 +45,17 @@ describe('Phase 6: production orders (e2e)', () => {
     // Also needed to seed raw-material stock via /inventory/adjustments
     // before this suite's own production orders can consume anything.
     const inventoryPerm = await prisma.permission.create({ data: { code: 'inventory.adjust', label: 'تسوية المخزون' } });
+    // analytics.view is global/shared with several other suites -- upsert
+    // rather than create so it doesn't collide with its unique `code`
+    // regardless of which suite runs first against this shared test DB.
+    const analyticsPerm = await prisma.permission.upsert({
+      where: { code: 'analytics.view' },
+      update: {},
+      create: { code: 'analytics.view', label: 'عرض التحليلات' },
+    });
     const role = await prisma.role.create({ data: { name: 'Production-Test-Admin' } });
     await prisma.rolePermission.createMany({
-      data: [productionPerm, inventoryPerm].map((p) => ({ roleId: role.id, permissionId: p.id })),
+      data: [productionPerm, inventoryPerm, analyticsPerm].map((p) => ({ roleId: role.id, permissionId: p.id })),
     });
 
     const makeUser = async (phone: string, roleId?: string) => {
@@ -245,5 +253,18 @@ describe('Phase 6: production orders (e2e)', () => {
     const res = await request(app.getHttpServer()).get(`/production-orders?locationId=${locationId}`).set(auth(adminToken));
     expect(res.status).toBe(200);
     expect(res.body.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('production-summary reports real consumed cost for the completed order, and 0-cost PLANNED orders are excluded', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/analytics/production-summary')
+      .query({ locationId })
+      .set(auth(adminToken));
+    expect(res.status).toBe(200);
+    expect(res.body.totalCost).toBeGreaterThanOrEqual(900); // mainPoId alone already cost 900
+    const sauceRow = res.body.byOutput.find((o: any) => o.name === 'صلصة إنتاج');
+    expect(sauceRow).toBeDefined();
+    expect(sauceRow.totalCost).toBeGreaterThanOrEqual(900);
+    expect(sauceRow.avgUnitCost).toBeGreaterThan(0);
   });
 });

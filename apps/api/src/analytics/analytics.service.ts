@@ -302,11 +302,17 @@ export class AnalyticsService {
     const { gte, lte } = this.parseRange(from, to);
     const pos = await this.prisma.purchaseOrder.findMany({
       where: { locationId: ids ? { in: ids } : undefined, createdAt: gte || lte ? { gte, lte } : undefined },
-      select: { totalAmount: true, status: true, supplier: { select: { name: true } } },
+      select: { totalAmount: true, status: true, supplier: { select: { name: true } }, location: { select: { vatRate: true } } },
     });
 
     const committed = pos.filter((po) => AnalyticsService.COMMITTED_PO_STATUSES.includes(po.status));
     const totalSpend = round2(committed.reduce((s, po) => s + Number(po.totalAmount), 0));
+    // PurchaseOrderLine.unitCost/PurchaseOrder.totalAmount are recorded
+    // tax-EXCLUSIVE (the raw cost paid to the supplier, same convention as
+    // Order.subtotal) -- this is an ESTIMATE of input VAT using each PO's
+    // own branch's configured rate, not a value ZATCA or the supplier
+    // actually reported; there's no supplier-invoice VAT field to read yet.
+    const estimatedVat = round2(committed.reduce((s, po) => s + Number(po.totalAmount) * (Number(po.location.vatRate) / 100), 0));
 
     const byStatusMap = new Map<string, number>();
     for (const po of pos) byStatusMap.set(po.status, (byStatusMap.get(po.status) ?? 0) + 1);
@@ -317,6 +323,7 @@ export class AnalyticsService {
     return {
       orderCount: pos.length,
       totalSpend,
+      estimatedVat,
       byStatus: [...byStatusMap.entries()].map(([status, count]) => ({ status, count })),
       topSuppliers: [...bySupplierMap.entries()]
         .map(([supplierName, spend]) => ({ supplierName, spend: round2(spend) }))
@@ -474,6 +481,59 @@ export class AnalyticsService {
       byMethod: [...byMethodMap.entries()]
         .map(([method, v]) => ({ method, count: v.count, total: round2(v.total) }))
         .sort((a, b) => b.total - a.total),
+    };
+  }
+
+  // Real cost per output ingredient (ProductionOrder.totalInputCost, captured
+  // from the actual batches consumed at start() -- not a recipe estimate),
+  // only counted once the order has actually consumed something
+  // (IN_PROGRESS or COMPLETED); a still-PLANNED order hasn't touched
+  // inventory yet so its totalInputCost is still 0.
+  async productionSummary(userId: string, locationId?: string, from?: string, to?: string) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.productionSummaryCore(ids, from, to);
+  }
+
+  private async productionSummaryCore(ids: string[] | undefined, from?: string, to?: string) {
+    const { gte, lte } = this.parseRange(from, to);
+    const orders = await this.prisma.productionOrder.findMany({
+      where: { locationId: ids ? { in: ids } : undefined, createdAt: gte || lte ? { gte, lte } : undefined },
+      select: {
+        status: true,
+        outputQuantity: true,
+        totalInputCost: true,
+        outputIngredient: { select: { name: true, unit: true } },
+      },
+    });
+
+    const consumed = orders.filter((o) => o.status === 'IN_PROGRESS' || o.status === 'COMPLETED');
+    const totalCost = round2(consumed.reduce((s, o) => s + Number(o.totalInputCost), 0));
+
+    const byOutputMap = new Map<string, { name: string; unit: string; ordersCount: number; totalOutputQuantity: number; totalCost: number }>();
+    for (const o of consumed) {
+      const key = o.outputIngredient.name;
+      const cur = byOutputMap.get(key) ?? { name: o.outputIngredient.name, unit: o.outputIngredient.unit, ordersCount: 0, totalOutputQuantity: 0, totalCost: 0 };
+      cur.ordersCount += 1;
+      cur.totalOutputQuantity += Number(o.outputQuantity);
+      cur.totalCost += Number(o.totalInputCost);
+      byOutputMap.set(key, cur);
+    }
+
+    const byStatusMap = new Map<string, number>();
+    for (const o of orders) byStatusMap.set(o.status, (byStatusMap.get(o.status) ?? 0) + 1);
+
+    return {
+      ordersCount: orders.length,
+      totalCost,
+      byStatus: [...byStatusMap.entries()].map(([status, count]) => ({ status, count })),
+      byOutput: [...byOutputMap.values()]
+        .map((v) => ({
+          ...v,
+          totalOutputQuantity: round2(v.totalOutputQuantity),
+          totalCost: round2(v.totalCost),
+          avgUnitCost: v.totalOutputQuantity > 0 ? round2(v.totalCost / v.totalOutputQuantity) : 0,
+        }))
+        .sort((a, b) => b.totalCost - a.totalCost),
     };
   }
 }
