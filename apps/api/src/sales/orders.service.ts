@@ -40,6 +40,12 @@ export class OrdersService {
   async create(dto: CreateOrderDto, userId: string) {
     await this.assertLocationInScope(userId, dto.locationId);
 
+    const location = await this.prisma.location.findUnique({ where: { id: dto.locationId } });
+    if (!location) throw new NotFoundException('الموقع غير موجود');
+    if (location.requireCustomerForOrders && !dto.customerId) {
+      throw new BadRequestException('هذا الفرع يُلزم اختيار العميل عند إنشاء الطلب');
+    }
+
     const shift = await this.prisma.shift.findUnique({ where: { id: dto.shiftId } });
     if (!shift) throw new NotFoundException('الوردية غير موجودة');
     if (shift.locationId !== dto.locationId) throw new BadRequestException('الوردية لا تخص هذا الموقع');

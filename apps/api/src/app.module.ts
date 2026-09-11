@@ -11,6 +11,7 @@ import { IngredientsModule } from './ingredients/ingredients.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { ItemsModule } from './items/items.module';
 import { KitchenModule } from './kitchen/kitchen.module';
+import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductionModule } from './production/production.module';
 import { PromotionsModule } from './promotions/promotions.module';
@@ -55,6 +56,7 @@ import { UsersModule } from './users/users.module';
     AnalyticsModule,
     ReportsModule,
     AlertsModule,
+    PaymentMethodsModule,
   ],
   controllers: [AppController],
 })

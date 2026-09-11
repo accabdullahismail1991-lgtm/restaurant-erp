@@ -21,4 +21,8 @@ export class UpdateLocationDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  requireCustomerForOrders?: boolean;
 }

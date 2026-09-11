@@ -12,6 +12,21 @@ import { PrismaService } from '../src/prisma/prisma.service';
 // whatever User/Role/Permission rows it needs for login.
 //
 export async function resetDatabase(prisma: PrismaService) {
+  await prisma.paymentMethod.deleteMany({});
+  // Every existing suite that pays an order with method: 'CASH' and then
+  // closes a shift expecting cash reconciliation to include it predates
+  // PaymentMethod existing at all -- ShiftsService.close() now derives
+  // "which methods count as cash" from PaymentMethod.isCash instead of a
+  // hardcoded string, so those suites would silently break (expectedCash
+  // stuck at the opening float) without this baseline restored right after
+  // the wipe above, the same 3 defaults prisma/seed.ts gives local dev.
+  await prisma.paymentMethod.createMany({
+    data: [
+      { code: 'CASH', name: 'كاش', isCash: true },
+      { code: 'CARD', name: 'بطاقة', isCash: false },
+      { code: 'WALLET', name: 'محفظة إلكترونية', isCash: false },
+    ],
+  });
   await prisma.generatedReport.deleteMany({});
   await prisma.approval.deleteMany({});
   await prisma.purchaseReturnLine.deleteMany({});

@@ -1,12 +1,16 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { OrderStatus } from '@prisma/client';
 import { scopedLocationIds } from '../common/location-scope.util';
+import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CloseShiftDto, OpenShiftDto } from './dto/shift.dto';
 
 @Injectable()
 export class ShiftsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly paymentMethods: PaymentMethodsService,
+  ) {}
 
   private async assertLocationInScope(userId: string, locationId: string) {
     const allowedIds = await scopedLocationIds(this.prisma, userId);
@@ -54,15 +58,17 @@ export class ShiftsService {
   }
 
   // Cash reconciliation (القرار #12): expected cash = opening float + every
-  // CASH payment on a PAID order tied to this shift. Variance = what the
-  // cashier actually counted minus that. Only cash is reconciled here --
-  // card/wallet settle through their own terminal, not the till.
+  // payment made in a method flagged isCash (PaymentMethodsService), on a
+  // PAID order tied to this shift. Variance = what the cashier actually
+  // counted minus that. Only cash-flagged methods are reconciled here --
+  // card/wallet/etc settle through their own terminal, not the till.
   async close(id: string, dto: CloseShiftDto, userId: string) {
     const shift = await this.findOne(id, userId);
     if (shift.closedAt) throw new BadRequestException('الوردية مغلقة بالفعل');
 
+    const cashMethodCodes = await this.paymentMethods.cashMethodCodes();
     const cashPayments = await this.prisma.payment.aggregate({
-      where: { method: 'CASH', order: { shiftId: id, status: OrderStatus.PAID } },
+      where: { method: { in: cashMethodCodes }, order: { shiftId: id, status: OrderStatus.PAID } },
       _sum: { amount: true },
     });
     const expectedCash = Number(shift.openingFloat) + Number(cashPayments._sum.amount ?? 0);

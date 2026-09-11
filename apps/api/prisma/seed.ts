@@ -26,6 +26,17 @@ const PERMISSIONS: Array<{ code: string; label: string }> = [
   { code: 'pos.return_order', label: 'تسجيل مرتجع عميل' },
   { code: 'promotions.manage', label: 'إدارة العروض والخصومات' },
   { code: 'analytics.view', label: 'عرض التقارير التحليلية (مبيعات/تكلفة/مخزون)' },
+  { code: 'payment_methods.manage', label: 'إدارة طرق الدفع' },
+];
+
+// Seeded once, then left alone -- an admin can add more or rename these
+// from the "💳 طرق الدفع" screen without this script fighting their edits
+// on the next run (upsert only touches `code`+`update:{}`, so it will
+// never overwrite a name/isCash a user already customized).
+const DEFAULT_PAYMENT_METHODS: Array<{ code: string; name: string; isCash: boolean }> = [
+  { code: 'CASH', name: 'كاش', isCash: true },
+  { code: 'CARD', name: 'بطاقة', isCash: false },
+  { code: 'WALLET', name: 'محفظة إلكترونية', isCash: false },
 ];
 
 // Overridable via env so a real deployment (Render, etc.) isn't stuck with
@@ -54,6 +65,7 @@ async function main() {
     'pos.return_order',
     'promotions.manage',
     'analytics.view',
+    'payment_methods.manage',
   ];
   const cashierCodes: string[] = []; // base cashier operations don't need a permission check yet (sales module unbuilt)
 
@@ -72,6 +84,10 @@ async function main() {
     update: {},
     create: { userId: admin.id, roleId: adminRole.id },
   });
+
+  for (const m of DEFAULT_PAYMENT_METHODS) {
+    await prisma.paymentMethod.upsert({ where: { code: m.code }, update: {}, create: m });
+  }
 
   // eslint-disable-next-line no-console
   console.log(`Seed complete. Admin login: ${ADMIN_PHONE} / ${ADMIN_PASSWORD}`);

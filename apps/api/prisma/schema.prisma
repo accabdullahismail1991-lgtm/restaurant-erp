@@ -38,6 +38,11 @@ model Location {
   // invoice's XML can reference "invoice N-1 at this location" per ZATCA's
   // chaining rule. Incremented atomically inside ZatcaService.generateForOrder.
   zatcaInvoiceCounter Int          @default(0)
+  // Configurable per branch (not a global switch) -- a delivery-only dark
+  // kitchen branch that always needs a customer for handoff/loyalty is a
+  // different case from a walk-in dine-in branch that mostly doesn't.
+  // Enforced server-side in OrdersService.create(), not just in the UI.
+  requireCustomerForOrders Boolean @default(false)
   isActive  Boolean      @default(true)
   createdAt DateTime     @default(now())
 
@@ -676,13 +681,32 @@ enum PaymentMode {
 model Payment {
   id          String      @id @default(cuid())
   orderId     String
-  method      String // "CASH" | "CARD" | "WALLET"
+  // Free string on purpose, matching whatever PaymentMethod.code was
+  // active when this payment happened -- never a FK to PaymentMethod,
+  // so deactivating/renaming a method later can't orphan or rewrite
+  // historical payment records.
+  method      String // "CASH" | "CARD" | "WALLET" | any PaymentMethod.code
   mode        PaymentMode
   amount      Decimal     @db.Decimal(12, 2)
   terminalRef String? // معرف العملية من جهاز الدفع (للتكامل المباشر)
   createdAt   DateTime    @default(now())
 
   order Order @relation(fields: [orderId], references: [id])
+}
+
+// طرق الدفع القابلة للإدارة -- بدل قائمة مُثبَّتة بالكود (CASH/CARD/WALLET)،
+// كل منشأة قد تحتاج طرقًا إضافية (الدفع عند الاستلام لتطبيقات التوصيل، شبكة
+// مدى...). isCash يُستخدم حصرًا لتحديد أي الطرق تُحتسب ضمن تسوية صندوق
+// الوردية النقدي (ShiftsService.close) -- طريقة واحدة أو أكثر يمكن
+// وسمها كنقدية، والباقي (بطاقة/محفظة/تطبيقات) لا يُصفَّى إلا عبر جهات
+// التسوية الخاصة بها.
+model PaymentMethod {
+  id        String   @id @default(cuid())
+  name      String
+  code      String   @unique
+  isCash    Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
 }
 
 // ---------------------------------------------------------------------------
