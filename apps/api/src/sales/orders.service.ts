@@ -206,6 +206,7 @@ export class OrdersService {
         },
         customer: { select: { name: true, phone: true } },
         servedBy: { select: { id: true, name: true } },
+        table: { select: { label: true } },
         activityLog: { orderBy: { createdAt: 'desc' }, include: { createdBy: { select: { name: true } } } },
       },
     });

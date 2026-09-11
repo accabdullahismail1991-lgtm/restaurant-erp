@@ -43,6 +43,11 @@ export class KitchenService {
       channel: order.channel,
       tableLabel: order.table?.label ?? null,
       createdAt: order.createdAt,
+      // Same human-readable numbers the cashier invoice shows -- lets a
+      // printed kitchen ticket say "order #3 this shift" instead of a raw
+      // internal id, without adding yet another counter.
+      shiftSequence: order.shiftSequence,
+      dailySequence: order.dailySequence,
       lines: order.lines.map((line) => ({
         lineId: line.id,
         menuItemName: line.menuItem.name,
