@@ -84,6 +84,42 @@ export class AnalyticsService {
     };
   }
 
+  // Daily revenue/order-count buckets over the period -- the one shape
+  // salesSummaryCore's flat totals can't answer, needed for a trend chart
+  // (dashboard line/bar) rather than a single-period snapshot. Same
+  // fetch-then-reduce-in-JS style as every other report here; a
+  // restaurant's per-period order volume is nowhere near large enough to
+  // need a DB-side GROUP BY.
+  async salesTrend(userId: string, locationId?: string, from?: string, to?: string) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.salesTrendCore(ids, from, to);
+  }
+
+  private async salesTrendCore(ids: string[] | undefined, from?: string, to?: string) {
+    const { gte, lte } = this.parseRange(from, to);
+    const orders = await this.prisma.order.findMany({
+      where: {
+        status: OrderStatus.PAID,
+        locationId: ids ? { in: ids } : undefined,
+        paidAt: gte || lte ? { gte, lte } : undefined,
+      },
+      select: { paidAt: true, grandTotal: true },
+    });
+
+    const byDateMap = new Map<string, { orderCount: number; revenue: number }>();
+    for (const o of orders) {
+      const date = o.paidAt!.toISOString().slice(0, 10);
+      const cur = byDateMap.get(date) ?? { orderCount: 0, revenue: 0 };
+      cur.orderCount += 1;
+      cur.revenue += Number(o.grandTotal);
+      byDateMap.set(date, cur);
+    }
+
+    return [...byDateMap.entries()]
+      .map(([date, v]) => ({ date, orderCount: v.orderCount, revenue: round2(v.revenue) }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
+
   async topItems(userId: string, locationId?: string, from?: string, to?: string, limit = 10) {
     const ids = await this.resolveLocationIds(userId, locationId);
     return this.topItemsCore(ids, from, to, limit);

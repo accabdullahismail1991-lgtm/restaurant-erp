@@ -149,6 +149,14 @@ describe('Phase 11: analytics / BI (e2e)', () => {
     expect(res.body.byChannel).toEqual([{ channel: 'DINE_IN', orderCount: 1, revenue: 115 }]);
   });
 
+  it('buckets sales by day for a trend chart, scoped to the requested location', async () => {
+    const res = await request(app.getHttpServer()).get(`/analytics/sales-trend?locationId=${locationId}`).set(auth(viewToken));
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1); // the one real sale, all paid today
+    const today = new Date().toISOString().slice(0, 10);
+    expect(res.body[0]).toEqual({ date: today, orderCount: 1, revenue: 115 });
+  });
+
   it('excludes the other location entirely when scoped', async () => {
     const res = await request(app.getHttpServer()).get(`/analytics/sales-summary?locationId=${otherLocationId}`).set(auth(viewToken));
     expect(res.body.orderCount).toBe(1);

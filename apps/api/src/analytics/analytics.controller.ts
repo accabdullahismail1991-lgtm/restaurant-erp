@@ -24,6 +24,16 @@ export class AnalyticsController {
     return this.analytics.salesSummary(user.userId, locationId, from, to);
   }
 
+  @Get('sales-trend')
+  salesTrend(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.analytics.salesTrend(user.userId, locationId, from, to);
+  }
+
   @Get('top-items')
   topItems(
     @CurrentUser() user: { userId: string },
