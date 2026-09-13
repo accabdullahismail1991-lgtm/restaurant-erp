@@ -808,6 +808,12 @@ model OrderLine {
   quantity      Int
   unitPrice     Decimal           @db.Decimal(10, 2)
   kitchenStatus KitchenLineStatus @default(QUEUED)
+  // Stamped by KitchenService.advanceStatus() the moment kitchenStatus
+  // transitions to READY -- lets a kitchen-performance report measure
+  // order.createdAt -> readyAt (prep time) per line without conflating it
+  // with pay() timing (an order can be paid well before or after its food
+  // is actually ready, so paidAt is not a usable proxy for this).
+  readyAt       DateTime?
 
   order           Order             @relation(fields: [orderId], references: [id])
   menuItem        MenuItem?         @relation(fields: [menuItemId], references: [id])

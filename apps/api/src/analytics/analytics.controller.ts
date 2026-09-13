@@ -130,6 +130,16 @@ export class AnalyticsController {
     return this.analytics.paymentMethodsSummary(user.userId, locationId, from, to);
   }
 
+  @Get('tax-summary')
+  taxSummary(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.analytics.taxSummary(user.userId, locationId, from, to);
+  }
+
   @Get('production-summary')
   productionSummary(
     @CurrentUser() user: { userId: string },
@@ -138,5 +148,35 @@ export class AnalyticsController {
     @Query('to') to?: string,
   ) {
     return this.analytics.productionSummary(user.userId, locationId, from, to);
+  }
+
+  @Get('peak-hours')
+  peakHours(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.analytics.peakHours(user.userId, locationId, from, to);
+  }
+
+  @Get('customer-experience')
+  customerExperience(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.analytics.customerExperience(user.userId, locationId, from, to);
+  }
+
+  @Get('kitchen-performance')
+  kitchenPerformance(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.analytics.kitchenPerformance(user.userId, locationId, from, to);
   }
 }

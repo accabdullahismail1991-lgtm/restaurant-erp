@@ -445,6 +445,73 @@ export class AnalyticsService {
     };
   }
 
+  // Combines both sides of VAT the restaurant deals with -- output tax
+  // collected on sales (already tracked exactly per order.vatTotal, which
+  // OrdersService.create() computes per-line off each item's taxType) and
+  // input tax estimated on purchasing (same estimate purchasingSummaryCore
+  // already makes, since there's no supplier-invoice VAT field to read
+  // exactly). The by-tax-type sales split reads each line's CURRENT
+  // menuItem.taxType (not a historical snapshot -- same simplification
+  // menuItemCosts/foodCost already make elsewhere in this file), so
+  // changing an item's tax type reclassifies its past lines here too.
+  async taxSummary(userId: string, locationId?: string, from?: string, to?: string) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.taxSummaryCore(ids, from, to);
+  }
+
+  private async taxSummaryCore(ids: string[] | undefined, from?: string, to?: string) {
+    const { gte, lte } = this.parseRange(from, to);
+    const orders = await this.prisma.order.findMany({
+      where: {
+        status: OrderStatus.PAID,
+        locationId: ids ? { in: ids } : undefined,
+        paidAt: gte || lte ? { gte, lte } : undefined,
+      },
+      select: {
+        subtotal: true,
+        discountTotal: true,
+        vatTotal: true,
+        lines: { select: { quantity: true, unitPrice: true, menuItem: { select: { taxType: true } } } },
+      },
+    });
+
+    const salesTaxableSubtotal = round2(orders.reduce((s, o) => s + Number(o.subtotal) - Number(o.discountTotal), 0));
+    const salesVatCollected = round2(orders.reduce((s, o) => s + Number(o.vatTotal), 0));
+
+    const byTaxTypeMap = new Map<string, number>();
+    for (const o of orders) {
+      for (const line of o.lines) {
+        // A combo line has no menuItem (it's priced as its own bundle) --
+        // treated as STANDARD, the same simplification OrdersService.create()
+        // itself makes when computing vatTotal.
+        const taxType = line.menuItem ? line.menuItem.taxType : 'STANDARD';
+        const lineRevenue = Number(line.unitPrice) * line.quantity;
+        byTaxTypeMap.set(taxType, (byTaxTypeMap.get(taxType) ?? 0) + lineRevenue);
+      }
+    }
+
+    const pos = await this.prisma.purchaseOrder.findMany({
+      where: { locationId: ids ? { in: ids } : undefined, createdAt: gte || lte ? { gte, lte } : undefined },
+      select: { totalAmount: true, status: true, location: { select: { vatRate: true } } },
+    });
+    const committedPos = pos.filter((po) => AnalyticsService.COMMITTED_PO_STATUSES.includes(po.status));
+    const purchasingTotalAmount = round2(committedPos.reduce((s, po) => s + Number(po.totalAmount), 0));
+    const purchasingEstimatedVat = round2(committedPos.reduce((s, po) => s + Number(po.totalAmount) * (Number(po.location.vatRate) / 100), 0));
+
+    return {
+      sales: {
+        taxableSubtotal: salesTaxableSubtotal,
+        vatCollected: salesVatCollected,
+        byTaxType: [...byTaxTypeMap.entries()].map(([taxType, revenue]) => ({ taxType, revenue: round2(revenue) })),
+      },
+      purchasing: {
+        totalAmount: purchasingTotalAmount,
+        estimatedVat: purchasingEstimatedVat,
+      },
+      netVatPosition: round2(salesVatCollected - purchasingEstimatedVat),
+    };
+  }
+
   // Refunds and which items customers actually bring back -- the one
   // angle a flat "سجل المرتجعات" history list can't answer on its own.
   async returnsSummary(userId: string, locationId?: string, from?: string, to?: string) {
@@ -650,6 +717,137 @@ export class AnalyticsService {
           avgUnitCost: v.totalOutputQuantity > 0 ? round2(v.totalCost / v.totalOutputQuantity) : 0,
         }))
         .sort((a, b) => b.totalCost - a.totalCost),
+    };
+  }
+
+  // Order volume/revenue bucketed by hour-of-day (0-23, server local time)
+  // across the whole date range -- the one shape salesTrend (day buckets)
+  // can't answer: WHEN during a typical day business actually happens, to
+  // plan staffing/shifts around real peak hours rather than a guess.
+  async peakHours(userId: string, locationId?: string, from?: string, to?: string) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.peakHoursCore(ids, from, to);
+  }
+
+  private async peakHoursCore(ids: string[] | undefined, from?: string, to?: string) {
+    const { gte, lte } = this.parseRange(from, to);
+    const orders = await this.prisma.order.findMany({
+      where: {
+        status: OrderStatus.PAID,
+        locationId: ids ? { in: ids } : undefined,
+        paidAt: gte || lte ? { gte, lte } : undefined,
+      },
+      select: { paidAt: true, grandTotal: true },
+    });
+
+    const byHour = Array.from({ length: 24 }, (_, hour) => ({ hour, orderCount: 0, revenue: 0 }));
+    for (const o of orders) {
+      const hour = o.paidAt!.getHours();
+      byHour[hour].orderCount += 1;
+      byHour[hour].revenue += Number(o.grandTotal);
+    }
+    const withRevenue = byHour.map((h) => ({ ...h, revenue: round2(h.revenue) }));
+    const peakHour = withRevenue.reduce((best, h) => (h.orderCount > best.orderCount ? h : best), withRevenue[0]);
+
+    return { byHour: withRevenue, peakHour: peakHour.orderCount > 0 ? peakHour.hour : null };
+  }
+
+  // A composite proxy for "customer experience" built entirely from data
+  // this system already has -- there's no CSAT/survey table, so this
+  // reads signals that correlate with a good/bad experience instead:
+  // how many customers come back (loyalty), how fast orders get served,
+  // and how often something went wrong (voids/returns).
+  async customerExperience(userId: string, locationId?: string, from?: string, to?: string) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.customerExperienceCore(ids, from, to);
+  }
+
+  private async customerExperienceCore(ids: string[] | undefined, from?: string, to?: string) {
+    const { gte, lte } = this.parseRange(from, to);
+    const locationFilter = ids ? { in: ids } : undefined;
+    const dateFilter = gte || lte ? { gte, lte } : undefined;
+
+    const [paidOrders, voidedCount, returnsCount] = await Promise.all([
+      this.prisma.order.findMany({
+        where: { status: OrderStatus.PAID, locationId: locationFilter, paidAt: dateFilter },
+        select: { customerId: true, createdAt: true, paidAt: true },
+      }),
+      this.prisma.order.count({ where: { status: OrderStatus.VOIDED, locationId: locationFilter, createdAt: dateFilter } }),
+      this.prisma.orderReturn.count({ where: { order: { locationId: locationFilter }, createdAt: dateFilter } }),
+    ]);
+
+    const totalOrders = paidOrders.length + voidedCount;
+    const ordersWithCustomer = paidOrders.filter((o) => o.customerId);
+    const customerOrderCounts = new Map<string, number>();
+    for (const o of ordersWithCustomer) customerOrderCounts.set(o.customerId!, (customerOrderCounts.get(o.customerId!) ?? 0) + 1);
+    const distinctCustomers = customerOrderCounts.size;
+    const repeatCustomers = [...customerOrderCounts.values()].filter((c) => c > 1).length;
+    const repeatCustomerRate = distinctCustomers > 0 ? round2((repeatCustomers / distinctCustomers) * 100) : 0;
+
+    // "Order to paid" duration -- a rough service-speed proxy (not prep
+    // time specifically; see kitchenPerformance below for that).
+    const durationsMs = paidOrders.map((o) => o.paidAt!.getTime() - o.createdAt.getTime()).filter((ms) => ms >= 0);
+    const avgServiceMinutes = durationsMs.length ? round2(durationsMs.reduce((s, ms) => s + ms, 0) / durationsMs.length / 60000) : 0;
+
+    const voidRate = totalOrders > 0 ? round2((voidedCount / totalOrders) * 100) : 0;
+
+    return {
+      totalOrders,
+      distinctCustomersIdentified: distinctCustomers,
+      repeatCustomerRate,
+      avgServiceMinutes,
+      voidedOrders: voidedCount,
+      voidRate,
+      returnsCount,
+    };
+  }
+
+  // Kitchen prep-speed report -- order.createdAt -> OrderLine.readyAt per
+  // line, distinct from customerExperience's cruder "order to paid" proxy
+  // above since a line's readyAt is stamped by KitchenService the moment
+  // it's actually marked READY, regardless of when it gets paid.
+  async kitchenPerformance(userId: string, locationId?: string, from?: string, to?: string) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.kitchenPerformanceCore(ids, from, to);
+  }
+
+  private async kitchenPerformanceCore(ids: string[] | undefined, from?: string, to?: string) {
+    const { gte, lte } = this.parseRange(from, to);
+    const lines = await this.prisma.orderLine.findMany({
+      where: {
+        readyAt: { not: null },
+        order: { locationId: ids ? { in: ids } : undefined, createdAt: gte || lte ? { gte, lte } : undefined },
+      },
+      select: {
+        readyAt: true,
+        order: { select: { createdAt: true } },
+        menuItem: { select: { name: true, category: true } },
+        comboMeal: { select: { name: true } },
+      },
+    });
+
+    const prepMinutes = lines.map((l) => (l.readyAt!.getTime() - l.order.createdAt.getTime()) / 60000).filter((m) => m >= 0);
+    const avgPrepMinutes = prepMinutes.length ? round2(prepMinutes.reduce((s, m) => s + m, 0) / prepMinutes.length) : 0;
+    const maxPrepMinutes = prepMinutes.length ? round2(Math.max(...prepMinutes)) : 0;
+
+    const byCategoryMap = new Map<string, { totalMinutes: number; count: number }>();
+    for (const l of lines) {
+      const minutes = (l.readyAt!.getTime() - l.order.createdAt.getTime()) / 60000;
+      if (minutes < 0) continue;
+      const key = l.menuItem ? l.menuItem.category ?? 'بلا قسم' : 'عروض / كمبو';
+      const cur = byCategoryMap.get(key) ?? { totalMinutes: 0, count: 0 };
+      cur.totalMinutes += minutes;
+      cur.count += 1;
+      byCategoryMap.set(key, cur);
+    }
+
+    return {
+      linesReady: lines.length,
+      avgPrepMinutes,
+      maxPrepMinutes,
+      byCategory: [...byCategoryMap.entries()]
+        .map(([category, v]) => ({ category, avgPrepMinutes: round2(v.totalMinutes / v.count), count: v.count }))
+        .sort((a, b) => b.avgPrepMinutes - a.avgPrepMinutes),
     };
   }
 }

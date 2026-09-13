@@ -90,7 +90,10 @@ export class KitchenService {
     if (!next) throw new BadRequestException('العنصر جاهز وسُلِّم بالفعل -- لا يوجد انتقال إضافي');
 
     return this.prisma.$transaction(async (tx) => {
-      const updatedLine = await tx.orderLine.update({ where: { id: lineId }, data: { kitchenStatus: next } });
+      const updatedLine = await tx.orderLine.update({
+        where: { id: lineId },
+        data: { kitchenStatus: next, readyAt: next === KitchenLineStatus.READY ? new Date() : undefined },
+      });
 
       // Every line done (READY or already SERVED) and the order hasn't
       // moved past SENT_TO_KITCHEN on its own (e.g. via some other future
