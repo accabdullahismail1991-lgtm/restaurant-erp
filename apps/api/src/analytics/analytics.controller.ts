@@ -181,6 +181,46 @@ export class AnalyticsController {
     return this.analytics.kitchenPerformance(user.userId, locationId, from, to);
   }
 
+  @Get('abc-analysis')
+  abcAnalysis(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.analytics.abcAnalysis(user.userId, locationId, from, to);
+  }
+
+  @Get('category-mix')
+  categoryMix(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.analytics.categoryMix(user.userId, locationId, from, to);
+  }
+
+  @Get('period-comparison')
+  periodComparison(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.analytics.periodComparison(user.userId, locationId, from, to);
+  }
+
+  @Get('net-sales')
+  netSales(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.analytics.netSales(user.userId, locationId, from, to);
+  }
+
   @Get('daily-consumption')
   dailyConsumption(
     @CurrentUser() user: { userId: string },

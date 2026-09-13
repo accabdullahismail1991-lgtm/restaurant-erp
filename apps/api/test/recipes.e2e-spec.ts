@@ -220,4 +220,36 @@ describe('Phase 2: ingredients + items + multi-level recipes (e2e)', () => {
     const getRes = await request(app.getHttpServer()).get(`/ingredients/${semi.id}/recipe`).set(auth());
     expect(getRes.body).toHaveLength(0);
   });
+
+  it('blocks changing unit once the ingredient has any inventory batch (movement)', async () => {
+    const ingredient = await prisma.ingredient.create({
+      data: { name: 'صنف له حركة مخزنية', unit: 'kg', kind: 'RAW_MATERIAL', lowStockThreshold: 0 },
+    });
+    const location = await prisma.location.create({ data: { name: 'فرع اختبار قفل الوحدة', type: 'BRANCH' } });
+    await prisma.inventoryBatch.create({
+      data: { locationId: location.id, ingredientId: ingredient.id, batchNumber: 'B-TEST-1', quantity: 10, unitCost: 5, sourceType: 'PURCHASE' },
+    });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/ingredients/${ingredient.id}`)
+      .set(auth())
+      .send({ unit: 'g' });
+    expect(res.status).toBe(400);
+
+    const stillSame = await prisma.ingredient.findUnique({ where: { id: ingredient.id } });
+    expect(stillSame?.unit).toBe('kg');
+  });
+
+  it('allows changing unit freely when the ingredient has no inventory batches yet', async () => {
+    const ingredient = await prisma.ingredient.create({
+      data: { name: 'صنف بدون حركة مخزنية', unit: 'kg', kind: 'RAW_MATERIAL', lowStockThreshold: 0 },
+    });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/ingredients/${ingredient.id}`)
+      .set(auth())
+      .send({ unit: 'g' });
+    expect(res.status).toBe(200);
+    expect(res.body.unit).toBe('g');
+  });
 });

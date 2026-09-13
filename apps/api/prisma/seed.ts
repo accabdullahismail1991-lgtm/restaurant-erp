@@ -29,6 +29,7 @@ const PERMISSIONS: Array<{ code: string; label: string }> = [
   { code: 'combos.manage', label: 'إدارة وجبات الكمبو والبوكس' },
   { code: 'analytics.view', label: 'عرض التقارير التحليلية (مبيعات/تكلفة/مخزون)' },
   { code: 'payment_methods.manage', label: 'إدارة طرق الدفع' },
+  { code: 'system.reset_data', label: 'حذف/تصفير بيانات النظام (إجراء حسّاس)' },
 ];
 
 // Seeded once, then left alone -- an admin can add more or rename these

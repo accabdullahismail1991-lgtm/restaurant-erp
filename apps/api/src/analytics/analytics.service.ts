@@ -80,6 +80,12 @@ export class AnalyticsService {
       byChannelMap.set(o.channel, cur);
     }
 
+    // Returns aren't a separate report a manager has to cross-reference --
+    // the same period/location filter this report already applies to
+    // orders (by paidAt) is reused here on OrderReturn.createdAt, so
+    // "revenueAfterReturns" always reflects the exact same window shown.
+    const { returnCount, totalRefund } = await this.returnsTotals(ids, gte, lte);
+
     return {
       orderCount,
       revenue: round2(revenue),
@@ -88,7 +94,21 @@ export class AnalyticsService {
       discountGiven: round2(discountGiven),
       averageOrderValue: orderCount ? round2(revenue / orderCount) : 0,
       byChannel: [...byChannelMap.entries()].map(([channel, v]) => ({ channel, orderCount: v.orderCount, revenue: round2(v.revenue) })),
+      returnCount,
+      returnsTotal: totalRefund,
+      revenueAfterReturns: round2(revenue - totalRefund),
     };
+  }
+
+  // Shared by salesSummaryCore (returns shown inline within the sales
+  // report) and returnsSummaryCore (the dedicated returns report) -- same
+  // underlying OrderReturn rows, same location/date filter shape.
+  private async returnsTotals(ids: string[] | undefined, gte?: Date, lte?: Date) {
+    const returns = await this.prisma.orderReturn.findMany({
+      where: { order: { locationId: ids ? { in: ids } : undefined }, createdAt: gte || lte ? { gte, lte } : undefined },
+      select: { refundTotal: true },
+    });
+    return { returnCount: returns.length, totalRefund: round2(returns.reduce((s, r) => s + Number(r.refundTotal), 0)) };
   }
 
   // Daily revenue/order-count buckets over the period -- the one shape
@@ -125,6 +145,72 @@ export class AnalyticsService {
     return [...byDateMap.entries()]
       .map(([date, v]) => ({ date, orderCount: v.orderCount, revenue: round2(v.revenue) }))
       .sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  // A dedicated "Net Sales" report, the shape a restaurant's finance/ops
+  // review actually wants rather than reading it off the general sales
+  // summary: gross sales (before discount), net-of-discount sales BOTH
+  // excluding and including VAT side by side, distinct customer count (not
+  // just order count -- one customer can place several orders), average
+  // invoice, and a day-by-day breakdown for the same figures so a trend is
+  // visible without opening sales-trend separately.
+  async netSales(userId: string, locationId?: string, from?: string, to?: string) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.netSalesCore(ids, from, to);
+  }
+
+  private async netSalesCore(ids: string[] | undefined, from?: string, to?: string) {
+    const { gte, lte } = this.parseRange(from, to);
+    const orders = await this.prisma.order.findMany({
+      where: {
+        status: OrderStatus.PAID,
+        locationId: ids ? { in: ids } : undefined,
+        paidAt: gte || lte ? { gte, lte } : undefined,
+      },
+      select: { paidAt: true, subtotal: true, discountTotal: true, vatTotal: true, grandTotal: true, customerId: true },
+    });
+
+    const orderCount = orders.length;
+    const grossSales = orders.reduce((s, o) => s + Number(o.subtotal), 0);
+    const discountGiven = orders.reduce((s, o) => s + Number(o.discountTotal), 0);
+    const netSalesExclVat = grossSales - discountGiven;
+    const vatTotal = orders.reduce((s, o) => s + Number(o.vatTotal), 0);
+    const netSalesInclVat = orders.reduce((s, o) => s + Number(o.grandTotal), 0);
+    const customerCount = new Set(orders.map((o) => o.customerId).filter((id): id is string => !!id)).size;
+    const walkInOrderCount = orders.filter((o) => !o.customerId).length;
+
+    const byDateMap = new Map<string, { orderCount: number; netSalesExclVat: number; vatTotal: number; netSalesInclVat: number }>();
+    for (const o of orders) {
+      const date = o.paidAt!.toISOString().slice(0, 10);
+      const cur = byDateMap.get(date) ?? { orderCount: 0, netSalesExclVat: 0, vatTotal: 0, netSalesInclVat: 0 };
+      cur.orderCount += 1;
+      cur.netSalesExclVat += Number(o.subtotal) - Number(o.discountTotal);
+      cur.vatTotal += Number(o.vatTotal);
+      cur.netSalesInclVat += Number(o.grandTotal);
+      byDateMap.set(date, cur);
+    }
+
+    return {
+      orderCount,
+      customerCount,
+      walkInOrderCount,
+      grossSales: round2(grossSales),
+      discountGiven: round2(discountGiven),
+      netSalesExclVat: round2(netSalesExclVat),
+      vatTotal: round2(vatTotal),
+      netSalesInclVat: round2(netSalesInclVat),
+      averageInvoiceExclVat: orderCount ? round2(netSalesExclVat / orderCount) : 0,
+      averageInvoiceInclVat: orderCount ? round2(netSalesInclVat / orderCount) : 0,
+      byDay: [...byDateMap.entries()]
+        .map(([date, v]) => ({
+          date,
+          orderCount: v.orderCount,
+          netSalesExclVat: round2(v.netSalesExclVat),
+          vatTotal: round2(v.vatTotal),
+          netSalesInclVat: round2(v.netSalesInclVat),
+        }))
+        .sort((a, b) => a.date.localeCompare(b.date)),
+    };
   }
 
   async topItems(userId: string, locationId?: string, from?: string, to?: string, limit = 10) {
@@ -168,6 +254,133 @@ export class AnalyticsService {
       .map(([menuItemId, v]) => ({ menuItemId, name: v.name, quantity: v.quantity, revenue: round2(v.revenue) }))
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, limit);
+  }
+
+  // ABC/Pareto analysis -- one of the most standard inventory/menu-priority
+  // reports in retail & F&B BI: rank every item by revenue, then classify it
+  // by where its CUMULATIVE share of total revenue falls -- class A (the
+  // items making up the first ~80% of revenue: the vital few to never run
+  // out of and to protect margin on), class B (the next ~15%), class C (the
+  // long tail, the last ~5%, usually the first candidates for menu pruning).
+  // No `limit` unlike topItemsCore -- an item's class depends on its rank
+  // among ALL items, so truncating the list first would misclassify it.
+  async abcAnalysis(userId: string, locationId?: string, from?: string, to?: string) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.abcAnalysisCore(ids, from, to);
+  }
+
+  private async abcAnalysisCore(ids: string[] | undefined, from?: string, to?: string) {
+    const items = await this.topItemsCore(ids, from, to, Number.MAX_SAFE_INTEGER);
+    const totalRevenue = items.reduce((s, i) => s + i.revenue, 0);
+
+    let cumulative = 0;
+    const classified = items.map((i) => {
+      cumulative += i.revenue;
+      const cumulativePercent = totalRevenue > 0 ? round2((cumulative / totalRevenue) * 100) : 0;
+      const klass = cumulativePercent <= 80 ? 'A' : cumulativePercent <= 95 ? 'B' : 'C';
+      return { ...i, revenuePercent: totalRevenue > 0 ? round2((i.revenue / totalRevenue) * 100) : 0, cumulativePercent, class: klass };
+    });
+
+    const countByClass = { A: 0, B: 0, C: 0 };
+    const revenueByClass = { A: 0, B: 0, C: 0 };
+    for (const i of classified) {
+      countByClass[i.class as 'A' | 'B' | 'C'] += 1;
+      revenueByClass[i.class as 'A' | 'B' | 'C'] += i.revenue;
+    }
+
+    return {
+      totalRevenue: round2(totalRevenue),
+      items: classified,
+      summary: (['A', 'B', 'C'] as const).map((klass) => ({
+        class: klass,
+        itemCount: countByClass[klass],
+        revenue: round2(revenueByClass[klass]),
+        revenuePercent: totalRevenue > 0 ? round2((revenueByClass[klass] / totalRevenue) * 100) : 0,
+      })),
+    };
+  }
+
+  // Sales mix by MENU CATEGORY (starters/mains/desserts/...) -- a different
+  // axis than topItemsCore's per-item ranking, the one a menu/ops review
+  // usually wants first ("which category drives revenue") before drilling
+  // into individual items within it.
+  async categoryMix(userId: string, locationId?: string, from?: string, to?: string) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.categoryMixCore(ids, from, to);
+  }
+
+  private async categoryMixCore(ids: string[] | undefined, from?: string, to?: string) {
+    const { gte, lte } = this.parseRange(from, to);
+    const lines = await this.prisma.orderLine.findMany({
+      where: {
+        menuItemId: { not: null },
+        order: {
+          status: OrderStatus.PAID,
+          locationId: ids ? { in: ids } : undefined,
+          paidAt: gte || lte ? { gte, lte } : undefined,
+        },
+      },
+      select: { quantity: true, unitPrice: true, menuItem: { select: { category: true } } },
+    });
+
+    const byCategory = new Map<string, { quantity: number; revenue: number }>();
+    for (const line of lines) {
+      const category = line.menuItem!.category;
+      const cur = byCategory.get(category) ?? { quantity: 0, revenue: 0 };
+      cur.quantity += line.quantity;
+      cur.revenue += Number(line.unitPrice) * line.quantity;
+      byCategory.set(category, cur);
+    }
+
+    const totalRevenue = [...byCategory.values()].reduce((s, v) => s + v.revenue, 0);
+    return [...byCategory.entries()]
+      .map(([category, v]) => ({
+        category,
+        quantity: v.quantity,
+        revenue: round2(v.revenue),
+        revenuePercent: totalRevenue > 0 ? round2((v.revenue / totalRevenue) * 100) : 0,
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+  }
+
+  // Period-over-period comparison -- the current window (defaults to the
+  // trailing 30 days when no from/to given) against the immediately
+  // preceding window of the SAME length, so "how are we doing" always has a
+  // like-for-like baseline rather than a bare number with no context.
+  async periodComparison(userId: string, locationId?: string, from?: string, to?: string) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.periodComparisonCore(ids, from, to);
+  }
+
+  private async periodComparisonCore(ids: string[] | undefined, from?: string, to?: string) {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const toDate = to ? new Date(to) : new Date();
+    if (isNaN(toDate.getTime())) throw new BadRequestException('تاريخ النهاية (to) غير صالح');
+    const fromDate = from ? new Date(from) : new Date(toDate.getTime() - 29 * DAY_MS);
+    if (isNaN(fromDate.getTime())) throw new BadRequestException('تاريخ البداية (from) غير صالح');
+
+    const periodDays = Math.round((toDate.getTime() - fromDate.getTime()) / DAY_MS) + 1;
+    const prevTo = new Date(fromDate.getTime() - DAY_MS);
+    const prevFrom = new Date(prevTo.getTime() - (periodDays - 1) * DAY_MS);
+
+    const toStr = (d: Date) => d.toISOString().slice(0, 10);
+    const [current, previous] = await Promise.all([
+      this.salesSummaryCore(ids, toStr(fromDate), toStr(toDate)),
+      this.salesSummaryCore(ids, toStr(prevFrom), toStr(prevTo)),
+    ]);
+
+    const pctChange = (curr: number, prev: number) => (prev === 0 ? (curr === 0 ? 0 : 100) : round2(((curr - prev) / prev) * 100));
+
+    return {
+      current: { from: toStr(fromDate), to: toStr(toDate), ...current },
+      previous: { from: toStr(prevFrom), to: toStr(prevTo), ...previous },
+      change: {
+        revenue: pctChange(current.revenue, previous.revenue),
+        orderCount: pctChange(current.orderCount, previous.orderCount),
+        averageOrderValue: pctChange(current.averageOrderValue, previous.averageOrderValue),
+        netSales: pctChange(current.netSales, previous.netSales),
+      },
+    };
   }
 
   // The standout "advanced BI" report: real Cost of Goods Sold pulled from

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
+import { AdminModule } from './admin/admin.module';
 import { AlertsModule } from './alerts/alerts.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { AuthModule } from './auth/auth.module';
@@ -65,6 +66,7 @@ import { UsersModule } from './users/users.module';
     RolesModule,
     PermissionsModule,
     UnitsOfMeasureModule,
+    AdminModule,
   ],
   controllers: [AppController],
 })

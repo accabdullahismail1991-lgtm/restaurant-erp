@@ -205,6 +205,10 @@ describe('Roles/Permissions + shift activity log (e2e)', () => {
         .send({ locationId: location.id, shiftId, channel: 'DINE_IN', lines: [{ menuItemId: item.id, quantity: 1 }] });
       await request(app.getHttpServer()).post(`/orders/${order4.body.id}/pay`).set(auth(adminToken)).send({ payments: [{ method: 'CASH', mode: 'MANUAL', amount: Number(order4.body.grandTotal) }] });
       const order4Line = await prisma.orderLine.findFirstOrThrow({ where: { orderId: order4.body.id } });
+      // A return is only allowed once the kitchen has finished the line
+      // (READY/SERVED) -- QUEUED -> PREPARING -> READY, two bumps.
+      await request(app.getHttpServer()).post(`/kitchen/lines/${order4Line.id}/advance`).set(auth(adminToken));
+      await request(app.getHttpServer()).post(`/kitchen/lines/${order4Line.id}/advance`).set(auth(adminToken));
       await request(app.getHttpServer())
         .post('/returns')
         .set(auth(adminToken))

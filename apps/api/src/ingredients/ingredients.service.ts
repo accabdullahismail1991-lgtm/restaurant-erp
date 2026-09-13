@@ -18,18 +18,38 @@ export class IngredientsService {
     return bulkImportRows(CreateIngredientDto, rows, (dto) => this.create(dto));
   }
 
-  findAll() {
-    return this.prisma.ingredient.findMany({ orderBy: { name: 'asc' } });
+  // `hasMovement` tells the admin panel whether it's safe to let the unit
+  // field be edited -- once ANY InventoryBatch exists for an ingredient
+  // (a receipt, a production output, an adjustment, a transfer-in), every
+  // quantity/cost ever recorded against it is expressed in its CURRENT
+  // unit; changing the unit afterwards wouldn't convert those numbers, it
+  // would just silently reinterpret them. A batch existing is a reliable
+  // proxy for "has any movement at all", since every consumption event
+  // (sales, waste, production input...) draws down an existing batch --
+  // zero batches means zero consumption too.
+  async findAll() {
+    const ingredients = await this.prisma.ingredient.findMany({ orderBy: { name: 'asc' } });
+    const batchCounts = await this.prisma.inventoryBatch.groupBy({ by: ['ingredientId'], _count: { ingredientId: true } });
+    const withMovement = new Set(batchCounts.map((b) => b.ingredientId));
+    return ingredients.map((i) => ({ ...i, hasMovement: withMovement.has(i.id) }));
   }
 
   async findOne(id: string) {
     const ingredient = await this.prisma.ingredient.findUnique({ where: { id } });
     if (!ingredient) throw new NotFoundException('الصنف غير موجود');
-    return ingredient;
+    const batchCount = await this.prisma.inventoryBatch.count({ where: { ingredientId: id } });
+    return { ...ingredient, hasMovement: batchCount > 0 };
   }
 
   async update(id: string, dto: UpdateIngredientDto) {
-    await this.findOne(id);
+    const existing = await this.prisma.ingredient.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('الصنف غير موجود');
+    if (dto.unit && dto.unit !== existing.unit) {
+      const movementCount = await this.prisma.inventoryBatch.count({ where: { ingredientId: id } });
+      if (movementCount > 0) {
+        throw new BadRequestException('لا يمكن تغيير وحدة القياس بعد وجود حركة مخزنية على هذا الصنف -- كل الكميات والتكاليف المسجّلة مبنية على الوحدة الحالية');
+      }
+    }
     return this.prisma.ingredient.update({ where: { id }, data: dto });
   }
 

@@ -51,6 +51,10 @@ export class ReturnsService {
       quantity: l.quantity,
       alreadyReturned: returnedByLine.get(l.id) || 0,
       remaining: l.quantity - (returnedByLine.get(l.id) || 0),
+      // Lets the admin panel warn (or grey out) a line the kitchen hasn't
+      // finished yet -- create() below enforces the same rule server-side,
+      // this is only so the UI doesn't have to guess before submitting.
+      kitchenStatus: l.kitchenStatus,
     }));
   }
 
@@ -84,6 +88,15 @@ export class ReturnsService {
     // (RecipeLine.menuItemId is also nullable for semi-finished items).
     if (orderLines.some((l) => l.comboMealId)) {
       throw new BadRequestException('لا يمكن حاليًا إرجاع عنصر وجبة كمبو -- يُرجى التواصل مع الإدارة');
+    }
+    // A line still QUEUED/PREPARING never left the kitchen -- nothing was
+    // actually consumed/served yet, so "returning" it here would restock
+    // ingredients that were never taken out in the first place and
+    // silently double the inventory. READY/SERVED are the only states the
+    // kitchen has genuinely finished (or handed over) the item in.
+    const notReady = orderLines.filter((l) => l.kitchenStatus !== 'READY' && l.kitchenStatus !== 'SERVED');
+    if (notReady.length) {
+      throw new BadRequestException('لا يمكن إرجاع صنف لم يخرج من المطبخ بعد -- بعض السطور المطلوبة ما زالت قيد التحضير في المطبخ');
     }
 
     const priorLines = await this.prisma.orderReturnLine.findMany({ where: { orderLineId: { in: orderLineIds } } });

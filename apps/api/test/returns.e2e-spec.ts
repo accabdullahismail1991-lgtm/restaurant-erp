@@ -104,6 +104,11 @@ describe('Returns (e2e)', () => {
       .set(auth(manageToken))
       .send({ payments: [{ method: 'CASH', mode: 'MANUAL', amount: Number(orderRes.body.grandTotal) }] });
     expect(payRes.status).toBe(200);
+    // A return is only allowed once the kitchen has finished the line
+    // (READY/SERVED) -- QUEUED -> PREPARING -> READY, two bumps.
+    const lineId = orderRes.body.lines[0].id;
+    await request(app.getHttpServer()).post(`/kitchen/lines/${lineId}/advance`).set(auth(manageToken));
+    await request(app.getHttpServer()).post(`/kitchen/lines/${lineId}/advance`).set(auth(manageToken));
     await request(app.getHttpServer()).post(`/shifts/${shiftId}/close`).set(auth(manageToken)).send({ closingCounted: 200 });
     return payRes.body;
   }
@@ -141,6 +146,51 @@ describe('Returns (e2e)', () => {
     paidOrderId = order.id;
     orderLineId = order.lines[0].id;
     expect(order.status).toBe('PAID');
+  });
+
+  it('blocks a return while the line has not left the kitchen yet (still QUEUED)', async () => {
+    await prisma.inventoryBatch.create({
+      data: { locationId, ingredientId, batchNumber: 'RET-KITCHEN-' + Date.now(), quantity: 3, unitCost: 2, sourceType: 'ADJUSTMENT' },
+    });
+    await prisma.inventoryBalance.upsert({
+      where: { ingredientId_locationId: { ingredientId, locationId } },
+      update: { quantity: { increment: 3 } },
+      create: { ingredientId, locationId, quantity: 3 },
+    });
+    const shiftRes = await request(app.getHttpServer()).post('/shifts').set(auth(manageToken)).send({ locationId, openingFloat: 200 });
+    const shiftId = shiftRes.body.id;
+    const orderRes = await request(app.getHttpServer())
+      .post('/orders')
+      .set(auth(manageToken))
+      .send({ locationId, shiftId, channel: 'DINE_IN', lines: [{ menuItemId, quantity: 1 }] });
+    const payRes = await request(app.getHttpServer())
+      .post(`/orders/${orderRes.body.id}/pay`)
+      .set(auth(manageToken))
+      .send({ payments: [{ method: 'CASH', mode: 'MANUAL', amount: Number(orderRes.body.grandTotal) }] });
+    expect(payRes.status).toBe(200); // line stays QUEUED -- never advanced
+
+    const stillQueuedLineId = payRes.body.lines[0].id;
+    const returnableRes = await request(app.getHttpServer())
+      .get(`/returns/order/${payRes.body.id}/returnable-lines`)
+      .set(auth(manageToken));
+    expect(returnableRes.body.find((l: { orderLineId: string }) => l.orderLineId === stillQueuedLineId).kitchenStatus).toBe('QUEUED');
+
+    const res = await request(app.getHttpServer())
+      .post('/returns')
+      .set(auth(manageToken))
+      .send({ orderId: payRes.body.id, lines: [{ orderLineId: stillQueuedLineId, quantity: 1 }] });
+    expect(res.status).toBe(400);
+
+    // Advancing to READY (2 bumps) then makes the same return succeed.
+    await request(app.getHttpServer()).post(`/kitchen/lines/${stillQueuedLineId}/advance`).set(auth(manageToken));
+    await request(app.getHttpServer()).post(`/kitchen/lines/${stillQueuedLineId}/advance`).set(auth(manageToken));
+    const res2 = await request(app.getHttpServer())
+      .post('/returns')
+      .set(auth(manageToken))
+      .send({ orderId: payRes.body.id, lines: [{ orderLineId: stillQueuedLineId, quantity: 1 }] });
+    expect(res2.status).toBe(201);
+
+    await request(app.getHttpServer()).post(`/shifts/${shiftId}/close`).set(auth(manageToken)).send({ closingCounted: 200 });
   });
 
   it('blocks creating a return without pos.return_order (403)', async () => {
