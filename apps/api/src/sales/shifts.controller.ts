@@ -29,6 +29,14 @@ export class ShiftsController {
     return this.shifts.findOne(id, user.userId);
   }
 
+  // Deliberately not gated behind analytics.view -- unlike the date-range
+  // BI reports, this is "what happened on the shift I'm about to close",
+  // available to whoever can close it (a plain cashier included).
+  @Get(':id/close-summary')
+  closeSummary(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
+    return this.shifts.closeSummary(id, user.userId);
+  }
+
   // Not creating a new resource -- transitions an existing shift's state.
   @Post(':id/close')
   @HttpCode(200)

@@ -63,6 +63,11 @@ model Location {
   logoMimeType     String?
   invoiceHeaderNote String?
   invoiceFooterNote String?
+  // Human-friendly "SH{n}" shift number, per location (1, 2, 3, ...) --
+  // separate from Shift.id (a cuid, meaningless to a cashier) and never
+  // reused across locations. Incremented atomically inside ShiftsService.open()
+  // the same way zatcaInvoiceCounter/dailyInvoiceCounter already are.
+  lastShiftNumber Int @default(0)
   isActive  Boolean      @default(true)
   createdAt DateTime     @default(now())
 
@@ -576,6 +581,11 @@ model Shift {
   // جديد بدل عدّ الطلبات الموجودة، لتفادي تعارض رقمين متطابقين لو وصل
   // طلبان في نفس اللحظة (orders.service.ts create()).
   lastOrderSequence Int    @default(0)
+  // Human-friendly "SH{n}" number for this shift, assigned atomically from
+  // Location.lastShiftNumber when the shift is opened. Nullable rather than
+  // backfilled for shifts that existed before this field -- same "old rows
+  // just show '-'" approach shiftSequence/dailySequence already established.
+  shiftNumber Int?
 
   location Location @relation(fields: [locationId], references: [id])
   openedBy User     @relation("ShiftOpenedBy", fields: [openedById], references: [id])

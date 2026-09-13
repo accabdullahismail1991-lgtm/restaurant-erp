@@ -27,8 +27,17 @@ export class ShiftsService {
     if (existingOpen) {
       throw new ConflictException('يوجد وردية مفتوحة بالفعل لهذا الموقع -- يجب إغلاقها أولًا');
     }
-    return this.prisma.shift.create({
-      data: { locationId: dto.locationId, openedById: userId, openingFloat: dto.openingFloat },
+    // Same atomic increment-then-use pattern as ZatcaService's invoice
+    // counter -- two "فتح وردية" clicks at the exact same instant still get
+    // distinct, gap-free SH numbers (Postgres serializes the row update).
+    return this.prisma.$transaction(async (tx) => {
+      const { lastShiftNumber } = await tx.location.update({
+        where: { id: dto.locationId },
+        data: { lastShiftNumber: { increment: 1 } },
+      });
+      return tx.shift.create({
+        data: { locationId: dto.locationId, openedById: userId, openingFloat: dto.openingFloat, shiftNumber: lastShiftNumber },
+      });
     });
   }
 
@@ -95,5 +104,81 @@ export class ShiftsService {
       data: { closingCounted: dto.closingCounted, expectedCash, variance, closedAt: new Date(), closedById: userId },
       include: { openedBy: { select: { id: true, name: true } }, closedBy: { select: { id: true, name: true } } },
     });
+  }
+
+  // A brief "what happened this shift" recap, meant to print right after
+  // closing -- deliberately scoped to just THIS shift's PAID orders (not a
+  // date-range report like AnalyticsService.shiftsSummary), so it's
+  // available to whoever can close the shift (a plain cashier included),
+  // not gated behind analytics.view.
+  private static readonly COMBO_CATEGORY_LABEL = 'عروض / كمبو';
+
+  async closeSummary(id: string, userId: string) {
+    const shift = await this.findOne(id, userId);
+    const orders = await this.prisma.order.findMany({
+      where: { shiftId: id, status: OrderStatus.PAID },
+      select: {
+        channel: true,
+        grandTotal: true,
+        lines: {
+          select: {
+            quantity: true,
+            unitPrice: true,
+            menuItem: { select: { name: true, category: true } },
+            comboMeal: { select: { name: true } },
+          },
+        },
+      },
+    });
+
+    const byCategory = new Map<string, { quantity: number; revenue: number }>();
+    const byItem = new Map<string, { name: string; quantity: number; revenue: number }>();
+    const byChannel = new Map<string, { orderCount: number; revenue: number }>();
+    let itemCount = 0;
+
+    for (const order of orders) {
+      const channelKey = order.channel;
+      const channelEntry = byChannel.get(channelKey) ?? { orderCount: 0, revenue: 0 };
+      channelEntry.orderCount += 1;
+      channelEntry.revenue += Number(order.grandTotal);
+      byChannel.set(channelKey, channelEntry);
+
+      for (const line of order.lines) {
+        const lineRevenue = Number(line.unitPrice) * line.quantity;
+        itemCount += line.quantity;
+
+        const categoryKey = line.menuItem ? line.menuItem.category ?? 'بلا قسم' : ShiftsService.COMBO_CATEGORY_LABEL;
+        const categoryEntry = byCategory.get(categoryKey) ?? { quantity: 0, revenue: 0 };
+        categoryEntry.quantity += line.quantity;
+        categoryEntry.revenue += lineRevenue;
+        byCategory.set(categoryKey, categoryEntry);
+
+        // Combo lines are grouped by the combo's own name -- distinct
+        // combos sold show as distinct rows, same as distinct menu items.
+        const itemName = line.menuItem ? line.menuItem.name : line.comboMeal!.name;
+        const itemEntry = byItem.get(itemName) ?? { name: itemName, quantity: 0, revenue: 0 };
+        itemEntry.quantity += line.quantity;
+        itemEntry.revenue += lineRevenue;
+        byItem.set(itemName, itemEntry);
+      }
+    }
+
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    return {
+      shiftId: shift.id,
+      shiftNumber: shift.shiftNumber,
+      orderCount: orders.length,
+      itemCount,
+      revenue: round2(orders.reduce((s, o) => s + Number(o.grandTotal), 0)),
+      byCategory: [...byCategory.entries()]
+        .map(([category, v]) => ({ category, quantity: v.quantity, revenue: round2(v.revenue) }))
+        .sort((a, b) => b.revenue - a.revenue),
+      byItem: [...byItem.values()]
+        .map((v) => ({ name: v.name, quantity: v.quantity, revenue: round2(v.revenue) }))
+        .sort((a, b) => b.revenue - a.revenue),
+      byChannel: [...byChannel.entries()]
+        .map(([channel, v]) => ({ channel, orderCount: v.orderCount, revenue: round2(v.revenue) }))
+        .sort((a, b) => b.revenue - a.revenue),
+    };
   }
 }

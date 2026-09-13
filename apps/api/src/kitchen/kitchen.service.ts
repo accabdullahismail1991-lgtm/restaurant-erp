@@ -35,6 +35,7 @@ export class KitchenService {
       orderBy: { createdAt: 'asc' },
       include: {
         table: true,
+        shift: { select: { shiftNumber: true } },
         lines: {
           include: {
             menuItem: true,
@@ -54,6 +55,7 @@ export class KitchenService {
       // internal id, without adding yet another counter.
       shiftSequence: order.shiftSequence,
       dailySequence: order.dailySequence,
+      shiftNumber: order.shift?.shiftNumber ?? null,
       lines: order.lines.map((line) =>
         line.menuItem
           ? {
