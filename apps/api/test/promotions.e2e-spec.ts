@@ -38,11 +38,15 @@ describe('Phase 10b: promotions (e2e)', () => {
     await prisma.rolePermission.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: { in: [ADMIN_PHONE, NOPERM_PHONE] } } });
     await prisma.role.deleteMany({ where: { name: { startsWith: 'Promo-Test-' } } });
-    await prisma.permission.deleteMany({ where: { code: 'promotions.manage' } });
+    await prisma.permission.deleteMany({ where: { code: { in: ['promotions.manage', 'pos.apply_discount'] } } });
 
     const perm = await prisma.permission.create({ data: { code: 'promotions.manage', label: 'إدارة العروض' } });
+    // Needed for the manual-discountTotal test below -- OrdersService.create()
+    // now requires this permission to accept a manual discount at all.
+    const discountPerm = await prisma.permission.create({ data: { code: 'pos.apply_discount', label: 'تطبيق خصم يدوي' } });
     const adminRole = await prisma.role.create({ data: { name: 'Promo-Test-Admin' } });
     await prisma.rolePermission.create({ data: { roleId: adminRole.id, permissionId: perm.id } });
+    await prisma.rolePermission.create({ data: { roleId: adminRole.id, permissionId: discountPerm.id } });
     await prisma.role.create({ data: { name: 'Promo-Test-NoPerm' } });
 
     const makeUser = async (phone: string, roleId?: string) => {
@@ -113,6 +117,14 @@ describe('Phase 10b: promotions (e2e)', () => {
 
     // Deactivate so it doesn't leak into the other tests below.
     await request(app.getHttpServer()).patch(`/promotions/${promotionId}`).set(auth(adminToken)).send({ isActive: false });
+  });
+
+  it('blocks a manual discountTotal from a user without pos.apply_discount (403)', async () => {
+    const orderRes = await request(app.getHttpServer())
+      .post('/orders')
+      .set(auth(noPermToken))
+      .send({ locationId, shiftId, channel: 'DINE_IN', discountTotal: 5, lines: [{ menuItemId, quantity: 1 }] });
+    expect(orderRes.status).toBe(403);
   });
 
   it('a manual discountTotal from the cashier overrides auto-promotion entirely', async () => {

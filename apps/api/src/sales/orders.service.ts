@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InvoiceType, OrderStatus, TaxType } from '@prisma/client';
 import { scopedLocationIds } from '../common/location-scope.util';
+import { userHasPermission } from '../common/permission.util';
 import { CustomersService, EARN_CURRENCY_PER_POINT } from '../customers/customers.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -166,10 +167,16 @@ export class OrdersService {
     // A manual discountTotal from the cashier always wins -- the
     // Promotions engine (docs/DECISIONS.md #14, a calculation layer
     // separate from base pricing) only auto-applies when nothing manual
-    // was given, and records WHICH promotion fired for audit.
+    // was given, and records WHICH promotion fired for audit. Gated
+    // behind pos.apply_discount so a manual discount on the invoice isn't
+    // just "whatever the cashier typed" -- a plain cashier still gets
+    // whatever the Promotions engine auto-applies, same as before this
+    // permission existed.
     let discountTotal: number;
     let promotionId: string | null = null;
     if (dto.discountTotal != null) {
+      const canDiscount = await userHasPermission(this.prisma, userId, 'pos.apply_discount');
+      if (!canDiscount) throw new ForbiddenException('صلاحية "تطبيق خصم يدوي على فاتورة مبيعات" مطلوبة لتطبيق خصم يدوي');
       discountTotal = round2(dto.discountTotal);
     } else {
       const applicable = await this.promotions.findApplicablePromotion(dto.channel, subtotal);
