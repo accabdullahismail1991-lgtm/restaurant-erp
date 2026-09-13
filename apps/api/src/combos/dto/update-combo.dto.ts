@@ -15,6 +15,10 @@ export class UpdateComboDto {
   name?: string;
 
   @IsOptional()
+  @IsString()
+  category?: string;
+
+  @IsOptional()
   @IsNumber()
   @IsPositive()
   basePrice?: number;

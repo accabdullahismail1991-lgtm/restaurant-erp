@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, ArrayUnique, IsArray, IsInt, IsNumber, IsPositive, IsString, Min, ValidateNested } from 'class-validator';
+import { ArrayMinSize, ArrayUnique, IsArray, IsInt, IsNumber, IsOptional, IsPositive, IsString, Min, ValidateNested } from 'class-validator';
 
 export class ComboSlotOptionInputDto {
   @IsString()
@@ -33,6 +33,13 @@ export class ComboSlotInputDto {
 export class CreateComboDto {
   @IsString()
   name!: string;
+
+  // Same free string as MenuItem.category -- lets a combo share a category
+  // tab with regular items in the New Order menu grid instead of only being
+  // reachable through a separate combo-builder button.
+  @IsOptional()
+  @IsString()
+  category?: string;
 
   @IsNumber()
   @IsPositive()

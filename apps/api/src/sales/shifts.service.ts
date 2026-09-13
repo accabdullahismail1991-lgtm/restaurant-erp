@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { OrderStatus } from '@prisma/client';
+import { InvoiceType, OrderStatus } from '@prisma/client';
 import { scopedLocationIds } from '../common/location-scope.util';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -122,7 +122,9 @@ export class ShiftsService {
       where: { shiftId: id, status: OrderStatus.PAID },
       select: {
         channel: true,
+        invoiceType: true,
         grandTotal: true,
+        payments: { select: { method: true, amount: true } },
         lines: {
           select: {
             quantity: true,
@@ -137,6 +139,19 @@ export class ShiftsService {
     const byCategory = new Map<string, { quantity: number; revenue: number }>();
     const byItem = new Map<string, { name: string; quantity: number; revenue: number }>();
     const byChannel = new Map<string, { orderCount: number; revenue: number }>();
+    // Every payment method actually collected at the till this shift (cash,
+    // network/card, staff meals, or any other admin-defined method) --
+    // separate from invoiceType below, since a method here is "how it was
+    // settled" while invoiceType is "what kind of invoice this is" (a
+    // CREDIT/deferred invoice, e.g. billed to a delivery-app aggregator,
+    // can still be settled through any of these methods at pay() time).
+    const byPaymentMethod = new Map<string, number>();
+    // CREDIT invoices (docs/DECISIONS.md invoice-type split) tracked apart
+    // from the cash-drawer reconciliation above -- typically delivery-app
+    // accounts or staff purchases billed to payroll rather than collected
+    // in cash/card right now, so a shift-closer needs this called out on
+    // its own rather than buried inside byPaymentMethod.
+    let creditInvoiceTotal = 0;
     let itemCount = 0;
 
     for (const order of orders) {
@@ -145,6 +160,13 @@ export class ShiftsService {
       channelEntry.orderCount += 1;
       channelEntry.revenue += Number(order.grandTotal);
       byChannel.set(channelKey, channelEntry);
+
+      for (const payment of order.payments) {
+        byPaymentMethod.set(payment.method, (byPaymentMethod.get(payment.method) ?? 0) + Number(payment.amount));
+      }
+      if (order.invoiceType === InvoiceType.CREDIT) {
+        creditInvoiceTotal += Number(order.grandTotal);
+      }
 
       for (const line of order.lines) {
         const lineRevenue = Number(line.unitPrice) * line.quantity;
@@ -182,6 +204,10 @@ export class ShiftsService {
       byChannel: [...byChannel.entries()]
         .map(([channel, v]) => ({ channel, orderCount: v.orderCount, revenue: round2(v.revenue) }))
         .sort((a, b) => b.revenue - a.revenue),
+      byPaymentMethod: [...byPaymentMethod.entries()]
+        .map(([method, amount]) => ({ method, amount: round2(amount) }))
+        .sort((a, b) => b.amount - a.amount),
+      creditInvoiceTotal: round2(creditInvoiceTotal),
     };
   }
 

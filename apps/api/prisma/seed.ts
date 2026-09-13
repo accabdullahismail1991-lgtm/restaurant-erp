@@ -36,8 +36,26 @@ const PERMISSIONS: Array<{ code: string; label: string }> = [
 // never overwrite a name/isCash a user already customized).
 const DEFAULT_PAYMENT_METHODS: Array<{ code: string; name: string; isCash: boolean }> = [
   { code: 'CASH', name: 'كاش', isCash: true },
-  { code: 'CARD', name: 'بطاقة', isCash: false },
+  { code: 'CARD', name: 'شبكة (بطاقة)', isCash: false },
   { code: 'WALLET', name: 'محفظة إلكترونية', isCash: false },
+  // Not real cash/settlement -- an employee's meal recorded at the till so
+  // it still shows in sales/kitchen data, tracked apart from the shift's
+  // cash-drawer reconciliation. No payroll module exists to auto-deduct it
+  // yet -- shifts.closeSummary's byPaymentMethod breakdown is what lets an
+  // admin read off the employee-meals total to apply manually for now.
+  { code: 'STAFF_MEAL', name: 'وجبات الموظفين', isCash: false },
+];
+
+// A starter catalog only -- Ingredient.unit stays a free string (see
+// UnitOfMeasure model comment), so this just gives the Ingredients form's
+// unit dropdown something to show on a fresh install. An admin can add
+// more from the "وحدات القياس" screen.
+const DEFAULT_UNITS: Array<{ code: string; name: string }> = [
+  { code: 'g', name: 'جرام' },
+  { code: 'kg', name: 'كيلوجرام' },
+  { code: 'ml', name: 'مليلتر' },
+  { code: 'l', name: 'لتر' },
+  { code: 'pcs', name: 'قطعة' },
 ];
 
 // Overridable via env so a real deployment (Render, etc.) isn't stuck with
@@ -89,6 +107,10 @@ async function main() {
 
   for (const m of DEFAULT_PAYMENT_METHODS) {
     await prisma.paymentMethod.upsert({ where: { code: m.code }, update: {}, create: m });
+  }
+
+  for (const u of DEFAULT_UNITS) {
+    await prisma.unitOfMeasure.upsert({ where: { code: u.code }, update: {}, create: u });
   }
 
   // eslint-disable-next-line no-console

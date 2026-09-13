@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { InvoiceType, OrderStatus } from '@prisma/client';
+import { InvoiceType, OrderStatus, TaxType } from '@prisma/client';
 import { scopedLocationIds } from '../common/location-scope.util';
 import { CustomersService, EARN_CURRENCY_PER_POINT } from '../customers/customers.service';
 import { InventoryService } from '../inventory/inventory.service';
@@ -179,9 +179,22 @@ export class OrdersService {
     if (discountTotal > subtotal) throw new BadRequestException('قيمة الخصم أكبر من إجمالي الفاتورة');
     // Per-branch rate (docs/DECISIONS.md #3 originally hardcoded 15% --
     // now Location.vatRate, a percentage e.g. 15.00) so a branch under a
-    // different tax jurisdiction isn't stuck with KSA's default.
+    // different tax jurisdiction isn't stuck with KSA's default. Only the
+    // STANDARD-rated portion of the subtotal is taxed -- ZERO_RATED/EXEMPT
+    // menu items (MenuItem.taxType) contribute 0 VAT regardless of branch
+    // rate. Combo meals are priced as one bundled amount with no
+    // per-component split, so (like RecipeLine consumption elsewhere in
+    // this file) they're simply treated as fully STANDARD-rated. A manual
+    // discount is spread pro-rata across the taxable/non-taxable portions
+    // rather than assumed to land entirely on one side.
+    const taxableRegularSubtotal = regularLines.reduce((sum, l) => {
+      const item = byId.get(l.menuItemId!)!;
+      return item.taxType === TaxType.STANDARD ? sum + effectivePrice(l.menuItemId!) * l.quantity : sum;
+    }, 0);
+    const taxableSubtotal = round2(taxableRegularSubtotal + comboSubtotal);
     const vatRate = Number(location.vatRate) / 100;
-    const vatTotal = round2((subtotal - discountTotal) * vatRate);
+    const taxableAfterDiscount = subtotal > 0 ? taxableSubtotal - discountTotal * (taxableSubtotal / subtotal) : 0;
+    const vatTotal = round2(taxableAfterDiscount * vatRate);
     const grandTotal = round2(subtotal - discountTotal + vatTotal);
 
     return this.prisma.$transaction(async (tx) => {
@@ -322,15 +335,38 @@ export class OrdersService {
     return order;
   }
 
-  async findAll(userId: string, locationId?: string, status?: OrderStatus) {
+  async findAll(
+    userId: string,
+    locationId?: string,
+    status?: OrderStatus,
+    shiftId?: string,
+    servedById?: string,
+    from?: string,
+    to?: string,
+    orderNumber?: string,
+  ) {
     const allowedIds = await scopedLocationIds(this.prisma, userId);
     if (locationId && allowedIds && !allowedIds.includes(locationId)) {
       throw new ForbiddenException('الموقع خارج نطاق صلاحيتك');
     }
+    const gte = from ? new Date(from) : undefined;
+    const lte = to ? new Date(new Date(to).setUTCHours(23, 59, 59, 999)) : undefined;
+    // A cashier searching "order number" means either the daily sequence
+    // (dailySequence, e.g. the #12 printed on today's Nth invoice) or the
+    // shift sequence (shiftSequence) -- whichever matches, since neither is
+    // globally unique the way Order.id is (that's an internal cuid a
+    // cashier never sees or types).
+    const orderNumberFilter = orderNumber && !isNaN(Number(orderNumber))
+      ? { OR: [{ dailySequence: Number(orderNumber) }, { shiftSequence: Number(orderNumber) }] }
+      : {};
     return this.prisma.order.findMany({
       where: {
         locationId: locationId ? locationId : allowedIds ? { in: allowedIds } : undefined,
         status,
+        shiftId,
+        servedById,
+        createdAt: gte || lte ? { gte, lte } : undefined,
+        ...orderNumberFilter,
       },
       include: {
         servedBy: { select: { id: true, name: true } },

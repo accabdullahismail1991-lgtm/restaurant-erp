@@ -68,6 +68,17 @@ model Location {
   // reused across locations. Incremented atomically inside ShiftsService.open()
   // the same way zatcaInvoiceCounter/dailyInvoiceCounter already are.
   lastShiftNumber Int @default(0)
+  // A forgotten-open shift (cashier went home without closing) otherwise
+  // blocks next-day reconciliation indefinitely -- when enabled, the
+  // ShiftAutoCloseService cron force-closes any shift still open past
+  // autoCloseCutoffHour local time on a later calendar day (zero variance:
+  // closingCounted = expectedCash, closedById null marks it auto), then
+  // performs end-of-day closing for that business date if it wasn't done
+  // manually either. Off by default -- a real operational change, not a
+  // silent default, per the same "explicit per-branch opt-in" precedent as
+  // allowNegativeStock above.
+  autoCloseEnabled    Boolean @default(false)
+  autoCloseCutoffHour Int     @default(4)
   isActive  Boolean      @default(true)
   createdAt DateTime     @default(now())
 
@@ -81,6 +92,29 @@ model Location {
   stocktakes        Stocktake[]
   shifts            Shift[]
   users             UserLocationScope[]
+  dayCloses         DayClose[]
+}
+
+// نهاية اليوم (Day Close) — سجل رسمي يجمع كل ورديات الفرع المغلقة عن يوم
+// عمل واحد (businessDate)، سواء أُغلق يدويًا من لوحة التحكم أو تلقائيًا عبر
+// ShiftAutoCloseService عند تفعيل autoCloseEnabled. واحد فقط لكل (فرع، يوم)
+// -- إغلاق ثانٍ لنفس اليوم يُحدّث نفس السجل بدل تكرار الإحصائيات.
+model DayClose {
+  id           String    @id @default(cuid())
+  locationId   String
+  businessDate DateTime  @db.Date
+  closedAt     DateTime  @default(now())
+  closedById   String?
+  autoClosed   Boolean   @default(false)
+  shiftsCount  Int
+  totalRevenue Decimal   @db.Decimal(12, 2)
+  totalVariance Decimal  @db.Decimal(12, 2)
+  createdAt    DateTime  @default(now())
+
+  location Location @relation(fields: [locationId], references: [id])
+  closedBy User?     @relation(fields: [closedById], references: [id])
+
+  @@unique([locationId, businessDate])
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +137,7 @@ model User {
   returnsCreated        OrderReturn[]
   purchaseReturnsCreated PurchaseReturn[]
   orderActivityLogs      OrderActivityLog[]
+  dayClosesClosed        DayClose[]
 }
 
 model Role {
@@ -161,6 +196,17 @@ enum ValuationMethod {
 enum IngredientKind {
   RAW_MATERIAL // مادة خام تُشترى مباشرة
   SEMI_FINISHED // منتج وسيط ينتج بأمر إنتاج (مثل صلصة مجهّزة)
+}
+
+// كتالوج وحدات القياس -- Ingredient.unit يبقى نصًا حرًا (لا يُهاجَر إلى FK
+// لتفادي مخاطرة ترحيل بيانات كل صنف حالي)، لكن شاشة الأصناف تختار منه بدل
+// إدخال نص حر، وهذا الموديل نفسه قابل للإدارة (إضافة/تعطيل) من شاشة مستقلة.
+model UnitOfMeasure {
+  id        String   @id @default(cuid())
+  code      String   @unique // مثال: g, kg, ml, l, pcs
+  name      String // مثال: "جرام"، "كيلوجرام"، "مليلتر"، "لتر"، "قطعة"
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
 }
 
 model Ingredient {
@@ -234,12 +280,27 @@ model InventoryBalance {
 // ---------------------------------------------------------------------------
 // أصناف المبيعات والوصفات (Multi-level BOM) — القرار #4
 // ---------------------------------------------------------------------------
+// STANDARD: الفرع نسبته الاعتيادية (Location.vatRate). ZERO_RATED: خاضع
+// للضريبة اسميًا لكن بنسبة 0% (مثال: بعض الصادرات) -- يظهر كسطر ضريبة صفري
+// منفصل عن الإعفاء لأغراض تقرير الضرائب. EXEMPT: خارج نطاق الضريبة تمامًا.
+enum TaxType {
+  STANDARD
+  ZERO_RATED
+  EXEMPT
+}
+
 model MenuItem {
   id            String  @id @default(cuid())
   name          String
   category      String
   price         Decimal @db.Decimal(10, 2)
   isActive      Boolean @default(true)
+  // Per-item override of the branch's default VAT treatment -- most items
+  // are STANDARD (taxed at Location.vatRate); ZERO_RATED/EXEMPT items
+  // contribute no VAT to an order line regardless of branch rate. Read by
+  // OrdersService.create() to compute vatTotal per line instead of a flat
+  // location-wide rate, and by AnalyticsService's tax report.
+  taxType       TaxType @default(STANDARD)
   // Stored directly in Postgres (bytea), same choice already made for
   // GeneratedReport.fileData -- no cloud object storage credentials exist
   // in this environment, and a menu item photo is small enough (a few
@@ -623,6 +684,13 @@ enum InvoiceType {
 
 model Order {
   id               String       @id @default(cuid())
+  // A single global auto-increment across every order regardless of
+  // branch/shift/day -- distinct from shiftSequence/dailySequence below
+  // (each of which restarts at 1 per shift/day and is what prints on the
+  // invoice), and from `id` itself (a cuid, meaningless to a human). This
+  // is purely an internal, always-increasing reference for admin screens
+  // (e.g. sorting/searching the Orders report by DB insertion order).
+  sequenceNumber   Int          @unique @default(autoincrement())
   locationId       String
   tableId          String?
   customerId       String?
@@ -757,6 +825,12 @@ model OrderLine {
 model ComboMeal {
   id         String      @id @default(cuid())
   name       String
+  // Nullable, unlike MenuItem.category (required) -- an uncategorized
+  // combo still shows in the New Order menu grid under a generic "كمبو"
+  // fallback group (see admin_panel.html's renderOrderCategories/
+  // renderOrderMenuGrid) rather than being rejected outright, since this
+  // field is new and existing combos predate it.
+  category   String?
   basePrice  Decimal     @db.Decimal(10, 2)
   isActive   Boolean     @default(true)
   createdAt  DateTime    @default(now())

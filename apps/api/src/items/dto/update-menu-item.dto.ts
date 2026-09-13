@@ -1,4 +1,5 @@
-import { IsBoolean, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
+import { TaxType } from '@prisma/client';
+import { IsBoolean, IsEnum, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
 
 export class UpdateMenuItemDto {
   @IsOptional()
@@ -13,6 +14,10 @@ export class UpdateMenuItemDto {
   @IsNumber()
   @IsPositive()
   price?: number;
+
+  @IsOptional()
+  @IsEnum(TaxType)
+  taxType?: TaxType;
 
   @IsOptional()
   @IsBoolean()

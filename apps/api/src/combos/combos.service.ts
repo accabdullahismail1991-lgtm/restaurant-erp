@@ -30,6 +30,7 @@ export class CombosService {
     return this.prisma.comboMeal.create({
       data: {
         name: dto.name,
+        category: dto.category,
         basePrice: dto.basePrice,
         slots: {
           create: dto.slots.map((s, i) => ({

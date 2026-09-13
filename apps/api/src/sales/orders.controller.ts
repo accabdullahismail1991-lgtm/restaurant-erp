@@ -28,8 +28,13 @@ export class OrdersController {
     @CurrentUser() user: { userId: string },
     @Query('locationId') locationId?: string,
     @Query('status') status?: OrderStatus,
+    @Query('shiftId') shiftId?: string,
+    @Query('servedById') servedById?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('orderNumber') orderNumber?: string,
   ) {
-    return this.orders.findAll(user.userId, locationId, status);
+    return this.orders.findAll(user.userId, locationId, status, shiftId, servedById, from, to, orderNumber);
   }
 
   @Get(':id')

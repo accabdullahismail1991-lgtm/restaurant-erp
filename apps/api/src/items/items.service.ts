@@ -16,6 +16,7 @@ const MENU_ITEM_SELECT = {
   name: true,
   category: true,
   price: true,
+  taxType: true,
   isActive: true,
   imageMimeType: true,
 } as const;

@@ -26,6 +26,7 @@ import { SalesModule } from './sales/sales.module';
 import { SalesChannelsModule } from './sales-channels/sales-channels.module';
 import { StocktakeModule } from './stocktake/stocktake.module';
 import { TransfersModule } from './transfers/transfers.module';
+import { UnitsOfMeasureModule } from './units-of-measure/units-of-measure.module';
 import { UsersModule } from './users/users.module';
 
 // Phases 1-7 (plus the Stocktake half of Phase 4) and the KDS slice of
@@ -63,6 +64,7 @@ import { UsersModule } from './users/users.module';
     CombosModule,
     RolesModule,
     PermissionsModule,
+    UnitsOfMeasureModule,
   ],
   controllers: [AppController],
 })
