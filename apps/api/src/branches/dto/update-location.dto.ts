@@ -37,6 +37,16 @@ export class UpdateLocationDto {
   allowNegativeStock?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  autoCloseEnabled?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(23)
+  autoCloseCutoffHour?: number;
+
+  @IsOptional()
   @IsString()
   invoiceHeaderNote?: string;
 

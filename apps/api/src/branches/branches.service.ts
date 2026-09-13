@@ -19,6 +19,8 @@ const LOCATION_SELECT = {
   requireCustomerForOrders: true,
   vatRate: true,
   allowNegativeStock: true,
+  autoCloseEnabled: true,
+  autoCloseCutoffHour: true,
   logoMimeType: true,
   invoiceHeaderNote: true,
   invoiceFooterNote: true,

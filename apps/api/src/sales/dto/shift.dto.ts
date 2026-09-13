@@ -14,3 +14,11 @@ export class CloseShiftDto {
   @Min(0)
   closingCounted!: number;
 }
+
+export class CloseDayDto {
+  @IsString()
+  locationId!: string;
+
+  @IsString()
+  businessDate!: string;
+}

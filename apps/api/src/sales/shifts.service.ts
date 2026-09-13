@@ -1,9 +1,12 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { InvoiceType, OrderStatus } from '@prisma/client';
 import { scopedLocationIds } from '../common/location-scope.util';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CloseShiftDto, OpenShiftDto } from './dto/shift.dto';
+
+const startOfUtcDay = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 
 @Injectable()
 export class ShiftsService {
@@ -271,5 +274,137 @@ export class ShiftsService {
       },
       events,
     };
+  }
+
+  // Manual "إنهاء اليوم" (end-of-day close) -- a formal record aggregating
+  // every shift opened at this location on this calendar date, only once
+  // ALL of them are individually closed (the shift-level close() above is
+  // still the actual cash reconciliation; this is a rollup on top of it,
+  // same "aggregate over already-validated rows" relationship
+  // AnalyticsService's reports have to Shift/Order). One record per
+  // (location, date) -- calling this again for the same date just
+  // refreshes the same DayClose row's numbers.
+  async closeDay(locationId: string, businessDate: string, userId: string) {
+    await this.assertLocationInScope(userId, locationId);
+    const date = new Date(businessDate);
+    if (isNaN(date.getTime())) throw new BadRequestException('تاريخ غير صالح');
+    const day = startOfUtcDay(date);
+    const nextDay = new Date(day.getTime() + 24 * 60 * 60 * 1000);
+
+    const shifts = await this.prisma.shift.findMany({
+      where: { locationId, openedAt: { gte: day, lt: nextDay } },
+      select: { id: true, closedAt: true, variance: true, orders: { where: { status: OrderStatus.PAID }, select: { grandTotal: true } } },
+    });
+    if (!shifts.length) throw new BadRequestException('لا توجد ورديات في هذا التاريخ لهذا الفرع');
+    const stillOpen = shifts.filter((s) => !s.closedAt).length;
+    if (stillOpen > 0) {
+      throw new BadRequestException(`لا يمكن إنهاء اليوم -- يوجد ${stillOpen} وردية لا تزال مفتوحة في هذا التاريخ`);
+    }
+
+    return this.upsertDayClose(locationId, day, shifts, userId, false);
+  }
+
+  private async upsertDayClose(
+    locationId: string,
+    day: Date,
+    shifts: Array<{ variance: any; orders: Array<{ grandTotal: any }> }>,
+    closedById: string | null,
+    autoClosed: boolean,
+  ) {
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const totalRevenue = round2(shifts.reduce((s, sh) => s + sh.orders.reduce((os, o) => os + Number(o.grandTotal), 0), 0));
+    const totalVariance = round2(shifts.reduce((s, sh) => s + (sh.variance != null ? Number(sh.variance) : 0), 0));
+
+    return this.prisma.dayClose.upsert({
+      where: { locationId_businessDate: { locationId, businessDate: day } },
+      create: { locationId, businessDate: day, closedById, autoClosed, shiftsCount: shifts.length, totalRevenue, totalVariance },
+      update: { closedById, autoClosed, shiftsCount: shifts.length, totalRevenue, totalVariance, closedAt: new Date() },
+    });
+  }
+
+  async listDayCloses(userId: string, locationId?: string, from?: string, to?: string) {
+    const allowedIds = await scopedLocationIds(this.prisma, userId);
+    if (locationId && allowedIds && !allowedIds.includes(locationId)) {
+      throw new ForbiddenException('الموقع خارج نطاق صلاحيتك');
+    }
+    const gte = from ? new Date(from) : undefined;
+    const lte = to ? new Date(to) : undefined;
+    return this.prisma.dayClose.findMany({
+      where: {
+        locationId: locationId ? locationId : allowedIds ? { in: allowedIds } : undefined,
+        businessDate: gte || lte ? { gte, lte } : undefined,
+      },
+      include: { location: { select: { id: true, name: true } }, closedBy: { select: { id: true, name: true } } },
+      orderBy: { businessDate: 'desc' },
+    });
+  }
+
+  // Forgotten-shift safety net (docs on Location.autoCloseEnabled) -- runs
+  // hourly, only touches locations that opted in. A shift with unpaid
+  // orders is left alone (same guard close() itself enforces --
+  // force-closing past it would silently misstate the till), so a location
+  // with a genuinely stuck shift still needs a human, it just won't block
+  // every OTHER location's auto-close from running.
+  @Cron('0 * * * *')
+  async autoCloseSweep() {
+    const now = new Date();
+    const locations = await this.prisma.location.findMany({ where: { isActive: true, autoCloseEnabled: true } });
+    for (const location of locations) {
+      if (now.getUTCHours() < location.autoCloseCutoffHour) continue;
+      await this.autoCloseLocationShifts(location.id, now);
+    }
+  }
+
+  // Split out from the cron so a manual "run auto-close now" trigger and
+  // tests can exercise the exact same logic without waiting for the clock,
+  // same pattern ReportsService.generateForAllLocations already uses.
+  async autoCloseLocationShifts(locationId: string, now: Date) {
+    const today = startOfUtcDay(now);
+    const openShifts = await this.prisma.shift.findMany({ where: { locationId, closedAt: null } });
+    const staleShifts = openShifts.filter((s) => startOfUtcDay(s.openedAt).getTime() < today.getTime());
+    if (!staleShifts.length) return { closedCount: 0, skippedCount: 0 };
+
+    const cashMethodCodes = await this.paymentMethods.cashMethodCodes();
+    let closedCount = 0;
+    let skippedCount = 0;
+    const touchedDays = new Set<number>();
+    for (const shift of staleShifts) {
+      const unpaidCount = await this.prisma.order.count({
+        where: { shiftId: shift.id, status: { notIn: [OrderStatus.PAID, OrderStatus.VOIDED] } },
+      });
+      if (unpaidCount > 0) {
+        skippedCount += 1;
+        continue;
+      }
+      const cashPayments = await this.prisma.payment.aggregate({
+        where: { method: { in: cashMethodCodes }, order: { shiftId: shift.id, status: OrderStatus.PAID } },
+        _sum: { amount: true },
+      });
+      const expectedCash = Number(shift.openingFloat) + Number(cashPayments._sum.amount ?? 0);
+      await this.prisma.shift.update({
+        where: { id: shift.id },
+        data: { closingCounted: expectedCash, expectedCash, variance: 0, closedAt: now, closedById: null },
+      });
+      closedCount += 1;
+      touchedDays.add(startOfUtcDay(shift.openedAt).getTime());
+    }
+
+    // Every calendar day that just got its last open shift closed, and
+    // isn't already end-of-day'd (manually or by a prior sweep), gets an
+    // automatic DayClose -- the same "don't leave yesterday hanging
+    // forever" guarantee autoCloseEnabled promises for shifts extended to
+    // the day rollup on top of them.
+    for (const dayMs of touchedDays) {
+      const day = new Date(dayMs);
+      const nextDay = new Date(dayMs + 24 * 60 * 60 * 1000);
+      const dayShifts = await this.prisma.shift.findMany({
+        where: { locationId, openedAt: { gte: day, lt: nextDay } },
+        select: { closedAt: true, variance: true, orders: { where: { status: OrderStatus.PAID }, select: { grandTotal: true } } },
+      });
+      if (dayShifts.some((s) => !s.closedAt)) continue;
+      await this.upsertDayClose(locationId, day, dayShifts, null, true);
+    }
+
+    return { closedCount, skippedCount };
   }
 }

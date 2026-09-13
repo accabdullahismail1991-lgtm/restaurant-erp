@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
-import { CloseShiftDto, OpenShiftDto } from './dto/shift.dto';
+import { CloseDayDto, CloseShiftDto, OpenShiftDto } from './dto/shift.dto';
 import { ShiftsService } from './shifts.service';
 
 @Controller('shifts')
@@ -51,5 +51,24 @@ export class ShiftsController {
   @HttpCode(200)
   close(@Param('id') id: string, @Body() dto: CloseShiftDto, @CurrentUser() user: { userId: string }) {
     return this.shifts.close(id, dto, user.userId);
+  }
+
+  @Get('day-close/list')
+  listDayCloses(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.shifts.listDayCloses(user.userId, locationId, from, to);
+  }
+
+  // Rolls up every shift already closed for one calendar date at one
+  // branch into a single "end of day" record -- blocked if any of that
+  // date's shifts is still open (see ShiftsService.closeDay).
+  @Post('day-close')
+  @HttpCode(200)
+  closeDay(@Body() dto: CloseDayDto, @CurrentUser() user: { userId: string }) {
+    return this.shifts.closeDay(dto.locationId, dto.businessDate, user.userId);
   }
 }
