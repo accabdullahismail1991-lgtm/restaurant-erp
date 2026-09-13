@@ -129,10 +129,16 @@ export class AnalyticsService {
     return this.topItemsCore(locationId ? [locationId] : undefined, from, to, limit);
   }
 
+  // Combo-meal lines (menuItemId null) are deliberately excluded here -- a
+  // combo has no single "item" to attribute per-unit revenue to, only a
+  // composition of slot selections. Their revenue still counts in the
+  // aggregate sales totals via salesSummaryCore, which reads Order-level
+  // fields and doesn't depend on OrderLine at all.
   private async topItemsCore(ids: string[] | undefined, from?: string, to?: string, limit = 10) {
     const { gte, lte } = this.parseRange(from, to);
     const lines = await this.prisma.orderLine.findMany({
       where: {
+        menuItemId: { not: null },
         order: {
           status: OrderStatus.PAID,
           locationId: ids ? { in: ids } : undefined,
@@ -144,10 +150,11 @@ export class AnalyticsService {
 
     const byItem = new Map<string, { name: string; quantity: number; revenue: number }>();
     for (const line of lines) {
-      const cur = byItem.get(line.menuItemId) ?? { name: line.menuItem.name, quantity: 0, revenue: 0 };
+      const menuItemId = line.menuItemId!;
+      const cur = byItem.get(menuItemId) ?? { name: line.menuItem!.name, quantity: 0, revenue: 0 };
       cur.quantity += line.quantity;
       cur.revenue += Number(line.unitPrice) * line.quantity;
-      byItem.set(line.menuItemId, cur);
+      byItem.set(menuItemId, cur);
     }
 
     return [...byItem.entries()]
@@ -456,7 +463,10 @@ export class AnalyticsService {
     const byItemMap = new Map<string, number>();
     for (const r of returns) {
       for (const l of r.lines) {
-        const name = l.orderLine.menuItem.name;
+        // Combo-line returns are rejected outright in ReturnsService.create(),
+        // so menuItem is null here only in theory -- guarded defensively.
+        const name = l.orderLine.menuItem?.name;
+        if (!name) continue;
         byItemMap.set(name, (byItemMap.get(name) ?? 0) + l.quantity);
       }
     }

@@ -25,6 +25,7 @@ const PERMISSIONS: Array<{ code: string; label: string }> = [
   { code: 'pos.void_order', label: 'إلغاء طلب من الكاشير' },
   { code: 'pos.return_order', label: 'تسجيل مرتجع عميل' },
   { code: 'promotions.manage', label: 'إدارة العروض والخصومات' },
+  { code: 'combos.manage', label: 'إدارة وجبات الكمبو والبوكس' },
   { code: 'analytics.view', label: 'عرض التقارير التحليلية (مبيعات/تكلفة/مخزون)' },
   { code: 'payment_methods.manage', label: 'إدارة طرق الدفع' },
 ];
@@ -64,6 +65,7 @@ async function main() {
     'pos.void_order',
     'pos.return_order',
     'promotions.manage',
+    'combos.manage',
     'analytics.view',
     'payment_methods.manage',
   ];

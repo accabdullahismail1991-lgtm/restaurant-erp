@@ -79,21 +79,31 @@ export class ZatcaService {
   async generateForOrder(tx: Db, orderId: string): Promise<void> {
     const order = await tx.order.findUniqueOrThrow({
       where: { id: orderId },
-      include: { lines: true, location: true, customer: true },
+      include: {
+        lines: { include: { comboMeal: true, comboSelections: { include: { menuItem: true } } } },
+        location: true,
+        customer: true,
+      },
     });
     if (!order.location.vatNumber) {
       this.logger.warn(`تخطّي توليد فاتورة ZATCA للطلب ${orderId} -- الموقع "${order.location.name}" بلا رقم ضريبي مُعدّ`);
       return;
     }
 
-    const menuItems = await tx.menuItem.findMany({ where: { id: { in: order.lines.map((l) => l.menuItemId) } } });
+    const regularMenuItemIds = order.lines.map((l) => l.menuItemId).filter((id): id is string => id !== null);
+    const menuItems = await tx.menuItem.findMany({ where: { id: { in: regularMenuItemIds } } });
     const nameById = new Map(menuItems.map((m) => [m.id, m.name]));
     const vatRate = Number(order.location.vatRate) / 100;
 
     const invoiceLines = order.lines.map((line) => {
       const lineSubtotal = round2(Number(line.unitPrice) * line.quantity);
+      // A combo line has no single menu item -- name it by the combo plus
+      // its chosen composition so the printed invoice line is meaningful.
+      const name = line.menuItemId
+        ? (nameById.get(line.menuItemId) ?? line.menuItemId)
+        : `${line.comboMeal!.name} (${line.comboSelections.map((s) => `${s.menuItem.name} × ${s.quantity}`).join('، ')})`;
       return {
-        name: nameById.get(line.menuItemId) ?? line.menuItemId,
+        name,
         quantity: line.quantity,
         unitPrice: Number(line.unitPrice),
         lineTotal: lineSubtotal,

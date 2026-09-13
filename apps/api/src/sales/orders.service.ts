@@ -58,14 +58,80 @@ export class OrdersService {
     if (shift.locationId !== dto.locationId) throw new BadRequestException('الوردية لا تخص هذا الموقع');
     if (shift.closedAt) throw new BadRequestException('لا يمكن إنشاء طلب على وردية مغلقة');
 
-    const menuItemIds = [...new Set(dto.lines.map((l) => l.menuItemId))];
-    const menuItems = await this.prisma.menuItem.findMany({ where: { id: { in: menuItemIds } } });
+    // Each line is EITHER a regular menu item OR a combo meal -- exactly
+    // one, never both/neither (mirrors OrderLine's own DB-level CHECK
+    // constraint, order_line_exactly_one_parent).
+    for (const l of dto.lines) {
+      if (!!l.menuItemId === !!l.comboMealId) {
+        throw new BadRequestException('كل سطر طلب يجب أن يحدد إما صنف منيو أو وجبة كمبو، وليس كليهما أو لا شيء');
+      }
+    }
+    const regularLines = dto.lines.filter((l) => l.menuItemId);
+    const comboLines = dto.lines.filter((l) => l.comboMealId);
+
+    const menuItemIds = [...new Set(regularLines.map((l) => l.menuItemId!))];
+    const menuItems = menuItemIds.length ? await this.prisma.menuItem.findMany({ where: { id: { in: menuItemIds } } }) : [];
     if (menuItems.length !== menuItemIds.length) {
       throw new BadRequestException('أحد أصناف المنيو المطلوبة غير موجود');
     }
     const inactive = menuItems.find((m) => !m.isActive);
     if (inactive) throw new BadRequestException(`الصنف "${inactive.name}" غير متاح حاليًا`);
     const byId = new Map(menuItems.map((m) => [m.id, m]));
+
+    // Combo meals: validate each line's comboSelections against the
+    // combo's own slots (minSelect/maxSelect satisfied, every chosen item
+    // is actually one of that slot's options) and compute its per-unit
+    // price (basePrice + the chosen options' own extraPrice) -- keyed by
+    // the line object itself since a combo could otherwise repeat its
+    // comboMealId across multiple distinct lines with different choices.
+    const comboMealIds = [...new Set(comboLines.map((l) => l.comboMealId!))];
+    const comboMeals = comboMealIds.length
+      ? await this.prisma.comboMeal.findMany({ where: { id: { in: comboMealIds } }, include: { slots: { include: { options: true } } } })
+      : [];
+    if (comboMeals.length !== comboMealIds.length) throw new BadRequestException('أحد وجبات الكمبو المطلوبة غير موجود');
+    const inactiveCombo = comboMeals.find((c) => !c.isActive);
+    if (inactiveCombo) throw new BadRequestException(`الكمبو "${inactiveCombo.name}" غير متاح حاليًا`);
+    const comboById = new Map(comboMeals.map((c) => [c.id, c]));
+
+    const comboLinePrice = new Map<(typeof comboLines)[number], number>();
+    const comboSelectedMenuItemIds = new Set<string>();
+    for (const line of comboLines) {
+      const combo = comboById.get(line.comboMealId!)!;
+      const selections = line.comboSelections ?? [];
+      const validSlotIds = new Set(combo.slots.map((s) => s.id));
+      for (const sel of selections) {
+        if (!validSlotIds.has(sel.comboSlotId)) throw new BadRequestException(`فئة اختيار لا تنتمي لكمبو "${combo.name}"`);
+      }
+      for (const slot of combo.slots) {
+        const slotSelections = selections.filter((s) => s.comboSlotId === slot.id);
+        const totalQty = slotSelections.reduce((s, x) => s + x.quantity, 0);
+        if (totalQty < slot.minSelect || totalQty > slot.maxSelect) {
+          throw new BadRequestException(
+            `فئة "${slot.label}" في كمبو "${combo.name}" تتطلب اختيار ${slot.minSelect === slot.maxSelect ? slot.minSelect : `بين ${slot.minSelect} و${slot.maxSelect}`} (تم اختيار ${totalQty})`,
+          );
+        }
+        for (const sel of slotSelections) {
+          if (!slot.options.some((o) => o.menuItemId === sel.menuItemId)) {
+            throw new BadRequestException(`الصنف المختار غير متاح ضمن فئة "${slot.label}" لكمبو "${combo.name}"`);
+          }
+          comboSelectedMenuItemIds.add(sel.menuItemId);
+        }
+      }
+      const extra = selections.reduce((sum, sel) => {
+        const opt = combo.slots.flatMap((s) => s.options).find((o) => o.menuItemId === sel.menuItemId)!;
+        return sum + Number(opt.extraPrice) * sel.quantity;
+      }, 0);
+      comboLinePrice.set(line, round2(Number(combo.basePrice) + extra));
+    }
+    const comboMenuItems = comboSelectedMenuItemIds.size
+      ? await this.prisma.menuItem.findMany({ where: { id: { in: [...comboSelectedMenuItemIds] } } })
+      : [];
+    const comboMenuItemById = new Map(comboMenuItems.map((m) => [m.id, m]));
+    for (const id of comboSelectedMenuItemIds) {
+      const item = comboMenuItemById.get(id);
+      if (!item) throw new BadRequestException('أحد الأصناف المختارة ضمن الكمبو غير موجود');
+      if (!item.isActive) throw new BadRequestException(`الصنف "${item.name}" ضمن الكمبو غير متاح حاليًا`);
+    }
 
     if (dto.customerId) {
       const customer = await this.prisma.customer.findUnique({ where: { id: dto.customerId } });
@@ -89,7 +155,13 @@ export class OrdersService {
     }
     const effectivePrice = (menuItemId: string) => priceOverrides.get(menuItemId) ?? Number(byId.get(menuItemId)!.price);
 
-    const subtotal = round2(dto.lines.reduce((sum, l) => sum + effectivePrice(l.menuItemId) * l.quantity, 0));
+    // Combo pricing (basePrice + chosen options' extraPrice) is
+    // deliberately independent of salesChannelId's per-item overrides --
+    // a combo's price is its own thing, not derived from its components'
+    // channel prices.
+    const regularSubtotal = regularLines.reduce((sum, l) => sum + effectivePrice(l.menuItemId!) * l.quantity, 0);
+    const comboSubtotal = comboLines.reduce((sum, l) => sum + comboLinePrice.get(l)! * l.quantity, 0);
+    const subtotal = round2(regularSubtotal + comboSubtotal);
 
     // A manual discountTotal from the cashier always wins -- the
     // Promotions engine (docs/DECISIONS.md #14, a calculation layer
@@ -153,32 +225,23 @@ export class OrdersService {
         },
       });
 
-      for (const line of dto.lines) {
-        const menuItem = byId.get(line.menuItemId)!;
-        await tx.orderLine.create({
-          data: { orderId: order.id, menuItemId: menuItem.id, quantity: line.quantity, unitPrice: effectivePrice(menuItem.id) },
-        });
-
-        // Non-recursive: a menu item's recipe only lists its DIRECT
-        // components. If one of those is itself SEMI_FINISHED, we deduct
-        // from ITS OWN balance (produced earlier by a Production Order,
-        // Phase 6) -- not its sub-ingredients, per
-        // docs/ARCHITECTURE.md's "Sales <-> Items <-> Inventory" section.
-        const recipeLines = await tx.recipeLine.findMany({ where: { menuItemId: menuItem.id } });
+      // Shared by both regular and combo lines: consume `unitQty * lineQty`
+      // of one ingredient's recipe requirement, raising an auto-production
+      // order for any shortfall exactly like a plain menu-item sale
+      // already does. Non-recursive for the same reason the original
+      // comment below explains -- a SEMI_FINISHED component is deducted
+      // from ITS OWN produced balance, not exploded into its own BOM.
+      const consumeRecipeFor = async (menuItemId: string, lineQty: number) => {
+        const recipeLines = await tx.recipeLine.findMany({ where: { menuItemId } });
         for (const recipeLine of recipeLines) {
           const { shortfall } = await this.inventory.consume(tx, {
             locationId: dto.locationId,
             ingredientId: recipeLine.ingredientId,
-            quantity: Number(recipeLine.quantity) * line.quantity,
+            quantity: Number(recipeLine.quantity) * lineQty,
             reason: 'SALE',
             refId: order.id,
             allowNegative: location.allowNegativeStock,
           });
-          // Only reachable when allowNegativeStock let this sale go
-          // through with no real stock behind it -- raises a production
-          // need for this shift instead of leaving it as a silent
-          // negative InventoryBalance (applyShortfall itself is a no-op
-          // for a RAW_MATERIAL, which has no "production" concept).
           if (shortfall > 0) {
             await this.production.applyShortfall(tx, {
               locationId: dto.locationId,
@@ -187,6 +250,43 @@ export class OrdersService {
               quantity: shortfall,
             });
           }
+        }
+      };
+
+      for (const line of regularLines) {
+        const menuItem = byId.get(line.menuItemId!)!;
+        await tx.orderLine.create({
+          data: { orderId: order.id, menuItemId: menuItem.id, quantity: line.quantity, unitPrice: effectivePrice(menuItem.id) },
+        });
+        // Non-recursive: a menu item's recipe only lists its DIRECT
+        // components. If one of those is itself SEMI_FINISHED, we deduct
+        // from ITS OWN balance (produced earlier by a Production Order,
+        // Phase 6) -- not its sub-ingredients, per
+        // docs/ARCHITECTURE.md's "Sales <-> Items <-> Inventory" section.
+        await consumeRecipeFor(menuItem.id, line.quantity);
+      }
+
+      for (const line of comboLines) {
+        const orderLine = await tx.orderLine.create({
+          data: { orderId: order.id, comboMealId: line.comboMealId, quantity: line.quantity, unitPrice: comboLinePrice.get(line)! },
+        });
+        const combo = comboById.get(line.comboMealId!)!;
+        for (const sel of line.comboSelections ?? []) {
+          const opt = combo.slots.flatMap((s) => s.options).find((o) => o.menuItemId === sel.menuItemId)!;
+          await tx.comboSelection.create({
+            data: {
+              orderLineId: orderLine.id,
+              comboSlotId: sel.comboSlotId,
+              menuItemId: sel.menuItemId,
+              quantity: sel.quantity,
+              extraPrice: opt.extraPrice,
+            },
+          });
+          // Inventory is consumed against exactly what was chosen, scaled
+          // by both how many of that choice within the slot (sel.quantity)
+          // AND how many of this combo line were ordered (line.quantity)
+          // -- 2x "كمبو عائلي" each choosing 1 side is 2 sides consumed.
+          await consumeRecipeFor(sel.menuItemId, sel.quantity * line.quantity);
         }
       }
 
@@ -198,7 +298,13 @@ export class OrdersService {
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: {
-        lines: { include: { menuItem: { select: { name: true } } } },
+        lines: {
+          include: {
+            menuItem: { select: { name: true } },
+            comboMeal: { select: { name: true } },
+            comboSelections: { include: { menuItem: { select: { name: true } }, comboSlot: { select: { label: true } } } },
+          },
+        },
         payments: true,
         promotion: true,
         location: {

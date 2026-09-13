@@ -243,9 +243,11 @@ model MenuItem {
   imageData     Bytes?
   imageMimeType String?
 
-  recipe        RecipeLine[]
-  orderLines    OrderLine[]
-  channelPrices MenuItemChannelPrice[]
+  recipe            RecipeLine[]
+  orderLines        OrderLine[]
+  channelPrices     MenuItemChannelPrice[]
+  comboSlotOptions  ComboSlotOption[]
+  comboSelections   ComboSelection[]
 }
 
 // قناة بيع خارجية بسعرها الخاص -- مختلفة عن OrderChannel (التصنيف العام
@@ -714,17 +716,84 @@ enum KitchenLineStatus {
   SERVED
 }
 
+// menuItemId XOR comboMealId -- exactly one of them, never both/neither
+// (enforced in OrdersService.create(), same "exactly one parent" shape
+// RecipeLine already uses for menuItemId/parentIngredientId). A combo line
+// stores no recipe/cost of its own: comboSelections below records exactly
+// which item the cashier picked per slot, and THAT is what inventory is
+// actually consumed against and what the kitchen ticket/invoice show.
 model OrderLine {
   id            String            @id @default(cuid())
   orderId       String
-  menuItemId    String
+  menuItemId    String?
+  comboMealId   String?
   quantity      Int
   unitPrice     Decimal           @db.Decimal(10, 2)
   kitchenStatus KitchenLineStatus @default(QUEUED)
 
-  order       Order             @relation(fields: [orderId], references: [id])
-  menuItem    MenuItem          @relation(fields: [menuItemId], references: [id])
-  returnLines OrderReturnLine[]
+  order           Order             @relation(fields: [orderId], references: [id])
+  menuItem        MenuItem?         @relation(fields: [menuItemId], references: [id])
+  comboMeal       ComboMeal?        @relation(fields: [comboMealId], references: [id])
+  comboSelections ComboSelection[]
+  returnLines     OrderReturnLine[]
+}
+
+// وجبة كمبو/بوكس: سعر أساسي + عدد غير محدود من "الفئات" (comboSlots) —
+// كل فئة (مثلاً "الطبق الرئيسي") تحدد أقل/أكثر عدد اختيارات مسموح بها من
+// قائمة خياراتها الخاصة (comboSlotOptions)، وكل خيار قد يضيف فرق سعر
+// اختياريًا فوق السعر الأساسي (upcharge)، فيدعم الكمبو ثابت السعر تمامًا
+// (كل الخيارات extraPrice=0) والكمبو متغيّر السعر حسب الاختيار في آن واحد
+// بنفس البنية، دون تفريع منطقي. متاح لكل الفروع (لا يوجد ربط بموقع).
+model ComboMeal {
+  id         String      @id @default(cuid())
+  name       String
+  basePrice  Decimal     @db.Decimal(10, 2)
+  isActive   Boolean     @default(true)
+  createdAt  DateTime    @default(now())
+  slots      ComboSlot[]
+  orderLines OrderLine[]
+}
+
+model ComboSlot {
+  id          String            @id @default(cuid())
+  comboMealId String
+  label       String // مثال: "الطبق الرئيسي"، "المشروب"
+  minSelect   Int               @default(1)
+  maxSelect   Int               @default(1)
+  sortOrder   Int               @default(0)
+
+  comboMeal  ComboMeal         @relation(fields: [comboMealId], references: [id], onDelete: Cascade)
+  options    ComboSlotOption[]
+  selections ComboSelection[]
+}
+
+model ComboSlotOption {
+  id          String   @id @default(cuid())
+  comboSlotId String
+  menuItemId  String
+  extraPrice  Decimal  @default(0) @db.Decimal(10, 2)
+
+  comboSlot ComboSlot @relation(fields: [comboSlotId], references: [id], onDelete: Cascade)
+  menuItem  MenuItem  @relation(fields: [menuItemId], references: [id])
+
+  @@unique([comboSlotId, menuItemId])
+}
+
+// السجل الفعلي لِما اختاره الزبون فعلًا لكل فئة عند إضافة الكمبو للطلب --
+// extraPrice هنا هو لقطة (snapshot) من ComboSlotOption.extraPrice وقت
+// الطلب، فتغيير سعر خيار مستقبلًا لا يُغيّر فواتير سابقة، بنفس مبدأ
+// OrderLine.unitPrice الذي يُجمّد سعر البيع وقت الطلب لا وقت القراءة.
+model ComboSelection {
+  id          String @id @default(cuid())
+  orderLineId String
+  comboSlotId String
+  menuItemId  String
+  quantity    Int    @default(1)
+  extraPrice  Decimal @db.Decimal(10, 2)
+
+  orderLine OrderLine @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
+  comboSlot ComboSlot @relation(fields: [comboSlotId], references: [id])
+  menuItem  MenuItem  @relation(fields: [menuItemId], references: [id])
 }
 
 // مرتجع عميل -- لطلب مدفوع بالكامل فقط (PAID)، جزئي أو كامل حسب الكمية لكل

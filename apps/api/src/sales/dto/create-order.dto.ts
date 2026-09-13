@@ -2,9 +2,41 @@ import { Type } from 'class-transformer';
 import { ArrayMinSize, IsArray, IsIn, IsInt, IsNumber, IsOptional, IsPositive, IsString, Min, ValidateNested } from 'class-validator';
 import { InvoiceType, OrderChannel } from '@prisma/client';
 
-export class CreateOrderLineDto {
+// Which specific item the cashier picked for one combo slot -- quantity
+// lets a slot with maxSelect > 1 pick the SAME item more than once (e.g.
+// "2 sides, either the same or different") without needing one entry per
+// unit.
+export class ComboSelectionInputDto {
+  @IsString()
+  comboSlotId!: string;
+
   @IsString()
   menuItemId!: string;
+
+  @IsInt()
+  @IsPositive()
+  quantity!: number;
+}
+
+// menuItemId XOR comboMealId -- exactly one, enforced in
+// OrdersService.create() (class-validator has no clean cross-field XOR
+// check). A combo line's comboSelections are what OrdersService actually
+// validates against the combo's own slots/options and consumes inventory
+// for -- they are NOT separate OrderLines.
+export class CreateOrderLineDto {
+  @IsOptional()
+  @IsString()
+  menuItemId?: string;
+
+  @IsOptional()
+  @IsString()
+  comboMealId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ComboSelectionInputDto)
+  comboSelections?: ComboSelectionInputDto[];
 
   @IsInt()
   @IsPositive()

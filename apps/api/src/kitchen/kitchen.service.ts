@@ -35,7 +35,13 @@ export class KitchenService {
       orderBy: { createdAt: 'asc' },
       include: {
         table: true,
-        lines: { include: { menuItem: true } },
+        lines: {
+          include: {
+            menuItem: true,
+            comboMeal: true,
+            comboSelections: { include: { menuItem: true, comboSlot: true } },
+          },
+        },
       },
     });
     return orders.map((order) => ({
@@ -48,12 +54,25 @@ export class KitchenService {
       // internal id, without adding yet another counter.
       shiftSequence: order.shiftSequence,
       dailySequence: order.dailySequence,
-      lines: order.lines.map((line) => ({
-        lineId: line.id,
-        menuItemName: line.menuItem.name,
-        quantity: line.quantity,
-        kitchenStatus: line.kitchenStatus,
-      })),
+      lines: order.lines.map((line) =>
+        line.menuItem
+          ? {
+              lineId: line.id,
+              menuItemName: line.menuItem.name,
+              quantity: line.quantity,
+              kitchenStatus: line.kitchenStatus,
+            }
+          : {
+              lineId: line.id,
+              // A combo line has no single item name -- the kitchen ticket
+              // needs the full composition (e.g. "وجبة كمبو: برجر × 1، بطاطس × 2").
+              menuItemName: `${line.comboMeal!.name}: ${line.comboSelections
+                .map((s) => `${s.menuItem.name} × ${s.quantity}`)
+                .join('، ')}`,
+              quantity: line.quantity,
+              kitchenStatus: line.kitchenStatus,
+            },
+      ),
     }));
   }
 

@@ -27,19 +27,26 @@ export class ReturnsService {
   // return form is built entirely from this (quantity sold minus whatever
   // was already returned across any PRIOR OrderReturn for the same line).
   async returnableLines(orderId: string, userId: string) {
-    const order = await this.prisma.order.findUnique({ where: { id: orderId }, include: { lines: { include: { menuItem: true } } } });
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { lines: { include: { menuItem: true, comboMeal: true } } },
+    });
     if (!order) throw new NotFoundException('الطلب غير موجود');
     await this.assertLocationInScope(userId, order.locationId);
     if (order.status !== 'PAID') throw new BadRequestException('لا يمكن عمل مرتجع إلا لطلب مدفوع بالكامل');
 
-    const priorLines = await this.prisma.orderReturnLine.findMany({ where: { orderLineId: { in: order.lines.map((l) => l.id) } } });
+    // Combo-meal lines are excluded from the returnable list entirely (v1
+    // scope boundary, see create() below) -- there's no per-item recipe to
+    // restock against a single OrderLine that spans several chosen items.
+    const returnableOrderLines = order.lines.filter((l) => l.menuItemId);
+    const priorLines = await this.prisma.orderReturnLine.findMany({ where: { orderLineId: { in: returnableOrderLines.map((l) => l.id) } } });
     const returnedByLine = new Map<string, number>();
     for (const p of priorLines) returnedByLine.set(p.orderLineId, (returnedByLine.get(p.orderLineId) || 0) + p.quantity);
 
-    return order.lines.map((l) => ({
+    return returnableOrderLines.map((l) => ({
       orderLineId: l.id,
       menuItemId: l.menuItemId,
-      menuItemName: l.menuItem.name,
+      menuItemName: l.menuItem!.name,
       unitPrice: l.unitPrice,
       quantity: l.quantity,
       alreadyReturned: returnedByLine.get(l.id) || 0,
@@ -70,6 +77,14 @@ export class ReturnsService {
     if (orderLines.length !== new Set(orderLineIds).size) {
       throw new BadRequestException('أحد سطور الطلب غير موجود في هذا الطلب');
     }
+    // Combo-meal lines can't be returned in v1 -- a single OrderLine spans
+    // several chosen items with no per-item recipe to restock against, and
+    // a partial "return just one component" flow isn't built. Reject
+    // cleanly rather than silently mismatching unrelated RecipeLine rows
+    // (RecipeLine.menuItemId is also nullable for semi-finished items).
+    if (orderLines.some((l) => l.comboMealId)) {
+      throw new BadRequestException('لا يمكن حاليًا إرجاع عنصر وجبة كمبو -- يُرجى التواصل مع الإدارة');
+    }
 
     const priorLines = await this.prisma.orderReturnLine.findMany({ where: { orderLineId: { in: orderLineIds } } });
     const returnedByLine = new Map<string, number>();
@@ -98,7 +113,7 @@ export class ReturnsService {
           data: { returnId: ret.id, orderLineId: c.orderLine.id, quantity: c.quantity, refundAmount: c.refundAmount },
         });
 
-        const recipeLines = await tx.recipeLine.findMany({ where: { menuItemId: c.orderLine.menuItemId } });
+        const recipeLines = await tx.recipeLine.findMany({ where: { menuItemId: c.orderLine.menuItemId! } });
         for (const recipeLine of recipeLines) {
           const unitCost = await this.inventory.averageUnitCost(order.locationId, recipeLine.ingredientId);
           await this.inventory.receive(tx, {
