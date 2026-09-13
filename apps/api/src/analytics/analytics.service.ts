@@ -323,6 +323,76 @@ export class AnalyticsService {
     });
   }
 
+  // Menu engineering (Kasavana & Smith matrix) -- the standard F&B
+  // classification of every item actually sold in a period along two axes:
+  // popularity (its share of total units sold) and profitability (its
+  // contribution margin vs. the period's own volume-weighted average
+  // margin). An item is "popular" once its share reaches 70% of what an
+  // even split across all sold items would give it (the standard "70%
+  // rule": popularityThreshold = (1/itemCount) * 0.7) -- a deliberately
+  // lower bar than "above average" so a menu with many items doesn't
+  // brand almost everything a dog. Combines two existing reports
+  // (topItemsCore for real sales volume in the period, menuItemCostsCore
+  // for the live cost basis) rather than a new query -- an item's
+  // classification is a property of ITS sales row plus its live cost
+  // snapshot, not a new fact to compute from raw tables.
+  async menuEngineering(userId: string, locationId?: string, from?: string, to?: string) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.menuEngineeringCore(ids, from, to);
+  }
+
+  private async menuEngineeringCore(ids: string[] | undefined, from?: string, to?: string) {
+    const [soldItems, costs] = await Promise.all([this.topItemsCore(ids, from, to, 100000), this.menuItemCostsCore(ids)]);
+    const costByItem = new Map(costs.map((c) => [c.menuItemId, c]));
+
+    const totalQuantity = soldItems.reduce((s, i) => s + i.quantity, 0);
+    const totalMarginWeighted = soldItems.reduce((s, i) => {
+      const c = costByItem.get(i.menuItemId);
+      return s + (c ? c.price - c.cost : 0) * i.quantity;
+    }, 0);
+    const avgMargin = totalQuantity > 0 ? totalMarginWeighted / totalQuantity : 0;
+    const popularityThreshold = soldItems.length > 0 ? (1 / soldItems.length) * 0.7 : 0;
+
+    const items = soldItems
+      .map((i) => {
+        const c = costByItem.get(i.menuItemId);
+        const price = c ? c.price : 0;
+        const cost = c ? c.cost : 0;
+        const margin = round2(price - cost);
+        const popularityPercent = totalQuantity > 0 ? i.quantity / totalQuantity : 0;
+        const isPopular = popularityPercent >= popularityThreshold;
+        const isProfitable = margin >= avgMargin;
+        const classification: 'STAR' | 'PLOWHORSE' | 'PUZZLE' | 'DOG' = isPopular
+          ? (isProfitable ? 'STAR' : 'PLOWHORSE')
+          : (isProfitable ? 'PUZZLE' : 'DOG');
+        return {
+          menuItemId: i.menuItemId,
+          name: i.name,
+          quantity: i.quantity,
+          revenue: i.revenue,
+          price,
+          cost,
+          margin,
+          marginPercent: price > 0 ? round2((margin / price) * 100) : 0,
+          popularityPercent: round2(popularityPercent * 100),
+          classification,
+        };
+      })
+      .sort((a, b) => b.quantity - a.quantity);
+
+    return {
+      avgMargin: round2(avgMargin),
+      popularityThresholdPercent: round2(popularityThreshold * 100),
+      counts: {
+        STAR: items.filter((i) => i.classification === 'STAR').length,
+        PLOWHORSE: items.filter((i) => i.classification === 'PLOWHORSE').length,
+        PUZZLE: items.filter((i) => i.classification === 'PUZZLE').length,
+        DOG: items.filter((i) => i.classification === 'DOG').length,
+      },
+      items,
+    };
+  }
+
   // Purchasing spend by supplier -- only these downstream statuses count
   // as real committed spend; DRAFT/REJECTED/CANCELLED never happened
   // financially, so a report that included them would overstate what was

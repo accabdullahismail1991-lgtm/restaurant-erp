@@ -36,6 +36,7 @@ const DASH_CHANNEL_LABEL: Record<string, string> = { DINE_IN: 'صالة', TAKEAW
 const DASH_PAYMENT_METHOD_LABEL: Record<string, string> = { CASH: 'كاش', CARD: 'بطاقة', WALLET: 'محفظة إلكترونية' };
 const DASH_PO_STATUS_LABEL: Record<string, string> = { DRAFT: 'مسودة', PENDING_APPROVAL: 'بانتظار الاعتماد', APPROVED: 'معتمد', SENT_TO_SUPPLIER: 'مُرسل للمورد', RECEIVED: 'مُستلم', REJECTED: 'مرفوض', CANCELLED: 'ملغى' };
 const DASH_PRODUCTION_STATUS_LABEL: Record<string, string> = { PLANNED: 'مخطط', IN_PROGRESS: 'قيد التنفيذ', COMPLETED: 'مكتمل', CANCELLED: 'ملغى' };
+const DASH_MENU_ENG_LABEL: Record<string, string> = { STAR: 'نجم', PLOWHORSE: 'حصان عمل', PUZZLE: 'لغز', DOG: 'ضعيف' };
 
 interface DailyReportData {
   locationId: string | null;
@@ -405,12 +406,14 @@ export class ReportsService {
       addTableSheet('أوامر الشراء حسب الحالة', ['الحالة', 'العدد'], res.byStatus.map((s) => [DASH_PO_STATUS_LABEL[s.status] || s.status, s.count]));
       addTableSheet('أعلى الموردين إنفاقًا', ['المورد', 'الإنفاق'], res.topSuppliers.map((s) => [s.supplierName, s.spend]), [1]);
     } else if (kind === 'items') {
-      const res = await this.analytics.menuItemCosts(userId, locationId);
+      const [res, menuEng] = await Promise.all([this.analytics.menuItemCosts(userId, locationId), this.analytics.menuEngineering(userId, locationId, from, to)]);
       const withRecipe = res.filter((i) => i.hasRecipe);
       const avgCostPercent = withRecipe.length ? withRecipe.reduce((a, i) => a + i.costPercent, 0) / withRecipe.length : 0;
       addKpiRows([['عدد الأصناف', res.length], ['متوسط نسبة التكلفة %', Math.round(avgCostPercent * 10) / 10]]);
       addTableSheet('تكلفة وهامش ربح الأصناف', ['الصنف', 'السعر', 'التكلفة', 'نسبة التكلفة %', 'هامش الربح', 'لديه وصفة'],
         res.map((i) => [i.name, i.price, i.cost, i.costPercent, i.grossMargin, i.hasRecipe ? 'نعم' : 'لا']), [1, 2, 4]);
+      addTableSheet('هندسة المنيو', ['الصنف', 'الكمية المباعة', 'الشعبية %', 'هامش الربح', 'التصنيف'],
+        menuEng.items.map((i) => [i.name, i.quantity, i.popularityPercent, i.margin, DASH_MENU_ENG_LABEL[i.classification]]), [3]);
     } else {
       const [valuation, lowStock] = await Promise.all([this.analytics.inventoryValuation(userId, locationId), this.analytics.lowStock(userId, locationId)]);
       addKpiRows([['القيمة الإجمالية للمخزون', valuation.totalValue, true], ['أصناف منخفضة المخزون', lowStock.length]]);
@@ -505,11 +508,17 @@ export class ReportsService {
           if (!res.topSuppliers.length) emptyLine();
           for (const sup of res.topSuppliers) dataLine(sup.supplierName, `spend ${fmt(sup.spend)}`);
         } else if (kind === 'items') {
-          const res = await this.analytics.menuItemCosts(userId, locationId);
+          const [res, menuEng] = await Promise.all([this.analytics.menuItemCosts(userId, locationId), this.analytics.menuEngineering(userId, locationId, from, to)]);
           this.pdfSectionHeading(doc, 'Items Cost & Margin');
           doc.font('Helvetica').fontSize(10);
           if (!res.length) emptyLine();
           for (const i of res) dataLine(i.name, `price ${fmt(i.price)}, cost ${fmt(i.cost)} (${i.costPercent.toFixed(1)}%), margin ${fmt(i.grossMargin)}`);
+
+          this.pdfSectionHeading(doc, 'Menu Engineering');
+          doc.font('Helvetica').fontSize(10)
+            .text(`Stars: ${menuEng.counts.STAR}    Plowhorses: ${menuEng.counts.PLOWHORSE}    Puzzles: ${menuEng.counts.PUZZLE}    Dogs: ${menuEng.counts.DOG}`);
+          if (!menuEng.items.length) emptyLine();
+          for (const i of menuEng.items) dataLine(i.name, `qty ${i.quantity} (${i.popularityPercent.toFixed(1)}%), margin ${fmt(i.margin)} -- ${i.classification}`);
         } else {
           const [valuation, lowStock] = await Promise.all([this.analytics.inventoryValuation(userId, locationId), this.analytics.lowStock(userId, locationId)]);
           this.pdfSectionHeading(doc, 'Inventory Valuation');

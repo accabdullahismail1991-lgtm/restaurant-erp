@@ -45,6 +45,16 @@ export class AnalyticsController {
     return this.analytics.topItems(user.userId, locationId, from, to, limit ? parseInt(limit, 10) : undefined);
   }
 
+  @Get('menu-engineering')
+  menuEngineering(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.analytics.menuEngineering(user.userId, locationId, from, to);
+  }
+
   @Get('food-cost')
   foodCost(
     @CurrentUser() user: { userId: string },
