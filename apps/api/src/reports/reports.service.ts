@@ -27,6 +27,16 @@ function resolveArabicFontPath(): string {
 
 const ARABIC_FONT_PATH = resolveArabicFontPath();
 
+// The same per-module dashboards the admin panel renders as charts
+// (Sales/Production/Purchasing/Items/Inventory) -- these labels mirror the
+// ones the frontend already uses for the exact same codes, so the exported
+// file reads the same as the on-screen chart it came from.
+export type DashboardKind = 'sales' | 'production' | 'purchasing' | 'items' | 'inventory';
+const DASH_CHANNEL_LABEL: Record<string, string> = { DINE_IN: 'صالة', TAKEAWAY: 'تيك أواي', DRIVE_THRU: 'Drive-thru', DELIVERY_PARTNER: 'توصيل خارجي', BRAND_APP: 'تطبيق العلامة' };
+const DASH_PAYMENT_METHOD_LABEL: Record<string, string> = { CASH: 'كاش', CARD: 'بطاقة', WALLET: 'محفظة إلكترونية' };
+const DASH_PO_STATUS_LABEL: Record<string, string> = { DRAFT: 'مسودة', PENDING_APPROVAL: 'بانتظار الاعتماد', APPROVED: 'معتمد', SENT_TO_SUPPLIER: 'مُرسل للمورد', RECEIVED: 'مُستلم', REJECTED: 'مرفوض', CANCELLED: 'ملغى' };
+const DASH_PRODUCTION_STATUS_LABEL: Record<string, string> = { PLANNED: 'مخطط', IN_PROGRESS: 'قيد التنفيذ', COMPLETED: 'مكتمل', CANCELLED: 'ملغى' };
+
 interface DailyReportData {
   locationId: string | null;
   locationName: string;
@@ -290,6 +300,241 @@ export class ReportsService {
     if (!report) throw new NotFoundException('التقرير غير موجود');
     if (report.locationId) await this.assertLocationInScope(userId, report.locationId);
     return report;
+  }
+
+  // On-demand export of one of the admin panel's chart dashboards as a real
+  // file -- unlike generateNow()'s DAILY_BUNDLE (persisted, listed,
+  // downloaded later), this is generated and streamed straight back to the
+  // request; there's no reason to keep an ad-hoc "export what I'm looking
+  // at right now" click around as a row someone has to come back for.
+  // Goes through the SAME userId-scoped AnalyticsService methods the
+  // on-screen dashboard itself calls (not the cron job's *ForLocation
+  // bypass), so a branch-scoped user can only ever export their own scope
+  // here too.
+  async buildDashboardExport(
+    userId: string,
+    kind: DashboardKind,
+    format: 'XLSX' | 'PDF',
+    locationId?: string,
+    from?: string,
+    to?: string,
+  ): Promise<{ buffer: Buffer; fileName: string }> {
+    if (locationId) await this.assertLocationInScope(userId, locationId);
+    const locationName = locationId
+      ? ((await this.prisma.location.findUnique({ where: { id: locationId } }))?.name ?? locationId)
+      : 'كل المواقع';
+    const buffer =
+      format === 'XLSX'
+        ? await this.buildDashboardXlsx(kind, locationName, userId, locationId, from, to)
+        : await this.buildDashboardPdf(kind, locationName, userId, locationId, from, to);
+    const fileName = `dashboard-${kind}_${locationId ?? 'all'}_${new Date().toISOString().slice(0, 10)}.${format.toLowerCase()}`;
+    return { buffer, fileName };
+  }
+
+  private async buildDashboardXlsx(
+    kind: DashboardKind,
+    locationName: string,
+    userId: string,
+    locationId?: string,
+    from?: string,
+    to?: string,
+  ): Promise<Buffer> {
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Restaurant ERP';
+    wb.created = new Date();
+    const moneyFmt = '#,##0.00';
+    const rtl = { views: [{ rightToLeft: true, state: 'frozen' as const, ySplit: 1 }] };
+
+    const summary = wb.addWorksheet('ملخص', { views: [{ rightToLeft: true }] });
+    summary.columns = [{ width: 26 }, { width: 20 }];
+    summary.addRow(['الموقع', locationName]).font = { bold: true };
+    if (from || to) summary.addRow(['الفترة', `${from ?? '...'} → ${to ?? '...'}`]);
+    summary.addRow(['أُنشئ في', new Date().toLocaleString('ar-SA')]);
+
+    const addKpiRows = (rows: [string, number | string, boolean?][]) => {
+      summary.addRow([]);
+      this.styleHeaderRow(summary.addRow(['المؤشر', 'القيمة']));
+      for (const [label, value, isMoney] of rows) {
+        const row = summary.addRow([label, value]);
+        if (isMoney) row.getCell(2).numFmt = moneyFmt;
+      }
+    };
+    const addTableSheet = (title: string, headers: string[], rows: (string | number)[][], moneyCols: number[] = [], totalRow?: (string | number)[]) => {
+      const sheet = wb.addWorksheet(title.slice(0, 31), rtl);
+      sheet.columns = headers.map(() => ({ width: 22 }));
+      this.styleHeaderRow(sheet.addRow(headers));
+      for (const row of rows) {
+        const excelRow = sheet.addRow(row);
+        for (const col of moneyCols) excelRow.getCell(col + 1).numFmt = moneyFmt;
+      }
+      if (totalRow) {
+        const excelRow = sheet.addRow(totalRow);
+        this.styleTotalRow(excelRow);
+        for (const col of moneyCols) excelRow.getCell(col + 1).numFmt = moneyFmt;
+      }
+      if (!rows.length) sheet.addRow(['لا توجد بيانات لهذه الفترة']);
+    };
+
+    if (kind === 'sales') {
+      const [s, trend, topItems, payments, lowStock] = await Promise.all([
+        this.analytics.salesSummary(userId, locationId, from, to),
+        this.analytics.salesTrend(userId, locationId, from, to),
+        this.analytics.topItems(userId, locationId, from, to, 50),
+        this.analytics.paymentMethodsSummary(userId, locationId, from, to),
+        this.analytics.lowStock(userId, locationId),
+      ]);
+      addKpiRows([
+        ['عدد الطلبات', s.orderCount], ['الإيراد', s.revenue, true], ['صافي المبيعات', s.netSales, true],
+        ['الضريبة', s.vatCollected, true], ['متوسط الطلب', s.averageOrderValue, true],
+      ]);
+      addTableSheet('اتجاه المبيعات اليومي', ['التاريخ', 'عدد الطلبات', 'الإيراد'], trend.map((t) => [t.date, t.orderCount, t.revenue]), [2]);
+      addTableSheet('الإيراد حسب القناة', ['القناة', 'عدد الطلبات', 'الإيراد'], s.byChannel.map((c) => [DASH_CHANNEL_LABEL[c.channel] || c.channel, c.orderCount, c.revenue]), [2],
+        ['الإجمالي', s.byChannel.reduce((a, c) => a + c.orderCount, 0), s.byChannel.reduce((a, c) => a + c.revenue, 0)]);
+      addTableSheet('طرق الدفع', ['الطريقة', 'العدد', 'الإجمالي'], payments.byMethod.map((m) => [DASH_PAYMENT_METHOD_LABEL[m.method] || m.method, m.count, m.total]), [2]);
+      addTableSheet('الأصناف الأكثر مبيعًا', ['الصنف', 'الكمية', 'الإيراد'], topItems.map((i) => [i.name, i.quantity, i.revenue]), [2]);
+      addTableSheet('تنبيهات نقص المخزون', ['الصنف', 'الكمية المتبقية', 'الوحدة', 'الحد الأدنى'], lowStock.map((r) => [r.name, r.quantity, r.unit, r.lowStockThreshold]));
+    } else if (kind === 'production') {
+      const res = await this.analytics.productionSummary(userId, locationId, from, to);
+      addKpiRows([['عدد أوامر الإنتاج', res.ordersCount], ['إجمالي التكلفة', res.totalCost, true]]);
+      addTableSheet('أوامر الإنتاج حسب الحالة', ['الحالة', 'العدد'], res.byStatus.map((s) => [DASH_PRODUCTION_STATUS_LABEL[s.status] || s.status, s.count]));
+      addTableSheet('التكلفة حسب المنتج', ['المنتج', 'عدد الأوامر', 'الكمية المنتجة', 'التكلفة الإجمالية', 'متوسط تكلفة الوحدة'],
+        res.byOutput.map((o) => [o.name, o.ordersCount, o.totalOutputQuantity, o.totalCost, o.avgUnitCost]), [3, 4]);
+    } else if (kind === 'purchasing') {
+      const res = await this.analytics.purchasingSummary(userId, locationId, from, to);
+      addKpiRows([['عدد الأوامر', res.orderCount], ['إجمالي الإنفاق', res.totalSpend, true], ['ضريبة تقديرية', res.estimatedVat, true]]);
+      addTableSheet('أوامر الشراء حسب الحالة', ['الحالة', 'العدد'], res.byStatus.map((s) => [DASH_PO_STATUS_LABEL[s.status] || s.status, s.count]));
+      addTableSheet('أعلى الموردين إنفاقًا', ['المورد', 'الإنفاق'], res.topSuppliers.map((s) => [s.supplierName, s.spend]), [1]);
+    } else if (kind === 'items') {
+      const res = await this.analytics.menuItemCosts(userId, locationId);
+      const withRecipe = res.filter((i) => i.hasRecipe);
+      const avgCostPercent = withRecipe.length ? withRecipe.reduce((a, i) => a + i.costPercent, 0) / withRecipe.length : 0;
+      addKpiRows([['عدد الأصناف', res.length], ['متوسط نسبة التكلفة %', Math.round(avgCostPercent * 10) / 10]]);
+      addTableSheet('تكلفة وهامش ربح الأصناف', ['الصنف', 'السعر', 'التكلفة', 'نسبة التكلفة %', 'هامش الربح', 'لديه وصفة'],
+        res.map((i) => [i.name, i.price, i.cost, i.costPercent, i.grossMargin, i.hasRecipe ? 'نعم' : 'لا']), [1, 2, 4]);
+    } else {
+      const [valuation, lowStock] = await Promise.all([this.analytics.inventoryValuation(userId, locationId), this.analytics.lowStock(userId, locationId)]);
+      addKpiRows([['القيمة الإجمالية للمخزون', valuation.totalValue, true], ['أصناف منخفضة المخزون', lowStock.length]]);
+      addTableSheet('قيمة المخزون حسب المكوّن', ['المكوّن', 'الكمية', 'الوحدة', 'القيمة'], valuation.lines.map((l) => [l.name, l.quantity, l.unit, l.value]), [3],
+        ['الإجمالي', '', '', valuation.totalValue]);
+      addTableSheet('تنبيهات نقص المخزون', ['المكوّن', 'الفرع', 'الكمية المتبقية', 'الوحدة', 'الحد الأدنى'],
+        lowStock.map((r) => [r.name, r.locationName, r.quantity, r.unit, r.lowStockThreshold]));
+    }
+
+    const buffer = await wb.xlsx.writeBuffer();
+    return Buffer.from(buffer);
+  }
+
+  private async buildDashboardPdf(
+    kind: DashboardKind,
+    locationName: string,
+    userId: string,
+    locationId?: string,
+    from?: string,
+    to?: string,
+  ): Promise<Buffer> {
+    const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const KIND_TITLE: Record<DashboardKind, string> = {
+      sales: 'Sales Dashboard', production: 'Production Dashboard', purchasing: 'Purchasing Dashboard',
+      items: 'Items Dashboard', inventory: 'Inventory Dashboard',
+    };
+
+    return new Promise((resolve, reject) => {
+      const doc = new PDFDocument({ margin: 40, bufferPages: true });
+      doc.registerFont('arabic', ARABIC_FONT_PATH);
+      const chunks: Buffer[] = [];
+      doc.on('data', (c: Buffer) => chunks.push(c));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      const bandHeight = 56;
+      doc.rect(0, 0, doc.page.width, bandHeight).fill('#37309F');
+      doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(18).text(KIND_TITLE[kind], doc.page.margins.left, 16);
+      doc.font('arabic').fontSize(11).text(locationName, doc.page.margins.left, 38);
+      doc.fillColor('#000000').y = bandHeight + 16;
+      doc.font('Helvetica').fontSize(10).fillColor('#555555')
+        .text(`Period: ${from ?? '...'} - ${to ?? '...'}    |    Generated: ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`);
+      doc.fillColor('#000000');
+
+      const dataLine = (arabicLabel: string, englishSuffix: string) => {
+        doc.font('arabic').fontSize(10).text(`${arabicLabel}: `, { continued: true });
+        doc.font('Helvetica').text(englishSuffix);
+      };
+      const emptyLine = () => doc.font('Helvetica').fontSize(10).text('No data for this period.');
+
+      (async () => {
+        if (kind === 'sales') {
+          const [s, topItems, lowStock] = await Promise.all([
+            this.analytics.salesSummary(userId, locationId, from, to),
+            this.analytics.topItems(userId, locationId, from, to, 20),
+            this.analytics.lowStock(userId, locationId),
+          ]);
+          this.pdfSectionHeading(doc, 'Sales Summary');
+          doc.font('Helvetica').fontSize(10);
+          doc.text(`Orders: ${s.orderCount}`);
+          doc.text(`Revenue: ${fmt(s.revenue)}`);
+          doc.text(`Net sales: ${fmt(s.netSales)}`);
+          doc.text(`VAT collected: ${fmt(s.vatCollected)}`);
+          doc.font('Helvetica-Bold').text(`Average order value: ${fmt(s.averageOrderValue)}`);
+
+          this.pdfSectionHeading(doc, 'Top Items');
+          if (!topItems.length) emptyLine();
+          for (const i of topItems) dataLine(i.name, `qty ${i.quantity}, revenue ${fmt(i.revenue)}`);
+
+          this.pdfSectionHeading(doc, 'Low Stock Alerts');
+          if (!lowStock.length) emptyLine();
+          for (const r of lowStock) dataLine(r.name, `${r.quantity} ${r.unit} / min ${r.lowStockThreshold}`);
+        } else if (kind === 'production') {
+          const res = await this.analytics.productionSummary(userId, locationId, from, to);
+          this.pdfSectionHeading(doc, 'Production Summary');
+          doc.font('Helvetica').fontSize(10);
+          doc.text(`Orders: ${res.ordersCount}`);
+          doc.font('Helvetica-Bold').text(`Total cost: ${fmt(res.totalCost)}`);
+
+          this.pdfSectionHeading(doc, 'Cost by Output');
+          if (!res.byOutput.length) emptyLine();
+          for (const o of res.byOutput) dataLine(o.name, `qty ${fmt(o.totalOutputQuantity)}, cost ${fmt(o.totalCost)}, avg/unit ${fmt(o.avgUnitCost)}`);
+        } else if (kind === 'purchasing') {
+          const res = await this.analytics.purchasingSummary(userId, locationId, from, to);
+          this.pdfSectionHeading(doc, 'Purchasing Summary');
+          doc.font('Helvetica').fontSize(10);
+          doc.text(`Orders: ${res.orderCount}`);
+          doc.text(`Total spend: ${fmt(res.totalSpend)}`);
+          doc.font('Helvetica-Bold').text(`Estimated VAT: ${fmt(res.estimatedVat)}`);
+
+          this.pdfSectionHeading(doc, 'Top Suppliers');
+          if (!res.topSuppliers.length) emptyLine();
+          for (const sup of res.topSuppliers) dataLine(sup.supplierName, `spend ${fmt(sup.spend)}`);
+        } else if (kind === 'items') {
+          const res = await this.analytics.menuItemCosts(userId, locationId);
+          this.pdfSectionHeading(doc, 'Items Cost & Margin');
+          doc.font('Helvetica').fontSize(10);
+          if (!res.length) emptyLine();
+          for (const i of res) dataLine(i.name, `price ${fmt(i.price)}, cost ${fmt(i.cost)} (${i.costPercent.toFixed(1)}%), margin ${fmt(i.grossMargin)}`);
+        } else {
+          const [valuation, lowStock] = await Promise.all([this.analytics.inventoryValuation(userId, locationId), this.analytics.lowStock(userId, locationId)]);
+          this.pdfSectionHeading(doc, 'Inventory Valuation');
+          doc.font('Helvetica-Bold').fontSize(10).text(`Total value: ${fmt(valuation.totalValue)}`);
+          doc.font('Helvetica').fontSize(10);
+          if (!valuation.lines.length) emptyLine();
+          for (const l of valuation.lines) dataLine(l.name, `qty ${fmt(l.quantity)} ${l.unit}, value ${fmt(l.value)}`);
+
+          this.pdfSectionHeading(doc, 'Low Stock Alerts');
+          if (!lowStock.length) emptyLine();
+          for (const r of lowStock) dataLine(`${r.name} (${r.locationName})`, `${r.quantity} ${r.unit} / min ${r.lowStockThreshold}`);
+        }
+
+        const pageCount = doc.bufferedPageRange().count;
+        for (let i = 0; i < pageCount; i++) {
+          doc.switchToPage(i);
+          doc.font('Helvetica').fontSize(8).fillColor('#888888')
+            .text(`Page ${i + 1} of ${pageCount}`, doc.page.margins.left, doc.page.height - 30, {
+              width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+              align: 'center',
+            });
+        }
+        doc.end();
+      })().catch(reject);
+    });
   }
 
   // The real "scheduled reports" deliverable: runs automatically every

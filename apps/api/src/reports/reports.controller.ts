@@ -1,11 +1,11 @@
-import { Body, Controller, Get, Param, Post, Query, StreamableFile, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Query, StreamableFile, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermission } from '../auth/require-permission.decorator';
 import { GenerateAllReportsDto } from './dto/generate-all-reports.dto';
 import { GenerateReportDto } from './dto/generate-report.dto';
-import { ReportsService } from './reports.service';
+import { DashboardKind, ReportsService } from './reports.service';
 
 const CONTENT_TYPE: Record<string, string> = {
   XLSX: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -46,6 +46,29 @@ export class ReportsController {
     return new StreamableFile(report.fileData, {
       type: CONTENT_TYPE[report.format] ?? 'application/octet-stream',
       disposition: `attachment; filename="${report.fileName}"`,
+    });
+  }
+
+  // On-demand export of the on-screen dashboard the user is already
+  // looking at (Sales/Production/Purchasing/Items/Inventory) -- streamed
+  // straight back, no GeneratedReport row persisted (see the service
+  // method's own comment for why).
+  private static readonly DASHBOARD_KINDS: DashboardKind[] = ['sales', 'production', 'purchasing', 'items', 'inventory'];
+  @Get('dashboard-export')
+  async dashboardExport(
+    @CurrentUser() user: { userId: string },
+    @Query('kind') kind: string,
+    @Query('format') format: string,
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    if (!ReportsController.DASHBOARD_KINDS.includes(kind as DashboardKind)) throw new BadRequestException('kind غير صالح');
+    if (format !== 'XLSX' && format !== 'PDF') throw new BadRequestException('format يجب أن يكون XLSX أو PDF');
+    const { buffer, fileName } = await this.reports.buildDashboardExport(user.userId, kind as DashboardKind, format, locationId, from, to);
+    return new StreamableFile(buffer, {
+      type: CONTENT_TYPE[format],
+      disposition: `attachment; filename="${fileName}"`,
     });
   }
 }

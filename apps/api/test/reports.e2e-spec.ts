@@ -235,4 +235,82 @@ describe('Reports: scheduled Excel/PDF export (e2e)', () => {
     const orgWideRows = await prisma.generatedReport.findMany({ where: { locationId: null, type: 'DAILY_BUNDLE' } });
     expect(orgWideRows.length).toBeGreaterThanOrEqual(2); // at least the XLSX + PDF just created
   });
+
+  // On-demand per-dashboard export (Sales/Production/Purchasing/Items/
+  // Inventory) -- a real file streamed straight back, no GeneratedReport
+  // row involved, so these hit /reports/dashboard-export directly rather
+  // than the generate+download two-step above.
+  const streamed = (req: request.Test) =>
+    req.buffer(true).parse((r, cb) => {
+      const chunks: Buffer[] = [];
+      r.on('data', (c: Buffer) => chunks.push(c));
+      r.on('end', () => cb(null, Buffer.concat(chunks)));
+    });
+
+  it('rejects an unknown dashboard kind or format', async () => {
+    const badKind = await request(app.getHttpServer()).get('/reports/dashboard-export?kind=nope&format=XLSX').set(auth(viewToken));
+    expect(badKind.status).toBe(400);
+    const badFormat = await request(app.getHttpServer()).get('/reports/dashboard-export?kind=sales&format=CSV').set(auth(viewToken));
+    expect(badFormat.status).toBe(400);
+  });
+
+  it('blocks a dashboard export for a location outside the caller scope (403)', async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/reports/dashboard-export?kind=sales&format=XLSX&locationId=${locationId}`)
+      .set(auth(scopedElsewhereToken));
+    expect(res.status).toBe(403);
+  });
+
+  it('exports the Sales dashboard as a real XLSX with the actual numbers, across all its sections', async () => {
+    const download = await streamed(
+      request(app.getHttpServer()).get(`/reports/dashboard-export?kind=sales&format=XLSX&locationId=${locationId}&from=${periodFrom}&to=${periodTo}`).set(auth(viewToken)),
+    );
+    expect(download.status).toBe(200);
+    expect(download.headers['content-type']).toContain('spreadsheetml');
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(download.body as unknown as ArrayBuffer);
+    const summary = wb.getWorksheet('ملخص');
+    const flat = (summary!.getSheetValues() as Array<Array<string | number> | undefined>).filter(Boolean).map((r) => r as Array<string | number>);
+    const findRow = (label: string) => flat.find((r) => r[1] === label);
+    expect(findRow('عدد الطلبات')?.[2]).toBe(1);
+    expect(findRow('الإيراد')?.[2]).toBe(115);
+
+    const channelSheet = wb.getWorksheet('الإيراد حسب القناة');
+    const channelRows = (channelSheet!.getSheetValues() as Array<Array<string | number> | undefined>).filter(Boolean);
+    const channelRow = channelRows.find((r) => (r as Array<string | number>)[1] === 'صالة') as Array<string | number>;
+    expect(channelRow[2]).toBe(1);
+    expect(channelRow[3]).toBe(115);
+
+    const itemsSheet = wb.getWorksheet('الأصناف الأكثر مبيعًا');
+    const itemRows = (itemsSheet!.getSheetValues() as Array<Array<string | number> | undefined>).filter(Boolean);
+    const itemRow = itemRows.find((r) => (r as Array<string | number>)[1] === 'صنف تقارير') as Array<string | number>;
+    expect(itemRow[2]).toBe(2);
+    expect(itemRow[3]).toBe(100);
+  });
+
+  it('exports the Sales dashboard as a real PDF with the actual numbers', async () => {
+    const download = await streamed(
+      request(app.getHttpServer()).get(`/reports/dashboard-export?kind=sales&format=PDF&locationId=${locationId}&from=${periodFrom}&to=${periodTo}`).set(auth(viewToken)),
+    );
+    expect(download.status).toBe(200);
+    expect(download.headers['content-type']).toBe('application/pdf');
+    const parsed = await pdfParse(download.body as Buffer);
+    expect(parsed.text).toContain('Sales Dashboard');
+    expect(parsed.text).toContain('Orders: 1');
+    expect(parsed.text).toContain('Revenue: 115.00');
+  });
+
+  it('exports the Inventory dashboard as a real XLSX reflecting real batch valuation', async () => {
+    const download = await streamed(
+      request(app.getHttpServer()).get(`/reports/dashboard-export?kind=inventory&format=XLSX&locationId=${locationId}`).set(auth(viewToken)),
+    );
+    expect(download.status).toBe(200);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(download.body as unknown as ArrayBuffer);
+    const valueSheet = wb.getWorksheet('قيمة المخزون حسب المكوّن');
+    const rows = (valueSheet!.getSheetValues() as Array<Array<string | number> | undefined>).filter(Boolean);
+    const row = rows.find((r) => (r as Array<string | number>)[1] === 'خامة تقارير') as Array<string | number>;
+    expect(row[4]).toBe(980); // 1000 received - 20 consumed (2 units x 10g/unit) by the real sale, at 1.00/g
+  });
 });
