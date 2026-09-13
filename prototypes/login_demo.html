@@ -94,7 +94,7 @@ async function doLogin() {
       return;
     }
     const payload = decodeJwtPayload(data.accessToken);
-    const expires = payload && payload.exp ? new Date(payload.exp * 1000).toLocaleString('ar-SA') : '؟';
+    const expires = payload && payload.exp ? new Date(payload.exp * 1000).toLocaleString('ar-SA-u-ca-gregory-nu-latn') : '؟';
     result.className = 'result ok';
     result.textContent =
       '✅ تم تسجيل الدخول بنجاح\n' +

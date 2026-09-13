@@ -41,7 +41,7 @@ export default function OrdersPanel({ orders, onPay, onVoid }: Props) {
                 const canAct = o.status === 'SENT_TO_KITCHEN' && o.offlineState !== 'sync_failed';
                 return (
                   <tr key={o.id}>
-                    <td>{new Date(o.createdAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</td>
+                    <td>{new Date(o.createdAt).toLocaleTimeString('ar-SA-u-ca-gregory-nu-latn', { hour: '2-digit', minute: '2-digit' })}</td>
                     <td>{o.lineCount}</td>
                     <td>{Number(o.grandTotal).toFixed(2)}</td>
                     <td>

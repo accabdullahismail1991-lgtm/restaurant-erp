@@ -191,7 +191,7 @@ function onLocationChange() {
 }
 
 function startClock() {
-  const tick = () => { document.getElementById('clock').textContent = new Date().toLocaleTimeString('ar-SA'); };
+  const tick = () => { document.getElementById('clock').textContent = new Date().toLocaleTimeString('ar-SA-u-ca-gregory-nu-latn'); };
   tick();
   setInterval(tick, 1000);
 }

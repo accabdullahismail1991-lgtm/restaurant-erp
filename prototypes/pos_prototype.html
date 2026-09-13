@@ -715,7 +715,7 @@
       var e = document.getElementById('emptyReport');
       if(e) e.remove();
       salesBody.innerHTML = sales.slice().reverse().map(function(s){
-        var time = new Date(s.time).toLocaleTimeString('ar-SA',{hour:'2-digit',minute:'2-digit'});
+        var time = new Date(s.time).toLocaleTimeString('ar-SA-u-ca-gregory-nu-latn',{hour:'2-digit',minute:'2-digit'});
         var itemsStr = s.items.map(function(i){return i.name+' ×'+i.qty;}).join('، ');
         return '<tr><td>'+time+'</td><td>'+itemsStr+'</td><td>'+s.pay+'</td><td>'+fmt(s.total)+'</td></tr>';
       }).join('');

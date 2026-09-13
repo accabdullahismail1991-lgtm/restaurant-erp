@@ -38,7 +38,7 @@ export default function Header({ location }: { location: Location | null }) {
       <div>
         <h1>🍽️ كاشير المطعم</h1>
         <div className="shift-info">
-          {location?.name} · وردية مفتوحة منذ {shift ? new Date(shift.openedAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }) : ''}
+          {location?.name} · وردية مفتوحة منذ {shift ? new Date(shift.openedAt).toLocaleTimeString('ar-SA-u-ca-gregory-nu-latn', { hour: '2-digit', minute: '2-digit' }) : ''}
         </div>
       </div>
       <div className="right-group">

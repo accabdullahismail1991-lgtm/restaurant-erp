@@ -27,6 +27,16 @@ function resolveArabicFontPath(): string {
 
 const ARABIC_FONT_PATH = resolveArabicFontPath();
 
+// Plain 'ar-SA' silently switches to the Hijri calendar with Eastern
+// Arabic-Indic numerals -- inconsistent with the Gregorian dates this
+// system actually stores and exports everywhere else (periodStart/End
+// above use toISOString() directly). This keeps the exported workbook's
+// "generated at" stamp in Arabic but on the Gregorian calendar with
+// Western digits, matching admin_panel.html's fmtDateTime.
+function fmtGeneratedAt(): string {
+  return new Date().toLocaleString('ar-SA-u-ca-gregory-nu-latn');
+}
+
 // The same per-module dashboards the admin panel renders as charts
 // (Sales/Production/Purchasing/Items/Inventory) -- these labels mirror the
 // ones the frontend already uses for the exact same codes, so the exported
@@ -103,7 +113,7 @@ export class ReportsService {
     summary.columns = [{ width: 26 }, { width: 20 }, { width: 20 }];
     summary.addRow(['الموقع', data.locationName]).font = { bold: true };
     summary.addRow(['الفترة', `${data.periodStart.toISOString().slice(0, 10)} → ${data.periodEnd.toISOString().slice(0, 10)}`]);
-    summary.addRow(['أُنشئ في', new Date().toLocaleString('ar-SA')]);
+    summary.addRow(['أُنشئ في', fmtGeneratedAt()]);
     this.styleHeaderRow(summary.addRow(['المؤشر', 'القيمة']));
     summary.addRow(['عدد الطلبات', data.salesSummary.orderCount]);
     summary.addRow(['الإيراد', data.salesSummary.revenue]).getCell(2).numFmt = moneyFmt;
@@ -350,7 +360,7 @@ export class ReportsService {
     summary.columns = [{ width: 26 }, { width: 20 }];
     summary.addRow(['الموقع', locationName]).font = { bold: true };
     if (from || to) summary.addRow(['الفترة', `${from ?? '...'} → ${to ?? '...'}`]);
-    summary.addRow(['أُنشئ في', new Date().toLocaleString('ar-SA')]);
+    summary.addRow(['أُنشئ في', fmtGeneratedAt()]);
 
     const addKpiRows = (rows: [string, number | string, boolean?][]) => {
       summary.addRow([]);
