@@ -292,7 +292,12 @@ export class AnalyticsService {
     return this.menuItemCostsCore(ids);
   }
 
-  private async menuItemCostsCore(ids: string[] | undefined) {
+  // costOverrides lets a caller substitute a hypothetical unit cost for one
+  // or more ingredients instead of each ingredient's real weighted-average
+  // batch cost -- the one thing costImpactSimulation below needs that no
+  // other caller of this method does, so it's an optional param rather
+  // than a second near-duplicate implementation.
+  private async menuItemCostsCore(ids: string[] | undefined, costOverrides?: Map<string, number>) {
     const batches = await this.prisma.inventoryBatch.findMany({
       where: { locationId: ids ? { in: ids } : undefined, quantity: { gt: 0 } },
       select: { ingredientId: true, quantity: true, unitCost: true },
@@ -305,6 +310,7 @@ export class AnalyticsService {
       byIngredient.set(b.ingredientId, cur);
     }
     const avgCost = (ingredientId: string) => {
+      if (costOverrides?.has(ingredientId)) return costOverrides.get(ingredientId)!;
       const c = byIngredient.get(ingredientId);
       return c && c.qty > 0 ? c.value / c.qty : 0;
     };
@@ -348,8 +354,16 @@ export class AnalyticsService {
     return this.menuEngineeringCore(ids, from, to);
   }
 
-  private async menuEngineeringCore(ids: string[] | undefined, from?: string, to?: string) {
-    const [soldItems, costs] = await Promise.all([this.topItemsCore(ids, from, to, 100000), this.menuItemCostsCore(ids)]);
+  private async menuEngineeringCore(
+    ids: string[] | undefined,
+    from?: string,
+    to?: string,
+    costOverrides?: Map<string, number>,
+  ) {
+    const [soldItems, costs] = await Promise.all([
+      this.topItemsCore(ids, from, to, 100000),
+      this.menuItemCostsCore(ids, costOverrides),
+    ]);
     const costByItem = new Map(costs.map((c) => [c.menuItemId, c]));
 
     const totalQuantity = soldItems.reduce((s, i) => s + i.quantity, 0);
@@ -396,6 +410,67 @@ export class AnalyticsService {
         PUZZLE: items.filter((i) => i.classification === 'PUZZLE').length,
         DOG: items.filter((i) => i.classification === 'DOG').length,
       },
+      items,
+    };
+  }
+
+  // "What if ingredient X's cost changes" -- runs the exact same
+  // menuEngineeringCore classification twice (once with real batch costs,
+  // once substituting the hypothetical new unit costs via costOverrides)
+  // over the same sales period, so every menu item's cost/margin/
+  // classification shift is a straight diff of two real reports rather
+  // than a parallel estimate that could drift from how menuEngineering
+  // actually classifies items.
+  async costImpactSimulation(
+    userId: string,
+    ingredientChanges: Array<{ ingredientId: string; newUnitCost: number }>,
+    locationId?: string,
+    from?: string,
+    to?: string,
+  ) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    const costOverrides = new Map(ingredientChanges.map((c) => [c.ingredientId, c.newUnitCost]));
+    const [baseline, simulated] = await Promise.all([
+      this.menuEngineeringCore(ids, from, to),
+      this.menuEngineeringCore(ids, from, to, costOverrides),
+    ]);
+    const simulatedByItem = new Map(simulated.items.map((i) => [i.menuItemId, i]));
+
+    const affectedIngredientIds = new Set(ingredientChanges.map((c) => c.ingredientId));
+    const ingredients = await this.prisma.ingredient.findMany({
+      where: { id: { in: [...affectedIngredientIds] } },
+      select: { id: true, name: true },
+    });
+    const ingredientNames = new Map(ingredients.map((i) => [i.id, i.name]));
+
+    const items = baseline.items
+      .map((before) => {
+        const after = simulatedByItem.get(before.menuItemId);
+        if (!after) return null;
+        return {
+          menuItemId: before.menuItemId,
+          name: before.name,
+          currentCost: before.cost,
+          simulatedCost: after.cost,
+          costDelta: round2(after.cost - before.cost),
+          currentMargin: before.margin,
+          simulatedMargin: after.margin,
+          marginDelta: round2(after.margin - before.margin),
+          currentClassification: before.classification,
+          simulatedClassification: after.classification,
+          classificationChanged: before.classification !== after.classification,
+        };
+      })
+      .filter((i): i is NonNullable<typeof i> => i !== null && i.costDelta !== 0)
+      .sort((a, b) => Math.abs(b.marginDelta) - Math.abs(a.marginDelta));
+
+    return {
+      changedIngredients: ingredientChanges.map((c) => ({
+        ingredientId: c.ingredientId,
+        name: ingredientNames.get(c.ingredientId) ?? c.ingredientId,
+        newUnitCost: round2(c.newUnitCost),
+      })),
+      classificationShiftCount: items.filter((i) => i.classificationChanged).length,
       items,
     };
   }

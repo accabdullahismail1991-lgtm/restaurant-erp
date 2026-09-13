@@ -1,9 +1,10 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermission } from '../auth/require-permission.decorator';
 import { AnalyticsService } from './analytics.service';
+import { CostImpactSimulationDto } from './dto/cost-impact-simulation.dto';
 
 // Unlike base POS operations (create/pay an order), reading revenue/margin
 // numbers is commercially sensitive -- every route here is gated behind
@@ -178,5 +179,12 @@ export class AnalyticsController {
     @Query('to') to?: string,
   ) {
     return this.analytics.kitchenPerformance(user.userId, locationId, from, to);
+  }
+
+  // POST (not GET) because the hypothetical ingredient cost list is a real
+  // request body, not a few scalar filters.
+  @Post('cost-impact-simulation')
+  costImpactSimulation(@CurrentUser() user: { userId: string }, @Body() dto: CostImpactSimulationDto) {
+    return this.analytics.costImpactSimulation(user.userId, dto.ingredientChanges, dto.locationId, dto.from, dto.to);
   }
 }

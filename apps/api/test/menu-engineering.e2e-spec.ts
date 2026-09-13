@@ -20,6 +20,7 @@ describe('Menu engineering (Kasavana & Smith matrix) (e2e)', () => {
   let prisma: PrismaService;
   let viewToken: string;
   let locationId: string;
+  const ingredientIdByKey: Record<string, string> = {};
 
   const VIEW_PHONE = '+966500000140';
   const PASSWORD = 'MenuEngTest123';
@@ -66,6 +67,7 @@ describe('Menu engineering (Kasavana & Smith matrix) (e2e)', () => {
 
     for (const p of plan) {
       const ingredient = await prisma.ingredient.create({ data: { name: `خامة ${p.key}`, unit: 'pcs', kind: 'RAW_MATERIAL', lowStockThreshold: 0 } });
+      ingredientIdByKey[p.key] = ingredient.id;
       const menuItem = await prisma.menuItem.create({ data: { name: `صنف ${p.key}`, category: 'اختبار', price: 100 } });
       await prisma.recipeLine.create({ data: { menuItemId: menuItem.id, ingredientId: ingredient.id, quantity: 1 } });
       await request(app.getHttpServer())
@@ -105,6 +107,35 @@ describe('Menu engineering (Kasavana & Smith matrix) (e2e)', () => {
     expect(byName('صنف dog')).toMatchObject({ quantity: 10, popularityPercent: 10, margin: 5, classification: 'DOG' });
   });
 
+  it('simulates a hypothetical ingredient cost change and reclassifies affected items', async () => {
+    // Raising the "puzzle" ingredient's cost from 10 to 95 crashes that
+    // item's margin from 90 to 5, which also drags the period's own
+    // volume-weighted avg margin down from 45.5 to 37.0 -- low enough that
+    // the item (still below the 17.5% popularity threshold) flips from
+    // PUZZLE to DOG, while every other item's classification is unaffected.
+    const res = await request(app.getHttpServer())
+      .post('/analytics/cost-impact-simulation')
+      .set(auth(viewToken))
+      .send({ locationId, ingredientChanges: [{ ingredientId: ingredientIdByKey.puzzle, newUnitCost: 95 }] });
+    expect(res.status).toBe(201);
+    expect(res.body.classificationShiftCount).toBe(1);
+
+    const byName = (name: string) => res.body.items.find((i: { name: string }) => i.name === name);
+    expect(byName('صنف puzzle')).toMatchObject({
+      currentCost: 10,
+      simulatedCost: 95,
+      costDelta: 85,
+      currentMargin: 90,
+      simulatedMargin: 5,
+      marginDelta: -85,
+      currentClassification: 'PUZZLE',
+      simulatedClassification: 'DOG',
+      classificationChanged: true,
+    });
+    expect(res.body.items.every((i: { menuItemId: string }) => i.menuItemId !== undefined)).toBe(true);
+    expect(res.body.items.find((i: { name: string }) => i.name === 'صنف star')).toBeUndefined();
+  });
+
   it('blocks without analytics.view (403)', async () => {
     const NOPERM_PHONE = '+966500000149';
     await prisma.user.deleteMany({ where: { phone: NOPERM_PHONE } });
@@ -113,5 +144,11 @@ describe('Menu engineering (Kasavana & Smith matrix) (e2e)', () => {
     const loginRes = await request(app.getHttpServer()).post('/auth/login').send({ phone: NOPERM_PHONE, password: PASSWORD });
     const res = await request(app.getHttpServer()).get(`/analytics/menu-engineering?locationId=${locationId}`).set(auth(loginRes.body.accessToken));
     expect(res.status).toBe(403);
+
+    const simRes = await request(app.getHttpServer())
+      .post('/analytics/cost-impact-simulation')
+      .set(auth(loginRes.body.accessToken))
+      .send({ locationId, ingredientChanges: [{ ingredientId: ingredientIdByKey.puzzle, newUnitCost: 95 }] });
+    expect(simRes.status).toBe(403);
   });
 });
