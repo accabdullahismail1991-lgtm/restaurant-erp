@@ -181,6 +181,16 @@ export class AnalyticsController {
     return this.analytics.kitchenPerformance(user.userId, locationId, from, to);
   }
 
+  @Get('daily-consumption')
+  dailyConsumption(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.analytics.dailyConsumption(user.userId, locationId, from, to);
+  }
+
   // POST (not GET) because the hypothetical ingredient cost list is a real
   // request body, not a few scalar filters.
   @Post('cost-impact-simulation')

@@ -56,7 +56,14 @@ export class StocktakesService {
   }
 
   async findOne(id: string, userId: string) {
-    const stocktake = await this.prisma.stocktake.findUnique({ where: { id }, include: { lines: true, approvals: true } });
+    const stocktake = await this.prisma.stocktake.findUnique({
+      where: { id },
+      include: {
+        location: { select: { id: true, name: true } },
+        lines: { include: { ingredient: { select: { id: true, name: true, unit: true, kind: true } } } },
+        approvals: { include: { approvedBy: { select: { id: true, name: true } } } },
+      },
+    });
     if (!stocktake) throw new NotFoundException('الجرد غير موجود');
     await this.assertLocationInScope(userId, stocktake.locationId);
     return stocktake;
@@ -69,6 +76,7 @@ export class StocktakesService {
     }
     return this.prisma.stocktake.findMany({
       where: { locationId: locationId ? locationId : allowedIds ? { in: allowedIds } : undefined, status },
+      include: { location: { select: { id: true, name: true } }, lines: { select: { id: true, variance: true } } },
       orderBy: { startedAt: 'desc' },
     });
   }

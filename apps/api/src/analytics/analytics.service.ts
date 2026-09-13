@@ -36,6 +36,13 @@ export class AnalyticsService {
     const lte = to ? new Date(to) : undefined;
     if (gte && isNaN(gte.getTime())) throw new BadRequestException('تاريخ البداية (from) غير صالح');
     if (lte && isNaN(lte.getTime())) throw new BadRequestException('تاريخ النهاية (to) غير صالح');
+    // Every caller passes `to` as a plain "YYYY-MM-DD" (the UI's own <input
+    // type=date>) meaning "through the end of that day" -- parsed as-is
+    // that's midnight, the very FIRST instant of the day, so an `lte`
+    // bound built from it would exclude almost everything that actually
+    // happened that day. Most visibly wrong for a "today" default
+    // (from=to=today): it would show today's own report as empty.
+    if (lte) lte.setUTCHours(23, 59, 59, 999);
     return { gte, lte };
   }
 
@@ -924,5 +931,100 @@ export class AnalyticsService {
         .map(([category, v]) => ({ category, avgPrepMinutes: round2(v.totalMinutes / v.count), count: v.count }))
         .sort((a, b) => b.avgPrepMinutes - a.avgPrepMinutes),
     };
+  }
+
+  // Daily/period consumption per ingredient -- every real stock DEDUCTION
+  // is already a StockMovement row (the ledger InventoryService posts
+  // instead of ever mutating a balance directly), so this is a read over
+  // that same ledger rather than a new tracking mechanism: SALE (recipe
+  // consumption at the till), PRODUCTION_CONSUMPTION (an ingredient used as
+  // another ingredient's own input), and WASTE (the existing manual
+  // waste-recording screen) are the three ways an ingredient's stock goes
+  // down that this system already records. STOCKTAKE_ADJUSTMENT is
+  // deliberately excluded -- a count correction isn't "consumption", it's
+  // fixing the system's belief about what's on the shelf. Each
+  // StockMovement is tied to one InventoryBatch, whose unitCost is that
+  // batch's REAL cost at the time it was consumed -- summing
+  // quantity*unitCost per movement is therefore the actual historical
+  // cost of what left the shelf, not a recomputed current-day estimate.
+  private static readonly CONSUMPTION_REASONS = ['SALE', 'PRODUCTION_CONSUMPTION', 'WASTE'];
+  private static readonly CONSUMPTION_REASON_LABEL: Record<string, string> = {
+    SALE: 'مبيعات',
+    PRODUCTION_CONSUMPTION: 'إنتاج',
+    WASTE: 'هالك',
+  };
+
+  async dailyConsumption(userId: string, locationId?: string, from?: string, to?: string) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.dailyConsumptionCore(ids, from, to);
+  }
+
+  private async dailyConsumptionCore(ids: string[] | undefined, from?: string, to?: string) {
+    const { gte, lte } = this.parseRange(from, to);
+    const movements = await this.prisma.stockMovement.findMany({
+      where: {
+        reason: { in: AnalyticsService.CONSUMPTION_REASONS },
+        quantity: { lt: 0 },
+        createdAt: gte || lte ? { gte, lte } : undefined,
+        batch: { locationId: ids ? { in: ids } : undefined },
+      },
+      select: {
+        quantity: true,
+        reason: true,
+        batch: { select: { unitCost: true, ingredient: { select: { id: true, name: true, unit: true, kind: true } } } },
+      },
+    });
+
+    const byIngredient = new Map<
+      string,
+      { name: string; unit: string; kind: string; qtyByReason: Record<string, number>; costByReason: Record<string, number> }
+    >();
+    for (const m of movements) {
+      const ing = m.batch.ingredient;
+      const cur = byIngredient.get(ing.id) ?? {
+        name: ing.name,
+        unit: ing.unit,
+        kind: ing.kind,
+        qtyByReason: {},
+        costByReason: {},
+      };
+      const qty = Math.abs(Number(m.quantity));
+      const cost = qty * Number(m.batch.unitCost);
+      cur.qtyByReason[m.reason] = (cur.qtyByReason[m.reason] ?? 0) + qty;
+      cur.costByReason[m.reason] = (cur.costByReason[m.reason] ?? 0) + cost;
+      byIngredient.set(ing.id, cur);
+    }
+
+    const items = [...byIngredient.entries()]
+      .map(([ingredientId, v]) => {
+        const totalQty = round2(Object.values(v.qtyByReason).reduce((s, n) => s + n, 0));
+        const totalCost = round2(Object.values(v.costByReason).reduce((s, n) => s + n, 0));
+        return {
+          ingredientId,
+          name: v.name,
+          unit: v.unit,
+          kind: v.kind,
+          byReason: AnalyticsService.CONSUMPTION_REASONS.map((reason) => ({
+            reason,
+            label: AnalyticsService.CONSUMPTION_REASON_LABEL[reason],
+            quantity: round2(v.qtyByReason[reason] ?? 0),
+            cost: round2(v.costByReason[reason] ?? 0),
+          })),
+          totalQty,
+          totalCost,
+        };
+      })
+      .sort((a, b) => b.totalCost - a.totalCost);
+
+    const totals = {
+      totalCost: round2(items.reduce((s, i) => s + i.totalCost, 0)),
+      byReason: AnalyticsService.CONSUMPTION_REASONS.map((reason) => ({
+        reason,
+        label: AnalyticsService.CONSUMPTION_REASON_LABEL[reason],
+        cost: round2(items.reduce((s, i) => s + (i.byReason.find((r) => r.reason === reason)?.cost ?? 0), 0)),
+      })),
+    };
+
+    return { items, totals };
   }
 }
