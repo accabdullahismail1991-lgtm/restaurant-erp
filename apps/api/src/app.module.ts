@@ -13,6 +13,7 @@ import { InventoryModule } from './inventory/inventory.module';
 import { ItemsModule } from './items/items.module';
 import { KitchenModule } from './kitchen/kitchen.module';
 import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
+import { PermissionsModule } from './permissions/permissions.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductionModule } from './production/production.module';
 import { PromotionsModule } from './promotions/promotions.module';
@@ -20,6 +21,7 @@ import { PurchaseReturnsModule } from './purchase-returns/purchase-returns.modul
 import { PurchasingModule } from './purchasing/purchasing.module';
 import { ReportsModule } from './reports/reports.module';
 import { ReturnsModule } from './returns/returns.module';
+import { RolesModule } from './roles/roles.module';
 import { SalesModule } from './sales/sales.module';
 import { SalesChannelsModule } from './sales-channels/sales-channels.module';
 import { StocktakeModule } from './stocktake/stocktake.module';
@@ -59,6 +61,8 @@ import { UsersModule } from './users/users.module';
     AlertsModule,
     PaymentMethodsModule,
     CombosModule,
+    RolesModule,
+    PermissionsModule,
   ],
   controllers: [AppController],
 })

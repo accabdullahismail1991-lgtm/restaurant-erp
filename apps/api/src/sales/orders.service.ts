@@ -400,6 +400,7 @@ export class OrdersService {
 
     return this.prisma.$transaction(async (tx) => {
       await this.inventory.reverseConsumption(tx, { refId: id, matchReason: 'SALE', restockReason: 'SALE_VOID_RESTOCK' });
+      await tx.orderActivityLog.create({ data: { orderId: id, action: 'VOIDED', createdById: userId } });
       return tx.order.update({ where: { id }, data: { status: OrderStatus.VOIDED }, include: { lines: true } });
     });
   }

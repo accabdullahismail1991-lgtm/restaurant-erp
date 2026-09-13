@@ -20,8 +20,10 @@ export class ShiftsController {
     @CurrentUser() user: { userId: string },
     @Query('locationId') locationId?: string,
     @Query('openOnly') openOnly?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
   ) {
-    return this.shifts.findAll(user.userId, locationId, openOnly === 'true');
+    return this.shifts.findAll(user.userId, locationId, openOnly === 'true', from, to);
   }
 
   @Get(':id')
@@ -35,6 +37,13 @@ export class ShiftsController {
   @Get(':id/close-summary')
   closeSummary(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
     return this.shifts.closeSummary(id, user.userId);
+  }
+
+  // Same access rule as close-summary above -- "what happened on this
+  // shift" is available to whoever can view the shift itself.
+  @Get(':id/activity-log')
+  activityLog(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
+    return this.shifts.activityLog(id, user.userId);
   }
 
   // Not creating a new resource -- transitions an existing shift's state.

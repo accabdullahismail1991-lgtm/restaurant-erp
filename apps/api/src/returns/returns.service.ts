@@ -128,6 +128,10 @@ export class ReturnsService {
         }
       }
 
+      await tx.orderActivityLog.create({
+        data: { orderId: order.id, action: 'RETURNED', note: dto.reason, createdById: userId },
+      });
+
       return tx.orderReturn.findUniqueOrThrow({ where: { id: ret.id }, include: { lines: true } });
     });
   }

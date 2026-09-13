@@ -88,6 +88,7 @@ export class UsersService {
         data: {
           name: dto.name,
           isActive: dto.isActive,
+          passwordHash: dto.password ? await bcrypt.hash(dto.password, 10) : undefined,
         },
         select: SAFE_SELECT,
       });
