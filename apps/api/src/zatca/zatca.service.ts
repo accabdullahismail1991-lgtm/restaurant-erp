@@ -94,9 +94,17 @@ export class ZatcaService {
     const menuItems = await tx.menuItem.findMany({ where: { id: { in: regularMenuItemIds } } });
     const nameById = new Map(menuItems.map((m) => [m.id, m.name]));
     const vatRate = Number(order.location.vatRate) / 100;
+    const pricesIncludeVat = order.location.pricesIncludeVat;
 
     const invoiceLines = order.lines.map((line) => {
-      const lineSubtotal = round2(Number(line.unitPrice) * line.quantity);
+      const lineGross = round2(Number(line.unitPrice) * line.quantity);
+      // pricesIncludeVat: unitPrice is the final (VAT-inclusive) price, so
+      // the net amount ZATCA's LineExtensionAmount expects has to be backed
+      // out of it instead of taken as-is -- lineTotal below stays the true
+      // tax-exclusive net in both modes, matching OrdersService.create()'s
+      // own extract-vs-add split.
+      const lineNet = pricesIncludeVat ? round2(lineGross / (1 + vatRate)) : lineGross;
+      const lineVat = pricesIncludeVat ? round2(lineGross - lineNet) : round2(lineGross * vatRate);
       // A combo line has no single menu item -- name it by the combo plus
       // its chosen composition so the printed invoice line is meaningful.
       const name = line.menuItemId
@@ -106,8 +114,8 @@ export class ZatcaService {
         name,
         quantity: line.quantity,
         unitPrice: Number(line.unitPrice),
-        lineTotal: lineSubtotal,
-        lineVat: round2(lineSubtotal * vatRate),
+        lineTotal: lineNet,
+        lineVat,
       };
     });
 
@@ -134,6 +142,12 @@ export class ZatcaService {
       data: { zatcaInvoiceCounter: { increment: 1 } },
     });
     const invoiceCounter = updatedLocation.zatcaInvoiceCounter;
+    // Net (tax-exclusive) LineExtensionAmount for the XML -- sums the
+    // already-extracted invoiceLines above rather than order.subtotal
+    // directly, since order.subtotal is the VAT-INCLUSIVE gross when
+    // pricesIncludeVat is on and would otherwise inflate TaxExclusiveAmount.
+    // Identical to order.subtotal when pricesIncludeVat is off (unchanged).
+    const netSubtotal = round2(invoiceLines.reduce((sum, l) => sum + l.lineTotal, 0));
 
     const xml = buildInvoiceXml({
       invoiceId: order.id,
@@ -141,7 +155,7 @@ export class ZatcaService {
       issueDateTime,
       sellerName: order.location.name,
       vatNumber: order.location.vatNumber,
-      subtotal: Number(order.subtotal),
+      subtotal: netSubtotal,
       discountTotal: Number(order.discountTotal),
       vatTotal: Number(order.vatTotal),
       grandTotal: Number(order.grandTotal),

@@ -201,8 +201,18 @@ export class OrdersService {
     const taxableSubtotal = round2(taxableRegularSubtotal + comboSubtotal);
     const vatRate = Number(location.vatRate) / 100;
     const taxableAfterDiscount = subtotal > 0 ? taxableSubtotal - discountTotal * (taxableSubtotal / subtotal) : 0;
-    const vatTotal = round2(taxableAfterDiscount * vatRate);
-    const grandTotal = round2(subtotal - discountTotal + vatTotal);
+    // pricesIncludeVat (docs/DECISIONS.md follow-up): when set, MenuItem.price
+    // is already the final price the customer pays -- vatTotal is extracted
+    // OUT of taxableAfterDiscount for reporting/ZATCA rather than added on
+    // top, so grandTotal never exceeds subtotal-discount (what's on the
+    // menu/price list is exactly what's charged). Default (false) is the
+    // original behavior: VAT added on top of a tax-exclusive price.
+    const vatTotal = location.pricesIncludeVat
+      ? round2(taxableAfterDiscount - taxableAfterDiscount / (1 + vatRate))
+      : round2(taxableAfterDiscount * vatRate);
+    const grandTotal = location.pricesIncludeVat
+      ? round2(subtotal - discountTotal)
+      : round2(subtotal - discountTotal + vatTotal);
 
     return this.prisma.$transaction(async (tx) => {
       // Two independent, human-readable invoice numbers -- neither is
@@ -328,7 +338,7 @@ export class OrdersService {
         payments: true,
         promotion: true,
         location: {
-          select: { name: true, address: true, vatNumber: true, vatRate: true, logoMimeType: true, invoiceHeaderNote: true, invoiceFooterNote: true },
+          select: { name: true, address: true, vatNumber: true, vatRate: true, pricesIncludeVat: true, logoMimeType: true, invoiceHeaderNote: true, invoiceFooterNote: true },
         },
         customer: { select: { name: true, phone: true } },
         servedBy: { select: { id: true, name: true } },

@@ -18,6 +18,7 @@ const LOCATION_SELECT = {
   zatcaInvoiceCounter: true,
   requireCustomerForOrders: true,
   vatRate: true,
+  pricesIncludeVat: true,
   allowNegativeStock: true,
   autoCloseEnabled: true,
   autoCloseCutoffHour: true,

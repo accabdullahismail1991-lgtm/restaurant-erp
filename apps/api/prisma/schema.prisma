@@ -49,6 +49,13 @@ model Location {
   // per the simplest-viable design -- still lets each branch configure a
   // different rate if it operates under a different tax jurisdiction.
   vatRate   Decimal      @default(15) @db.Decimal(5, 2)
+  // When true, MenuItem.price / MenuItemChannelPrice.price are the FINAL
+  // price the customer pays (VAT already baked in) -- OrdersService.create()
+  // extracts the VAT portion out of that price for reporting/ZATCA instead
+  // of adding it on top, and the invoice/cart never show a higher total
+  // than the price on the menu. Default false preserves the original
+  // tax-exclusive behavior (VAT added at checkout) for existing branches.
+  pricesIncludeVat Boolean @default(false)
   // Lets this branch keep selling a menu item past zero stock instead of
   // OrdersService rejecting the order -- an explicit per-branch opt-in
   // (default off) since oversold stock is a real operational risk most

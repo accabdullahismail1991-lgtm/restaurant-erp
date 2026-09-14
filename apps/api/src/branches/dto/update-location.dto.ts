@@ -38,6 +38,10 @@ export class UpdateLocationDto {
 
   @IsOptional()
   @IsBoolean()
+  pricesIncludeVat?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   autoCloseEnabled?: boolean;
 
   @IsOptional()
