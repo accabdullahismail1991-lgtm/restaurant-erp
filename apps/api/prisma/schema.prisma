@@ -131,6 +131,11 @@ model User {
   id           String   @id @default(cuid())
   name         String
   phone        String   @unique
+  // Optional alternate login identifier -- AuthService.validateCredentials()
+  // accepts either the phone number OR this username in the SAME "phone"
+  // login field (no wire/API shape change needed for existing clients).
+  // Null for users who only ever log in with their phone number.
+  username     String?  @unique
   passwordHash String
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())

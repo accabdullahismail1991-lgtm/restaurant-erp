@@ -7,6 +7,15 @@ export class CreateUserDto {
   @IsString()
   phone!: string;
 
+  // Optional alternate login identifier -- lets this user log in with a
+  // username instead of memorizing their phone number. Uniqueness (against
+  // both other usernames AND other users' phone numbers) is enforced in
+  // UsersService.create().
+  @IsOptional()
+  @IsString()
+  @MinLength(3, { message: 'اسم المستخدم يجب أن يكون 3 أحرف على الأقل' })
+  username?: string;
+
   @IsString()
   @MinLength(8, { message: 'كلمة المرور يجب أن تكون 8 أحرف على الأقل' })
   password!: string;

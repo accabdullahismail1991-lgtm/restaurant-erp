@@ -9,6 +9,11 @@ export class UpdateUserDto {
   @IsBoolean()
   isActive?: boolean;
 
+  @IsOptional()
+  @IsString()
+  @MinLength(3, { message: 'اسم المستخدم يجب أن يكون 3 أحرف على الأقل' })
+  username?: string;
+
   // Optional reset -- omit to leave the current password untouched. There is
   // deliberately no "confirm old password" step here: only a user holding
   // users.manage (an admin) can reach this endpoint at all, the same trust

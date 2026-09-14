@@ -9,6 +9,7 @@ const SAFE_SELECT = {
   id: true,
   name: true,
   phone: true,
+  username: true,
   isActive: true,
   createdAt: true,
   roles: { select: { role: { select: { id: true, name: true } } } },
@@ -20,6 +21,7 @@ function present(user: any) {
     id: user.id,
     name: user.name,
     phone: user.phone,
+    username: user.username,
     isActive: user.isActive,
     createdAt: user.createdAt,
     roles: user.roles.map((r: any) => r.role),
@@ -31,14 +33,27 @@ function present(user: any) {
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
+  // AuthService.validateCredentials() looks a login identifier up against
+  // BOTH the phone and username columns -- a value can't be allowed to sit
+  // in one user's phone and another's username at the same time, or login
+  // by that value would be ambiguous. Checked for both fields whenever
+  // either one is being set, excluding the user being updated (if any).
+  private async assertIdentifierAvailable(value: string, excludeUserId?: string) {
+    const conflict = await this.prisma.user.findFirst({
+      where: { OR: [{ phone: value }, { username: value }], ...(excludeUserId ? { id: { not: excludeUserId } } : {}) },
+    });
+    if (conflict) throw new ConflictException('رقم الجوال/اسم المستخدم مستخدم بالفعل');
+  }
+
   async create(dto: CreateUserDto) {
-    const existing = await this.prisma.user.findUnique({ where: { phone: dto.phone } });
-    if (existing) throw new ConflictException('رقم الجوال مستخدم بالفعل');
+    await this.assertIdentifierAvailable(dto.phone);
+    if (dto.username) await this.assertIdentifierAvailable(dto.username);
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const user = await this.prisma.user.create({
       data: {
         name: dto.name,
         phone: dto.phone,
+        username: dto.username,
         passwordHash,
         roles: dto.roleIds?.length ? { create: dto.roleIds.map((roleId) => ({ roleId })) } : undefined,
         locationScopes: dto.locationIds?.length
@@ -64,6 +79,7 @@ export class UsersService {
   async update(id: string, dto: UpdateUserDto) {
     const existing = await this.prisma.user.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('المستخدم غير موجود');
+    if (dto.username) await this.assertIdentifierAvailable(dto.username, id);
 
     // Roles/location scopes are join tables (composite keys, no own id) --
     // simplest correct way to "replace the set" is delete-then-recreate
@@ -88,6 +104,7 @@ export class UsersService {
         data: {
           name: dto.name,
           isActive: dto.isActive,
+          username: dto.username,
           passwordHash: dto.password ? await bcrypt.hash(dto.password, 10) : undefined,
         },
         select: SAFE_SELECT,

@@ -13,13 +13,18 @@ export class AuthService {
     private readonly config: ConfigService,
   ) {}
 
-  async validateCredentials(phone: string, password: string) {
-    const user = await this.prisma.user.findUnique({ where: { phone } });
-    // Same "invalid credentials" message whether the phone doesn't exist
-    // or the password is wrong -- never reveal which one it was.
-    if (!user || !user.isActive) throw new UnauthorizedException('رقم الجوال أو كلمة المرور غير صحيحة');
+  // `identifier` is whatever the client sent in the login form's "phone"
+  // field -- accepted as EITHER the user's phone number OR their optional
+  // username (User.username), so no wire-shape change is needed for
+  // existing clients (pos-web, e2e tests) that only ever send a phone
+  // number here.
+  async validateCredentials(identifier: string, password: string) {
+    const user = await this.prisma.user.findFirst({ where: { OR: [{ phone: identifier }, { username: identifier }] } });
+    // Same "invalid credentials" message whether the identifier doesn't
+    // exist or the password is wrong -- never reveal which one it was.
+    if (!user || !user.isActive) throw new UnauthorizedException('رقم الجوال/اسم المستخدم أو كلمة المرور غير صحيحة');
     const ok = await bcrypt.compare(password, user.passwordHash);
-    if (!ok) throw new UnauthorizedException('رقم الجوال أو كلمة المرور غير صحيحة');
+    if (!ok) throw new UnauthorizedException('رقم الجوال/اسم المستخدم أو كلمة المرور غير صحيحة');
     return user;
   }
 
@@ -33,8 +38,8 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
-  async login(phone: string, password: string) {
-    const user = await this.validateCredentials(phone, password);
+  async login(identifier: string, password: string) {
+    const user = await this.validateCredentials(identifier, password);
     return this.issueTokens(user.id);
   }
 
