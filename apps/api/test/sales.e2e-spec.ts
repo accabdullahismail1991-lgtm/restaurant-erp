@@ -136,12 +136,19 @@ describe('Phase 3+4: inventory + sales (e2e)', () => {
     expect(Number(balance.quantity)).toBe(100);
   });
 
-  it('rejects opening a second shift while one is already open for the location (409)', async () => {
+  it('allows a second concurrent open shift for the same location (multiple tills/registers)', async () => {
     const openRes = await request(app.getHttpServer()).post('/shifts').set(auth(adminToken)).send({ locationId, openingFloat: 200 });
     expect(openRes.status).toBe(201);
 
     const secondRes = await request(app.getHttpServer()).post('/shifts').set(auth(adminToken)).send({ locationId, openingFloat: 100 });
-    expect(secondRes.status).toBe(409);
+    expect(secondRes.status).toBe(201);
+    expect(secondRes.body.id).not.toBe(openRes.body.id);
+
+    // Close the second one right back down so the rest of this suite's
+    // "the one open shift for locationId" assumptions (findFirstOrThrow
+    // below, with no orderBy) stay valid -- this test only needs to prove
+    // opening a second one is ALLOWED, not leave two open shifts behind.
+    await request(app.getHttpServer()).post(`/shifts/${secondRes.body.id}/close`).set(auth(adminToken)).send({ closingCounted: 100 });
   });
 
   let shiftId: string;

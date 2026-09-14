@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InvoiceType, OrderStatus } from '@prisma/client';
 import { scopedLocationIds } from '../common/location-scope.util';
@@ -24,12 +24,15 @@ export class ShiftsService {
 
   async open(dto: OpenShiftDto, userId: string) {
     await this.assertLocationInScope(userId, dto.locationId);
-    // One open shift per location at a time -- cash reconciliation
-    // (docs/DECISIONS.md #12) only makes sense against a single till.
-    const existingOpen = await this.prisma.shift.findFirst({ where: { locationId: dto.locationId, closedAt: null } });
-    if (existingOpen) {
-      throw new ConflictException('يوجد وردية مفتوحة بالفعل لهذا الموقع -- يجب إغلاقها أولًا');
-    }
+    // Multiple shifts CAN be open at once for the same location (e.g. more
+    // than one till/register running concurrently) -- each Shift already
+    // tracks its own opening/closing float, orders, and cash reconciliation
+    // independently (shiftId FK on Order/Payment), and close()/closeDay()/
+    // autoCloseSweep() already loop over every open shift rather than
+    // assume a single one, so nothing downstream needed to change to
+    // support this. Any number of cashiers can also work under the SAME
+    // open shift already (OrdersService.create() only checks location
+    // scope, not shift ownership) -- openedById is audit info, not a lock.
     // Same atomic increment-then-use pattern as ZatcaService's invoice
     // counter -- two "فتح وردية" clicks at the exact same instant still get
     // distinct, gap-free SH numbers (Postgres serializes the row update).
