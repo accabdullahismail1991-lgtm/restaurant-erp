@@ -1,7 +1,7 @@
 // One-off (but safely re-runnable) import for "مطعم شندوتش"'s real menu:
 // parsed from the restaurant's own monthly cost-tracking spreadsheet
-// (تقرير تكاليف الأصناف + مصفوفة الوصفات + الأصناف شبه المصنعة sheets) into
-// apps/api/prisma/seed-data/shandouch-*.json, then replayed here through
+// (تقرير تكاليف الأصناف + مصفوفة الوصفات + الأصناف شبه المصنعة + أسعار القنوات
+// sheets) into apps/api/prisma/seed-data/shandouch-*.json, then replayed here through
 // the SAME REST API every other client uses -- not raw Prisma writes --
 // so it goes through the exact same validation (unique-recipe checks,
 // permission checks, positive-quantity checks, the SEMI_FINISHED-only
@@ -43,10 +43,17 @@ type FinalIngredient = { name: string; base_name: string; raw_unit: string; unit
 type CrepeComponent = { name: string; unit_code: string; unit_cost: number; qty_per_bite: number };
 type MenuItemLine = { ingredient: string; quantity: number };
 type MenuItem = { name: string; category: string; price: number; lines: MenuItemLine[] };
+type ChannelPriceRow = { item: string; channels: Record<string, number> };
 
 const finalIngredients: FinalIngredient[] = JSON.parse(fs.readFileSync(path.join(SEED_DIR, 'shandouch-ingredients.json'), 'utf-8'));
 const crepeComponents: CrepeComponent[] = JSON.parse(fs.readFileSync(path.join(SEED_DIR, 'shandouch-crepe-dough-components.json'), 'utf-8'));
 const menuItems: MenuItem[] = JSON.parse(fs.readFileSync(path.join(SEED_DIR, 'shandouch-menu-items.json'), 'utf-8'));
+// From the source spreadsheet's own "أسعار القنوات" sheet -- each item's
+// price as listed by the restaurant per delivery app, separate from its
+// dine-in price (MenuItem.price, "الصالة" in that sheet). Only items the
+// sheet actually lists a channel price for are included here; 3 items are
+// dine-in only and never appear in this file.
+const channelPrices: ChannelPriceRow[] = JSON.parse(fs.readFileSync(path.join(SEED_DIR, 'shandouch-channel-prices.json'), 'utf-8'));
 
 const DEFAULT_UNITS = [
   { code: 'g', name: 'جرام' },
@@ -182,6 +189,31 @@ async function main() {
   }
   console.log(`recipe lines set: ${recipeLineCount}`);
   if (missing.length) console.error('MISSING INGREDIENT MAPPINGS:', missing);
+
+  console.log('== 8) Create delivery-app sales channels + item prices ==');
+  const channelNames = Array.from(new Set(channelPrices.flatMap((r) => Object.keys(r.channels))));
+  const channelIds: Record<string, string> = {};
+  for (const name of channelNames) {
+    const created = await api<{ id: string }>('POST', '/sales-channels', { name });
+    channelIds[name] = created.id;
+  }
+  console.log(`sales channels created: ${channelNames.join('، ')}`);
+
+  let channelPriceCount = 0;
+  const missingChannelItems: string[] = [];
+  for (const row of channelPrices) {
+    const itemId = menuItemIds[row.item];
+    if (!itemId) {
+      missingChannelItems.push(row.item);
+      continue;
+    }
+    for (const [channelName, price] of Object.entries(row.channels)) {
+      await api('PUT', `/items/${itemId}/channel-prices/${channelIds[channelName]}`, { price });
+      channelPriceCount += 1;
+    }
+  }
+  console.log(`channel prices set: ${channelPriceCount}`);
+  if (missingChannelItems.length) console.error('MISSING ITEM MAPPINGS FOR CHANNEL PRICES:', missingChannelItems);
 
   console.log('== DONE ==');
   console.log(`location_id: ${location.id}`);
