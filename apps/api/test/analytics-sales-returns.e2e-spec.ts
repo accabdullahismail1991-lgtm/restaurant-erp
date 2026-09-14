@@ -36,13 +36,14 @@ describe('Sales report includes returns (e2e)', () => {
     await prisma.rolePermission.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: PHONE } });
     await prisma.role.deleteMany({ where: { name: 'SalesReturns-Test' } });
-    await prisma.permission.deleteMany({ where: { code: { in: ['analytics.view', 'pos.return_order', 'inventory.adjust'] } } });
+    await prisma.permission.deleteMany({ where: { code: { in: ['analytics.view', 'pos.return_order', 'inventory.adjust', 'pos.manage_shift'] } } });
 
     const perms = await Promise.all(
       [
         { code: 'analytics.view', label: 'عرض التقارير' },
         { code: 'pos.return_order', label: 'تسجيل مرتجع عميل' },
         { code: 'inventory.adjust', label: 'تسوية المخزون' },
+        { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' },
       ].map((p) => prisma.permission.create({ data: p })),
     );
     const role = await prisma.role.create({ data: { name: 'SalesReturns-Test' } });

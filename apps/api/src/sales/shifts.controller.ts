@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
+import { RequirePermission } from '../auth/require-permission.decorator';
 import { CloseDayDto, CloseShiftDto, OpenShiftDto } from './dto/shift.dto';
 import { ShiftsService } from './shifts.service';
 
@@ -11,6 +12,7 @@ export class ShiftsController {
   constructor(private readonly shifts: ShiftsService) {}
 
   @Post()
+  @RequirePermission('pos.manage_shift')
   open(@Body() dto: OpenShiftDto, @CurrentUser() user: { userId: string }) {
     return this.shifts.open(dto, user.userId);
   }
@@ -49,6 +51,7 @@ export class ShiftsController {
   // Not creating a new resource -- transitions an existing shift's state.
   @Post(':id/close')
   @HttpCode(200)
+  @RequirePermission('pos.manage_shift')
   close(@Param('id') id: string, @Body() dto: CloseShiftDto, @CurrentUser() user: { userId: string }) {
     return this.shifts.close(id, dto, user.userId);
   }

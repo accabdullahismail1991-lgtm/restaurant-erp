@@ -43,13 +43,14 @@ describe('Phase 11: analytics / BI (e2e)', () => {
     await prisma.rolePermission.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: { in: [VIEW_PHONE, NOPERM_PHONE] } } });
     await prisma.role.deleteMany({ where: { name: { startsWith: 'Analytics-Test-' } } });
-    await prisma.permission.deleteMany({ where: { code: { in: ['analytics.view', 'inventory.adjust'] } } });
+    await prisma.permission.deleteMany({ where: { code: { in: ['analytics.view', 'inventory.adjust', 'pos.manage_shift'] } } });
 
     const viewPerm = await prisma.permission.create({ data: { code: 'analytics.view', label: 'عرض التقارير' } });
     const adjustPerm = await prisma.permission.create({ data: { code: 'inventory.adjust', label: 'تسوية المخزون' } });
+    const shiftPerm = await prisma.permission.create({ data: { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' } });
     const viewRole = await prisma.role.create({ data: { name: 'Analytics-Test-Viewer' } });
     await prisma.rolePermission.createMany({
-      data: [viewPerm, adjustPerm].map((p) => ({ roleId: viewRole.id, permissionId: p.id })),
+      data: [viewPerm, adjustPerm, shiftPerm].map((p) => ({ roleId: viewRole.id, permissionId: p.id })),
     });
     await prisma.role.create({ data: { name: 'Analytics-Test-NoPerm' } });
 

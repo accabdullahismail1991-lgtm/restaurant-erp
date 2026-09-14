@@ -37,12 +37,13 @@ describe('Net Sales report (e2e)', () => {
     await prisma.rolePermission.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: PHONE } });
     await prisma.role.deleteMany({ where: { name: 'NetSales-Test' } });
-    await prisma.permission.deleteMany({ where: { code: { in: ['analytics.view', 'pos.apply_discount'] } } });
+    await prisma.permission.deleteMany({ where: { code: { in: ['analytics.view', 'pos.apply_discount', 'pos.manage_shift'] } } });
 
     const viewPerm = await prisma.permission.create({ data: { code: 'analytics.view', label: 'عرض التقارير' } });
     const discountPerm = await prisma.permission.create({ data: { code: 'pos.apply_discount', label: 'تطبيق خصم يدوي' } });
+    const shiftPerm = await prisma.permission.create({ data: { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' } });
     const role = await prisma.role.create({ data: { name: 'NetSales-Test' } });
-    await prisma.rolePermission.createMany({ data: [viewPerm, discountPerm].map((p) => ({ roleId: role.id, permissionId: p.id })) });
+    await prisma.rolePermission.createMany({ data: [viewPerm, discountPerm, shiftPerm].map((p) => ({ roleId: role.id, permissionId: p.id })) });
 
     const passwordHash = await bcrypt.hash(PASSWORD, 10);
     const user = await prisma.user.create({ data: { name: PHONE, phone: PHONE, passwordHash } });

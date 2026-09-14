@@ -46,16 +46,20 @@ describe('Phase 5: purchasing + approval matrix (e2e)', () => {
     await prisma.user.deleteMany({ where: { phone: { in: [ADMIN_PHONE, NOPERM_PHONE, JUNIOR_PHONE, SENIOR_PHONE] } } });
     await prisma.role.deleteMany({ where: { name: { startsWith: 'Purch-Test-' } } });
     await prisma.permission.deleteMany({
-      where: { code: { in: ['purchasing.create_po', 'purchasing.approve_po', 'purchasing.manage_rules'] } },
+      where: { code: { in: ['purchasing.create_po', 'purchasing.approve_po', 'purchasing.manage_rules', 'purchasing.view', 'inventory.view'] } },
     });
 
     const createPoPerm = await prisma.permission.create({ data: { code: 'purchasing.create_po', label: 'إنشاء أوامر شراء' } });
     const approvePoPerm = await prisma.permission.create({ data: { code: 'purchasing.approve_po', label: 'اعتماد أوامر الشراء' } });
     const manageRulesPerm = await prisma.permission.create({ data: { code: 'purchasing.manage_rules', label: 'إدارة مصفوفة الموافقات' } });
+    // Needed for GET /purchase-orders and GET /purchase-orders/:id below.
+    const viewPerm = await prisma.permission.create({ data: { code: 'purchasing.view', label: 'عرض المشتريات وأوامر الشراء والموردين' } });
+    // Needed for GET /inventory/balances below.
+    const inventoryViewPerm = await prisma.permission.create({ data: { code: 'inventory.view', label: 'عرض أرصدة المخزون وحركاته' } });
 
     const adminRole = await prisma.role.create({ data: { name: 'Purch-Test-Admin' } });
     await prisma.rolePermission.createMany({
-      data: [createPoPerm, approvePoPerm, manageRulesPerm].map((p) => ({ roleId: adminRole.id, permissionId: p.id })),
+      data: [createPoPerm, approvePoPerm, manageRulesPerm, viewPerm, inventoryViewPerm].map((p) => ({ roleId: adminRole.id, permissionId: p.id })),
     });
 
     const juniorRole = await prisma.role.create({ data: { name: 'Purch-Test-Junior' } });

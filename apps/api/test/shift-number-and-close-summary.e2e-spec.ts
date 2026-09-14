@@ -17,6 +17,7 @@ describe('Shift numbering + close-summary report (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let adminToken: string;
+  let cashierOnlyRoleId: string;
   const ADMIN_PHONE = '+966500000170';
   const PASSWORD = 'ShiftNumTest123';
   const auth = (t: string) => ({ Authorization: `Bearer ${t}` });
@@ -34,14 +35,29 @@ describe('Shift numbering + close-summary report (e2e)', () => {
     await prisma.user.deleteMany({ where: { phone: ADMIN_PHONE } });
     await prisma.role.deleteMany({ where: { name: 'ShiftNumTest-Manager' } });
     await prisma.permission.deleteMany({ where: { code: 'combos.manage' } });
+    await prisma.role.deleteMany({ where: { name: 'ShiftNumTest-CashierOnly' } });
 
     const managePerm = await prisma.permission.upsert({
       where: { code: 'combos.manage' },
       update: {},
       create: { code: 'combos.manage', label: 'إدارة وجبات الكمبو والبوكس' },
     });
+    // adminToken opens shifts as scaffolding below.
+    const shiftPerm = await prisma.permission.upsert({
+      where: { code: 'pos.manage_shift' },
+      update: {},
+      create: { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' },
+    });
     const manageRole = await prisma.role.create({ data: { name: 'ShiftNumTest-Manager' } });
-    await prisma.rolePermission.create({ data: { roleId: manageRole.id, permissionId: managePerm.id } });
+    await prisma.rolePermission.createMany({ data: [managePerm, shiftPerm].map((p) => ({ roleId: manageRole.id, permissionId: p.id })) });
+    // The plain-cashier test below needs ONLY pos.manage_shift (to open
+    // their own shift) and deliberately nothing else -- that's the whole
+    // point of the test (close-summary itself isn't gated behind
+    // analytics.view). A separate role keeps that cashier from picking up
+    // combos.manage too.
+    const cashierOnlyRole = await prisma.role.create({ data: { name: 'ShiftNumTest-CashierOnly' } });
+    await prisma.rolePermission.create({ data: { roleId: cashierOnlyRole.id, permissionId: shiftPerm.id } });
+    cashierOnlyRoleId = cashierOnlyRole.id;
 
     const passwordHash = await bcrypt.hash(PASSWORD, 10);
     const adminUser = await prisma.user.create({ data: { name: 'Admin', phone: ADMIN_PHONE, passwordHash } });
@@ -144,7 +160,8 @@ describe('Shift numbering + close-summary report (e2e)', () => {
     const NOPERM_PHONE = '+966500000171';
     await prisma.user.deleteMany({ where: { phone: NOPERM_PHONE } });
     const passwordHash = await bcrypt.hash(PASSWORD, 10);
-    await prisma.user.create({ data: { name: 'Cashier', phone: NOPERM_PHONE, passwordHash } });
+    const cashierUser = await prisma.user.create({ data: { name: 'Cashier', phone: NOPERM_PHONE, passwordHash } });
+    await prisma.userRole.create({ data: { userId: cashierUser.id, roleId: cashierOnlyRoleId } });
     const loginRes = await request(app.getHttpServer()).post('/auth/login').send({ phone: NOPERM_PHONE, password: PASSWORD });
     const cashierToken = loginRes.body.accessToken;
 

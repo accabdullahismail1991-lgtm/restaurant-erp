@@ -14,17 +14,28 @@ const PERMISSIONS: Array<{ code: string; label: string }> = [
   { code: 'users.manage', label: 'إدارة المستخدمين والأدوار' },
   { code: 'branches.manage', label: 'إدارة الفروع والمواقع' },
   { code: 'ingredients.manage', label: 'إدارة الأصناف الخام ونصف المصنّعة ووصفاتها' },
+  // View-only counterparts for the back-office/cost-sensitive screens a
+  // plain cashier shouldn't browse by default (unlike menu items/combos/
+  // customers/branches, which stay permission-free reads -- the cashier
+  // needs those to actually sell). *.manage already implies write access;
+  // these gate the GET routes those same modules expose.
+  { code: 'ingredients.view', label: 'عرض المواد الخام ووصفاتها وتكلفتها' },
   { code: 'items.manage', label: 'إدارة أصناف المنيو ووصفاتها' },
   { code: 'inventory.adjust', label: 'تسوية أرصدة المخزون' },
+  { code: 'inventory.view', label: 'عرض أرصدة المخزون وحركاته' },
   { code: 'purchasing.approve_po', label: 'اعتماد أوامر الشراء' },
   { code: 'purchasing.create_po', label: 'إنشاء أوامر شراء' },
   { code: 'purchasing.manage_rules', label: 'إدارة مصفوفة الموافقات (Approval Matrix)' },
   { code: 'purchasing.return_po', label: 'تسجيل مرتجع لمورد' },
+  { code: 'purchasing.view', label: 'عرض المشتريات وأوامر الشراء والموردين' },
   { code: 'production.manage', label: 'إدارة أوامر الإنتاج' },
+  { code: 'production.view', label: 'عرض أوامر الإنتاج' },
   { code: 'transfers.manage', label: 'إدارة التحويلات بين المواقع' },
+  { code: 'transfers.view', label: 'عرض التحويلات بين الفروع' },
   { code: 'pos.void_order', label: 'إلغاء طلب من الكاشير' },
   { code: 'pos.return_order', label: 'تسجيل مرتجع عميل' },
   { code: 'pos.apply_discount', label: 'تطبيق خصم يدوي على فاتورة مبيعات' },
+  { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' },
   { code: 'promotions.manage', label: 'إدارة العروض والخصومات' },
   { code: 'combos.manage', label: 'إدارة وجبات الكمبو والبوكس' },
   { code: 'analytics.view', label: 'عرض التقارير التحليلية (مبيعات/تكلفة/مخزون)' },
@@ -76,22 +87,34 @@ async function main() {
   const branchManagerCodes = [
     'branches.manage',
     'ingredients.manage',
+    'ingredients.view',
     'items.manage',
     'inventory.adjust',
+    'inventory.view',
     'purchasing.create_po',
     'purchasing.approve_po', // local/small POs -- the Approval Matrix's own role check still gates by amount tier
     'purchasing.return_po',
+    'purchasing.view',
     'production.manage', // local prep as well as central-kitchen runs (decision #5: hybrid production location)
+    'production.view',
     'transfers.manage',
+    'transfers.view',
     'pos.void_order',
     'pos.return_order',
     'pos.apply_discount',
+    'pos.manage_shift',
     'promotions.manage',
     'combos.manage',
     'analytics.view',
     'payment_methods.manage',
   ];
-  const cashierCodes: string[] = []; // base cashier operations don't need a permission check yet (sales module unbuilt)
+  // A cashier can run the daily POS (open/close their own shift; selling,
+  // discounts/voids/returns are separately permission-gated per-action as
+  // before) but starts with NO visibility into cost-sensitive back-office
+  // screens (recipes/costs, inventory, purchasing, production, transfers)
+  // -- a manager grants those individually from the Roles & Permissions
+  // screen if a given cashier genuinely needs one.
+  const cashierCodes: string[] = ['pos.manage_shift'];
 
   const adminRole = await upsertRoleWithPermissions('مدير النظام', 'صلاحية كاملة على كل الوحدات', allCodes);
   await upsertRoleWithPermissions('مدير فرع', 'إدارة فرع واحد أو أكثر ضمن نطاقه', branchManagerCodes);

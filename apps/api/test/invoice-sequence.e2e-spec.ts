@@ -32,9 +32,20 @@ describe('Order shift/day invoice sequence numbers (e2e)', () => {
     await resetDatabase(prisma);
     await prisma.userRole.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: ADMIN_PHONE } });
+    await prisma.role.deleteMany({ where: { name: 'InvoiceSeq-Test-Shift' } });
+
+    // adminToken opens shifts as scaffolding throughout this file.
+    const shiftPerm = await prisma.permission.upsert({
+      where: { code: 'pos.manage_shift' },
+      update: {},
+      create: { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' },
+    });
+    const shiftRole = await prisma.role.create({ data: { name: 'InvoiceSeq-Test-Shift' } });
+    await prisma.rolePermission.create({ data: { roleId: shiftRole.id, permissionId: shiftPerm.id } });
 
     const passwordHash = await bcrypt.hash(PASSWORD, 10);
-    await prisma.user.create({ data: { name: 'Admin', phone: ADMIN_PHONE, passwordHash } });
+    const adminUser = await prisma.user.create({ data: { name: 'Admin', phone: ADMIN_PHONE, passwordHash } });
+    await prisma.userRole.create({ data: { userId: adminUser.id, roleId: shiftRole.id } });
     const loginRes = await request(app.getHttpServer()).post('/auth/login').send({ phone: ADMIN_PHONE, password: PASSWORD });
     adminToken = loginRes.body.accessToken;
 

@@ -38,11 +38,12 @@ describe('Phase H: cashier fields + new analytics reports (e2e)', () => {
     await prisma.rolePermission.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: { in: [VIEW_PHONE, NOPERM_PHONE] } } });
     await prisma.role.deleteMany({ where: { name: { in: ['PhaseH-Viewer', 'PhaseH-NoPerm'] } } });
-    await prisma.permission.deleteMany({ where: { code: 'analytics.view' } });
+    await prisma.permission.deleteMany({ where: { code: { in: ['analytics.view', 'pos.manage_shift'] } } });
 
     const viewPerm = await prisma.permission.create({ data: { code: 'analytics.view', label: 'عرض التقارير' } });
+    const shiftPerm = await prisma.permission.create({ data: { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' } });
     const role = await prisma.role.create({ data: { name: 'PhaseH-Viewer' } });
-    await prisma.rolePermission.create({ data: { roleId: role.id, permissionId: viewPerm.id } });
+    await prisma.rolePermission.createMany({ data: [viewPerm, shiftPerm].map((p) => ({ roleId: role.id, permissionId: p.id })) });
     await prisma.role.create({ data: { name: 'PhaseH-NoPerm' } });
 
     const makeUser = async (phone: string, roleId?: string) => {

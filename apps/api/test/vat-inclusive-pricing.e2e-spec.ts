@@ -53,11 +53,18 @@ describe('Location.pricesIncludeVat: VAT-inclusive pricing (e2e)', () => {
       update: {},
       create: { code: 'inventory.adjust', label: 'تسوية المخزون' },
     });
+    // adminToken opens shifts as scaffolding below.
+    const shiftPerm = await prisma.permission.upsert({
+      where: { code: 'pos.manage_shift' },
+      update: {},
+      create: { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' },
+    });
     const role = await prisma.role.create({ data: { name: 'VAT-Inclusive-Test-Admin' } });
     await prisma.rolePermission.createMany({
       data: [
         { roleId: role.id, permissionId: branchesPerm.id },
         { roleId: role.id, permissionId: inventoryPerm.id },
+        { roleId: role.id, permissionId: shiftPerm.id },
       ],
     });
 

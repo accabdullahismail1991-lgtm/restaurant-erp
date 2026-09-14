@@ -32,9 +32,28 @@ describe('Auto-generated production orders from negative-stock sales (e2e)', () 
     await resetDatabase(prisma);
     await prisma.userRole.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: ADMIN_PHONE } });
+    await prisma.role.deleteMany({ where: { name: 'NegStockProd-Test-Shift' } });
+
+    // adminToken opens shifts as scaffolding throughout this file, and
+    // reads GET /production-orders and GET /production-orders/:id below.
+    const shiftPerm = await prisma.permission.upsert({
+      where: { code: 'pos.manage_shift' },
+      update: {},
+      create: { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' },
+    });
+    const productionViewPerm = await prisma.permission.upsert({
+      where: { code: 'production.view' },
+      update: {},
+      create: { code: 'production.view', label: 'عرض أوامر الإنتاج' },
+    });
+    const shiftRole = await prisma.role.create({ data: { name: 'NegStockProd-Test-Shift' } });
+    await prisma.rolePermission.createMany({
+      data: [shiftPerm, productionViewPerm].map((p) => ({ roleId: shiftRole.id, permissionId: p.id })),
+    });
 
     const passwordHash = await bcrypt.hash(PASSWORD, 10);
-    await prisma.user.create({ data: { name: 'Admin', phone: ADMIN_PHONE, passwordHash } });
+    const adminUser = await prisma.user.create({ data: { name: 'Admin', phone: ADMIN_PHONE, passwordHash } });
+    await prisma.userRole.create({ data: { userId: adminUser.id, roleId: shiftRole.id } });
     const loginRes = await request(app.getHttpServer()).post('/auth/login').send({ phone: ADMIN_PHONE, password: PASSWORD });
     adminToken = loginRes.body.accessToken;
   });

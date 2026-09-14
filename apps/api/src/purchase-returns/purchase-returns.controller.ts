@@ -12,11 +12,13 @@ export class PurchaseReturnsController {
   constructor(private readonly purchaseReturns: PurchaseReturnsService) {}
 
   @Get()
+  @RequirePermission('purchasing.view')
   findAll(@CurrentUser() user: { userId: string }, @Query('locationId') locationId?: string) {
     return this.purchaseReturns.findAll(user.userId, locationId);
   }
 
   @Get('order/:purchaseOrderId/returnable-lines')
+  @RequirePermission('purchasing.view')
   returnableLines(@Param('purchaseOrderId') purchaseOrderId: string, @CurrentUser() user: { userId: string }) {
     return this.purchaseReturns.returnableLines(purchaseOrderId, user.userId);
   }

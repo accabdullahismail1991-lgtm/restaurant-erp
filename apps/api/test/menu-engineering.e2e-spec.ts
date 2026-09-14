@@ -38,12 +38,13 @@ describe('Menu engineering (Kasavana & Smith matrix) (e2e)', () => {
     await prisma.rolePermission.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: VIEW_PHONE } });
     await prisma.role.deleteMany({ where: { name: 'MenuEng-Test-Viewer' } });
-    await prisma.permission.deleteMany({ where: { code: { in: ['analytics.view', 'inventory.adjust'] } } });
+    await prisma.permission.deleteMany({ where: { code: { in: ['analytics.view', 'inventory.adjust', 'pos.manage_shift'] } } });
 
     const viewPerm = await prisma.permission.create({ data: { code: 'analytics.view', label: 'عرض التقارير' } });
     const adjustPerm = await prisma.permission.create({ data: { code: 'inventory.adjust', label: 'تسوية المخزون' } });
+    const shiftPerm = await prisma.permission.create({ data: { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' } });
     const viewRole = await prisma.role.create({ data: { name: 'MenuEng-Test-Viewer' } });
-    await prisma.rolePermission.createMany({ data: [viewPerm, adjustPerm].map((p) => ({ roleId: viewRole.id, permissionId: p.id })) });
+    await prisma.rolePermission.createMany({ data: [viewPerm, adjustPerm, shiftPerm].map((p) => ({ roleId: viewRole.id, permissionId: p.id })) });
 
     const passwordHash = await bcrypt.hash(PASSWORD, 10);
     const user = await prisma.user.create({ data: { name: VIEW_PHONE, phone: VIEW_PHONE, passwordHash } });

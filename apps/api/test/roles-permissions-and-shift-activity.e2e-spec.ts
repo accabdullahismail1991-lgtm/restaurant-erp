@@ -40,13 +40,14 @@ describe('Roles/Permissions + shift activity log (e2e)', () => {
     await prisma.rolePermission.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: { in: [ADMIN_PHONE, NOPERM_PHONE] } } });
     await prisma.role.deleteMany({ where: { name: 'RolesTest-Admin' } });
-    await prisma.permission.deleteMany({ where: { code: { in: ['users.manage', 'pos.void_order', 'pos.return_order'] } } });
+    await prisma.permission.deleteMany({ where: { code: { in: ['users.manage', 'pos.void_order', 'pos.return_order', 'pos.manage_shift'] } } });
 
     const perms = await Promise.all(
       [
         { code: 'users.manage', label: 'إدارة المستخدمين والأدوار' },
         { code: 'pos.void_order', label: 'إلغاء طلب من الكاشير' },
         { code: 'pos.return_order', label: 'تسجيل مرتجع عميل' },
+        { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' },
       ].map((p) => prisma.permission.create({ data: p })),
     );
     const adminRole = await prisma.role.create({ data: { name: 'RolesTest-Admin' } });

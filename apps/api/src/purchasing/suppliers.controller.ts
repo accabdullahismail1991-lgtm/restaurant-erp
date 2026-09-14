@@ -24,11 +24,13 @@ export class SuppliersController {
   }
 
   @Get()
+  @RequirePermission('purchasing.view')
   findAll() {
     return this.suppliers.findAll();
   }
 
   @Get(':id')
+  @RequirePermission('purchasing.view')
   findOne(@Param('id') id: string) {
     return this.suppliers.findOne(id);
   }

@@ -37,11 +37,12 @@ describe('Sales channel pricing (e2e)', () => {
     await prisma.rolePermission.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: { in: [MANAGE_PHONE, NOPERM_PHONE] } } });
     await prisma.role.deleteMany({ where: { name: { in: ['ChannelPrice-Test-Manager', 'ChannelPrice-Test-NoPerm'] } } });
-    await prisma.permission.deleteMany({ where: { code: 'items.manage' } });
+    await prisma.permission.deleteMany({ where: { code: { in: ['items.manage', 'pos.manage_shift'] } } });
 
     const itemsPerm = await prisma.permission.create({ data: { code: 'items.manage', label: 'إدارة المنيو' } });
+    const shiftPerm = await prisma.permission.create({ data: { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' } });
     const role = await prisma.role.create({ data: { name: 'ChannelPrice-Test-Manager' } });
-    await prisma.rolePermission.create({ data: { roleId: role.id, permissionId: itemsPerm.id } });
+    await prisma.rolePermission.createMany({ data: [itemsPerm, shiftPerm].map((p) => ({ roleId: role.id, permissionId: p.id })) });
     await prisma.role.create({ data: { name: 'ChannelPrice-Test-NoPerm' } });
 
     const makeUser = async (phone: string, roleId?: string) => {

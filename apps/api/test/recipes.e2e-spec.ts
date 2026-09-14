@@ -34,17 +34,20 @@ describe('Phase 2: ingredients + items + multi-level recipes (e2e)', () => {
     await prisma.rolePermission.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: ADMIN_PHONE } });
     await prisma.role.deleteMany({ where: { name: 'Admin-Recipes-Test' } });
-    await prisma.permission.deleteMany({ where: { code: { in: ['ingredients.manage', 'items.manage'] } } });
+    await prisma.permission.deleteMany({ where: { code: { in: ['ingredients.manage', 'items.manage', 'ingredients.view'] } } });
 
     const ingredientsPerm = await prisma.permission.create({
       data: { code: 'ingredients.manage', label: 'إدارة الأصناف' },
     });
     const itemsPerm = await prisma.permission.create({ data: { code: 'items.manage', label: 'إدارة المنيو' } });
+    // Needed for GET /ingredients/:id/recipe below.
+    const ingredientsViewPerm = await prisma.permission.create({ data: { code: 'ingredients.view', label: 'عرض المواد الخام ووصفاتها وتكلفتها' } });
     const role = await prisma.role.create({ data: { name: 'Admin-Recipes-Test' } });
     await prisma.rolePermission.createMany({
       data: [
         { roleId: role.id, permissionId: ingredientsPerm.id },
         { roleId: role.id, permissionId: itemsPerm.id },
+        { roleId: role.id, permissionId: ingredientsViewPerm.id },
       ],
     });
     const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);

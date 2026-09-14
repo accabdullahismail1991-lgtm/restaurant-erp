@@ -39,12 +39,14 @@ describe('Combo meals (e2e)', () => {
     await prisma.rolePermission.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: { in: [MANAGE_PHONE, NOPERM_PHONE] } } });
     await prisma.role.deleteMany({ where: { name: 'Combo-Test-Manager' } });
-    await prisma.permission.deleteMany({ where: { code: { in: ['combos.manage', 'pos.return_order'] } } });
+    await prisma.permission.deleteMany({ where: { code: { in: ['combos.manage', 'pos.return_order', 'pos.manage_shift', 'production.view'] } } });
 
     const managePerm = await prisma.permission.create({ data: { code: 'combos.manage', label: 'إدارة وجبات الكمبو والبوكس' } });
     const returnPerm = await prisma.permission.create({ data: { code: 'pos.return_order', label: 'عمل مرتجع للطلب' } });
+    const shiftPerm = await prisma.permission.create({ data: { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' } });
+    const productionViewPerm = await prisma.permission.create({ data: { code: 'production.view', label: 'عرض أوامر الإنتاج' } });
     const manageRole = await prisma.role.create({ data: { name: 'Combo-Test-Manager' } });
-    await prisma.rolePermission.createMany({ data: [managePerm, returnPerm].map((p) => ({ roleId: manageRole.id, permissionId: p.id })) });
+    await prisma.rolePermission.createMany({ data: [managePerm, returnPerm, shiftPerm, productionViewPerm].map((p) => ({ roleId: manageRole.id, permissionId: p.id })) });
 
     const passwordHash = await bcrypt.hash(PASSWORD, 10);
     const manageUser = await prisma.user.create({ data: { name: MANAGE_PHONE, phone: MANAGE_PHONE, passwordHash } });

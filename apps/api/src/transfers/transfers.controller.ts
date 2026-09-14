@@ -20,6 +20,7 @@ export class TransfersController {
   }
 
   @Get()
+  @RequirePermission('transfers.view')
   findAll(
     @CurrentUser() user: { userId: string },
     @Query('locationId') locationId?: string,
@@ -29,6 +30,7 @@ export class TransfersController {
   }
 
   @Get(':id')
+  @RequirePermission('transfers.view')
   findOne(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
     return this.transfers.findOne(id, user.userId);
   }

@@ -33,9 +33,28 @@ describe('Hold/park orders, shift-close guard, configurable VAT + negative stock
     await resetDatabase(prisma);
     await prisma.userRole.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: ADMIN_PHONE } });
+    await prisma.role.deleteMany({ where: { name: 'HoldShiftVat-Shift' } });
+
+    // adminToken opens shifts as scaffolding throughout this file, and
+    // reads GET /inventory/balances in the negative-stock test below.
+    const shiftPerm = await prisma.permission.upsert({
+      where: { code: 'pos.manage_shift' },
+      update: {},
+      create: { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' },
+    });
+    const inventoryViewPerm = await prisma.permission.upsert({
+      where: { code: 'inventory.view' },
+      update: {},
+      create: { code: 'inventory.view', label: 'عرض أرصدة المخزون وحركاته' },
+    });
+    const shiftRole = await prisma.role.create({ data: { name: 'HoldShiftVat-Shift' } });
+    await prisma.rolePermission.createMany({
+      data: [shiftPerm, inventoryViewPerm].map((p) => ({ roleId: shiftRole.id, permissionId: p.id })),
+    });
 
     const passwordHash = await bcrypt.hash(PASSWORD, 10);
     const admin = await prisma.user.create({ data: { name: 'Admin', phone: ADMIN_PHONE, passwordHash } });
+    await prisma.userRole.create({ data: { userId: admin.id, roleId: shiftRole.id } });
     const loginRes = await request(app.getHttpServer()).post('/auth/login').send({ phone: ADMIN_PHONE, password: PASSWORD });
     adminToken = loginRes.body.accessToken;
 

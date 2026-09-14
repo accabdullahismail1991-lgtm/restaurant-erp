@@ -41,15 +41,20 @@ describe('Phase 3+4: inventory + sales (e2e)', () => {
     await prisma.rolePermission.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: { in: [ADMIN_PHONE, NOPERM_PHONE] } } });
     await prisma.role.deleteMany({ where: { name: { in: ['Admin-Sales-Test', 'NoPerm-Sales-Test'] } } });
-    await prisma.permission.deleteMany({ where: { code: { in: ['inventory.adjust', 'pos.void_order'] } } });
+    await prisma.permission.deleteMany({ where: { code: { in: ['inventory.adjust', 'pos.void_order', 'pos.manage_shift', 'inventory.view'] } } });
 
     const inventoryAdjustPerm = await prisma.permission.create({ data: { code: 'inventory.adjust', label: 'تسوية المخزون' } });
     const voidOrderPerm = await prisma.permission.create({ data: { code: 'pos.void_order', label: 'إلغاء طلب' } });
+    const shiftPerm = await prisma.permission.create({ data: { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' } });
+    // Needed for GET /inventory/balances below.
+    const inventoryViewPerm = await prisma.permission.create({ data: { code: 'inventory.view', label: 'عرض أرصدة المخزون وحركاته' } });
     const adminRole = await prisma.role.create({ data: { name: 'Admin-Sales-Test' } });
     await prisma.rolePermission.createMany({
       data: [
         { roleId: adminRole.id, permissionId: inventoryAdjustPerm.id },
         { roleId: adminRole.id, permissionId: voidOrderPerm.id },
+        { roleId: adminRole.id, permissionId: shiftPerm.id },
+        { roleId: adminRole.id, permissionId: inventoryViewPerm.id },
       ],
     });
     await prisma.role.create({ data: { name: 'NoPerm-Sales-Test' } });

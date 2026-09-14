@@ -48,7 +48,7 @@ describe('Reports: scheduled Excel/PDF export (e2e)', () => {
     await prisma.rolePermission.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: { in: [VIEW_PHONE, NOPERM_PHONE, ELSEWHERE_PHONE] } } });
     await prisma.role.deleteMany({ where: { name: 'Reports-Test-Viewer' } });
-    await prisma.permission.deleteMany({ where: { code: { in: ['analytics.view', 'inventory.adjust'] } } });
+    await prisma.permission.deleteMany({ where: { code: { in: ['analytics.view', 'inventory.adjust', 'pos.manage_shift'] } } });
 
     // inventory.adjust is needed only to seed real stock via
     // /inventory/adjustments in this setup -- unrelated to what reports.*
@@ -56,9 +56,10 @@ describe('Reports: scheduled Excel/PDF export (e2e)', () => {
     // analytics.e2e-spec.ts already uses for the same reason.
     const viewPerm = await prisma.permission.create({ data: { code: 'analytics.view', label: 'عرض التقارير' } });
     const adjustPerm = await prisma.permission.create({ data: { code: 'inventory.adjust', label: 'تسوية المخزون' } });
+    const shiftPerm = await prisma.permission.create({ data: { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' } });
     const viewRole = await prisma.role.create({ data: { name: 'Reports-Test-Viewer' } });
     await prisma.rolePermission.createMany({
-      data: [viewPerm, adjustPerm].map((p) => ({ roleId: viewRole.id, permissionId: p.id })),
+      data: [viewPerm, adjustPerm, shiftPerm].map((p) => ({ roleId: viewRole.id, permissionId: p.id })),
     });
 
     const makeUser = async (phone: string, roleId?: string, scopeLocationId?: string) => {

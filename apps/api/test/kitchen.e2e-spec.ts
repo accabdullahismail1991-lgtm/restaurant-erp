@@ -40,9 +40,32 @@ describe('Phase 10a: kitchen / KDS (e2e)', () => {
     await prisma.user.deleteMany({ where: { phone: ADMIN_PHONE } });
 
     const passwordHash = await bcrypt.hash(PASSWORD, 10);
-    await prisma.user.create({ data: { name: 'Kitchen Admin', phone: ADMIN_PHONE, passwordHash } });
+    const adminUser = await prisma.user.create({ data: { name: 'Kitchen Admin', phone: ADMIN_PHONE, passwordHash } });
     const loginRes = await request(app.getHttpServer()).post('/auth/login').send({ phone: ADMIN_PHONE, password: PASSWORD });
     adminToken = loginRes.body.accessToken;
+
+    // adminToken opens shifts as scaffolding below -- same upsert pattern
+    // the void-order test further down uses for its own one-off permission.
+    const shiftPerm = await prisma.permission.upsert({
+      where: { code: 'pos.manage_shift' },
+      update: {},
+      create: { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' },
+    });
+    const shiftRole = await prisma.role.upsert({
+      where: { name: 'Kitchen-Test-Shift' },
+      update: {},
+      create: { name: 'Kitchen-Test-Shift' },
+    });
+    await prisma.rolePermission.upsert({
+      where: { roleId_permissionId: { roleId: shiftRole.id, permissionId: shiftPerm.id } },
+      update: {},
+      create: { roleId: shiftRole.id, permissionId: shiftPerm.id },
+    });
+    await prisma.userRole.upsert({
+      where: { userId_roleId: { userId: adminUser.id, roleId: shiftRole.id } },
+      update: {},
+      create: { userId: adminUser.id, roleId: shiftRole.id },
+    });
 
     const location = await prisma.location.create({ data: { name: 'فرع اختبار المطبخ', type: 'BRANCH' } });
     locationId = location.id;

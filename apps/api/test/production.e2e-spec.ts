@@ -39,12 +39,14 @@ describe('Phase 6: production orders (e2e)', () => {
     await prisma.rolePermission.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: { in: [ADMIN_PHONE, NOPERM_PHONE] } } });
     await prisma.role.deleteMany({ where: { name: 'Production-Test-Admin' } });
-    await prisma.permission.deleteMany({ where: { code: { in: ['production.manage', 'inventory.adjust'] } } });
+    await prisma.permission.deleteMany({ where: { code: { in: ['production.manage', 'inventory.adjust', 'inventory.view'] } } });
 
     const productionPerm = await prisma.permission.create({ data: { code: 'production.manage', label: 'إدارة أوامر الإنتاج' } });
     // Also needed to seed raw-material stock via /inventory/adjustments
     // before this suite's own production orders can consume anything.
     const inventoryPerm = await prisma.permission.create({ data: { code: 'inventory.adjust', label: 'تسوية المخزون' } });
+    // Needed for GET /inventory/balances below.
+    const inventoryViewPerm2 = await prisma.permission.create({ data: { code: 'inventory.view', label: 'عرض أرصدة المخزون وحركاته' } });
     // analytics.view is global/shared with several other suites -- upsert
     // rather than create so it doesn't collide with its unique `code`
     // regardless of which suite runs first against this shared test DB.
@@ -53,9 +55,16 @@ describe('Phase 6: production orders (e2e)', () => {
       update: {},
       create: { code: 'analytics.view', label: 'عرض التحليلات' },
     });
+    // Needed for GET /production-orders and GET /production-orders/:id below
+    // -- also global/shared, same upsert reasoning as analytics.view.
+    const productionViewPerm = await prisma.permission.upsert({
+      where: { code: 'production.view' },
+      update: {},
+      create: { code: 'production.view', label: 'عرض أوامر الإنتاج' },
+    });
     const role = await prisma.role.create({ data: { name: 'Production-Test-Admin' } });
     await prisma.rolePermission.createMany({
-      data: [productionPerm, inventoryPerm, analyticsPerm].map((p) => ({ roleId: role.id, permissionId: p.id })),
+      data: [productionPerm, inventoryPerm, analyticsPerm, productionViewPerm, inventoryViewPerm2].map((p) => ({ roleId: role.id, permissionId: p.id })),
     });
 
     const makeUser = async (phone: string, roleId?: string) => {

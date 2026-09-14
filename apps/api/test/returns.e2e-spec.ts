@@ -47,8 +47,15 @@ describe('Returns (e2e)', () => {
       update: {},
       create: { code: 'pos.void_order', label: 'إلغاء طلب' },
     });
+    // manageToken opens shifts as scaffolding below -- same upsert reasoning
+    // as pos.void_order above.
+    const shiftPerm = await prisma.permission.upsert({
+      where: { code: 'pos.manage_shift' },
+      update: {},
+      create: { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' },
+    });
     const role = await prisma.role.create({ data: { name: 'Returns-Test-Manager' } });
-    await prisma.rolePermission.createMany({ data: [returnPerm, voidPerm].map((p) => ({ roleId: role.id, permissionId: p.id })) });
+    await prisma.rolePermission.createMany({ data: [returnPerm, voidPerm, shiftPerm].map((p) => ({ roleId: role.id, permissionId: p.id })) });
     await prisma.role.create({ data: { name: 'Returns-Test-NoPerm' } });
 
     const makeUser = async (phone: string, roleId?: string) => {

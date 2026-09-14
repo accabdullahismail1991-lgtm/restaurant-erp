@@ -26,11 +26,13 @@ export class IngredientsController {
   }
 
   @Get()
+  @RequirePermission('ingredients.view')
   findAll() {
     return this.ingredients.findAll();
   }
 
   @Get(':id')
+  @RequirePermission('ingredients.view')
   findOne(@Param('id') id: string) {
     return this.ingredients.findOne(id);
   }
@@ -42,6 +44,7 @@ export class IngredientsController {
   }
 
   @Get(':id/recipe')
+  @RequirePermission('ingredients.view')
   getRecipe(@Param('id') id: string) {
     return this.ingredients.getRecipe(id);
   }

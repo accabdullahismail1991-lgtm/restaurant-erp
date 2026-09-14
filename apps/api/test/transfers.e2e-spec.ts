@@ -41,14 +41,18 @@ describe('Phase 7: transfers (e2e)', () => {
     await prisma.rolePermission.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: { in: [ADMIN_PHONE, NOPERM_PHONE, ELSEWHERE_PHONE] } } });
     await prisma.role.deleteMany({ where: { name: 'Transfers-Test-Admin' } });
-    await prisma.permission.deleteMany({ where: { code: { in: ['transfers.manage', 'inventory.adjust'] } } });
+    await prisma.permission.deleteMany({ where: { code: { in: ['transfers.manage', 'inventory.adjust', 'transfers.view', 'inventory.view'] } } });
 
     const transfersPerm = await prisma.permission.create({ data: { code: 'transfers.manage', label: 'إدارة التحويلات' } });
     // Also needed to seed source stock via /inventory/adjustments.
     const inventoryPerm = await prisma.permission.create({ data: { code: 'inventory.adjust', label: 'تسوية المخزون' } });
+    // Needed for GET /transfers and GET /transfers/:id below.
+    const transfersViewPerm = await prisma.permission.create({ data: { code: 'transfers.view', label: 'عرض التحويلات بين الفروع' } });
+    // Needed for GET /inventory/balances below.
+    const inventoryViewPerm = await prisma.permission.create({ data: { code: 'inventory.view', label: 'عرض أرصدة المخزون وحركاته' } });
     const role = await prisma.role.create({ data: { name: 'Transfers-Test-Admin' } });
     await prisma.rolePermission.createMany({
-      data: [transfersPerm, inventoryPerm].map((p) => ({ roleId: role.id, permissionId: p.id })),
+      data: [transfersPerm, inventoryPerm, transfersViewPerm, inventoryViewPerm].map((p) => ({ roleId: role.id, permissionId: p.id })),
     });
 
     const makeUser = async (phone: string, roleId?: string, scopeLocationId?: string) => {

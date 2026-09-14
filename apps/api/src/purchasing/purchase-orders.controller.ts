@@ -20,6 +20,7 @@ export class PurchaseOrdersController {
   }
 
   @Get()
+  @RequirePermission('purchasing.view')
   findAll(
     @CurrentUser() user: { userId: string },
     @Query('locationId') locationId?: string,
@@ -29,6 +30,7 @@ export class PurchaseOrdersController {
   }
 
   @Get(':id')
+  @RequirePermission('purchasing.view')
   findOne(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
     return this.purchaseOrders.findOne(id, user.userId);
   }

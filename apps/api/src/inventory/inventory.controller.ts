@@ -11,9 +11,10 @@ import { InventoryService } from './inventory.service';
 export class InventoryController {
   constructor(private readonly inventory: InventoryService) {}
 
-  // Reading balances only requires being logged in -- same pattern as
-  // GET /locations. Writing (adjustments/waste) requires inventory.adjust.
+  // Reading balances (stock levels) is back-office info, unlike GET
+  // /locations or /items -- a plain cashier doesn't need it to sell.
   @Get('balances')
+  @RequirePermission('inventory.view')
   getBalances(@CurrentUser() user: { userId: string }, @Query('locationId') locationId?: string) {
     return this.inventory.getBalances(user.userId, locationId);
   }

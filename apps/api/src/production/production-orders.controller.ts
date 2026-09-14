@@ -19,6 +19,7 @@ export class ProductionOrdersController {
   }
 
   @Get()
+  @RequirePermission('production.view')
   findAll(
     @CurrentUser() user: { userId: string },
     @Query('locationId') locationId?: string,
@@ -28,6 +29,7 @@ export class ProductionOrdersController {
   }
 
   @Get(':id')
+  @RequirePermission('production.view')
   findOne(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
     return this.productionOrders.findOne(id, user.userId);
   }

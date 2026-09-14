@@ -41,11 +41,23 @@ describe('Multiple concurrent open shifts + multi-cashier shifts (e2e)', () => {
     await resetDatabase(prisma);
     await prisma.userRole.deleteMany({ where: { user: { phone: { in: [ADMIN_PHONE, CASHIER_B_PHONE] } } } });
     await prisma.user.deleteMany({ where: { phone: { in: [ADMIN_PHONE, CASHIER_B_PHONE] } } });
+    await prisma.role.deleteMany({ where: { name: 'MultiShift-Test-Shift' } });
+
+    // Both Cashier A and Cashier B open/close shifts directly in this file.
+    const shiftPerm = await prisma.permission.upsert({
+      where: { code: 'pos.manage_shift' },
+      update: {},
+      create: { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' },
+    });
+    const shiftRole = await prisma.role.create({ data: { name: 'MultiShift-Test-Shift' } });
+    await prisma.rolePermission.create({ data: { roleId: shiftRole.id, permissionId: shiftPerm.id } });
 
     const passwordHashA = await bcrypt.hash(ADMIN_PASSWORD, 10);
-    await prisma.user.create({ data: { name: 'Multi-Shift Cashier A', phone: ADMIN_PHONE, passwordHash: passwordHashA } });
+    const userA = await prisma.user.create({ data: { name: 'Multi-Shift Cashier A', phone: ADMIN_PHONE, passwordHash: passwordHashA } });
+    await prisma.userRole.create({ data: { userId: userA.id, roleId: shiftRole.id } });
     const passwordHashB = await bcrypt.hash(CASHIER_B_PASSWORD, 10);
-    await prisma.user.create({ data: { name: 'Multi-Shift Cashier B', phone: CASHIER_B_PHONE, passwordHash: passwordHashB } });
+    const userB = await prisma.user.create({ data: { name: 'Multi-Shift Cashier B', phone: CASHIER_B_PHONE, passwordHash: passwordHashB } });
+    await prisma.userRole.create({ data: { userId: userB.id, roleId: shiftRole.id } });
 
     const loginA = await request(app.getHttpServer()).post('/auth/login').send({ phone: ADMIN_PHONE, password: ADMIN_PASSWORD });
     adminToken = loginA.body.accessToken;

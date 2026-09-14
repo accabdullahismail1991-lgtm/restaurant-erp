@@ -38,13 +38,15 @@ describe('Purchase returns (e2e)', () => {
     await prisma.rolePermission.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: { in: [MANAGE_PHONE, NOPERM_PHONE] } } });
     await prisma.role.deleteMany({ where: { name: { in: ['PReturns-Test-Manager', 'PReturns-Test-NoPerm'] } } });
-    await prisma.permission.deleteMany({ where: { code: { in: ['purchasing.return_po', 'purchasing.create_po'] } } });
+    await prisma.permission.deleteMany({ where: { code: { in: ['purchasing.return_po', 'purchasing.create_po', 'purchasing.view'] } } });
 
     const returnPerm = await prisma.permission.create({ data: { code: 'purchasing.return_po', label: 'تسجيل مرتجع لمورد' } });
     const createPoPerm = await prisma.permission.create({ data: { code: 'purchasing.create_po', label: 'إنشاء أوامر شراء' } });
+    // Needed for GET /purchase-returns and GET /purchase-returns/order/:id/returnable-lines below.
+    const viewPerm = await prisma.permission.create({ data: { code: 'purchasing.view', label: 'عرض المشتريات وأوامر الشراء والموردين' } });
     const role = await prisma.role.create({ data: { name: 'PReturns-Test-Manager' } });
     await prisma.rolePermission.createMany({
-      data: [returnPerm, createPoPerm].map((p) => ({ roleId: role.id, permissionId: p.id })),
+      data: [returnPerm, createPoPerm, viewPerm].map((p) => ({ roleId: role.id, permissionId: p.id })),
     });
     await prisma.role.create({ data: { name: 'PReturns-Test-NoPerm' } });
 

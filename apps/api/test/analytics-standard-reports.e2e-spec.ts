@@ -34,11 +34,12 @@ describe('Standard analytical report suite: ABC, category mix, period comparison
     await prisma.rolePermission.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: PHONE } });
     await prisma.role.deleteMany({ where: { name: 'StdReports-Test' } });
-    await prisma.permission.deleteMany({ where: { code: 'analytics.view' } });
+    await prisma.permission.deleteMany({ where: { code: { in: ['analytics.view', 'pos.manage_shift'] } } });
 
     const perm = await prisma.permission.create({ data: { code: 'analytics.view', label: 'عرض التقارير' } });
+    const shiftPerm = await prisma.permission.create({ data: { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' } });
     const role = await prisma.role.create({ data: { name: 'StdReports-Test' } });
-    await prisma.rolePermission.create({ data: { roleId: role.id, permissionId: perm.id } });
+    await prisma.rolePermission.createMany({ data: [perm, shiftPerm].map((p) => ({ roleId: role.id, permissionId: p.id })) });
 
     const passwordHash = await bcrypt.hash(PASSWORD, 10);
     const user = await prisma.user.create({ data: { name: PHONE, phone: PHONE, passwordHash } });

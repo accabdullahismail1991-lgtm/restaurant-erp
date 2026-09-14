@@ -44,8 +44,14 @@ describe('Admin data reset/wipe (e2e)', () => {
     const perm = await prisma.permission.create({ data: { code: 'system.reset_data', label: 'حذف/تصفير بيانات النظام' } });
     let adjustPerm = await prisma.permission.findUnique({ where: { code: 'inventory.adjust' } });
     if (!adjustPerm) adjustPerm = await prisma.permission.create({ data: { code: 'inventory.adjust', label: 'تسوية أرصدة المخزون' } });
+    // adminToken opens a shift as scaffolding for the reset-master-data test below.
+    const shiftPerm = await prisma.permission.upsert({
+      where: { code: 'pos.manage_shift' },
+      update: {},
+      create: { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' },
+    });
     const role = await prisma.role.create({ data: { name: 'AdminReset-Full' } });
-    await prisma.rolePermission.createMany({ data: [perm, adjustPerm].map((p) => ({ roleId: role.id, permissionId: p.id })) });
+    await prisma.rolePermission.createMany({ data: [perm, adjustPerm, shiftPerm].map((p) => ({ roleId: role.id, permissionId: p.id })) });
     await prisma.role.create({ data: { name: 'AdminReset-NoPerm' } });
 
     const makeUser = async (phone: string, roleId?: string) => {

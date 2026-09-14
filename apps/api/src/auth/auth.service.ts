@@ -62,4 +62,26 @@ export class AuthService {
     // there's a token-revocation store to check against.
     return this.issueTokens(user.id);
   }
+
+  // Every logged-in user needs to know their OWN permission set to render
+  // their own UI correctly (e.g. hiding nav links to screens they'd just
+  // get a 403 from) -- no @RequirePermission gate here, since there is no
+  // sensible permission that could ever block a user from reading their
+  // own profile/permissions.
+  async me(userId: string) {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        username: true,
+        roles: { select: { role: { select: { permissions: { select: { permission: { select: { code: true } } } } } } } },
+      },
+    });
+    const permissions = Array.from(
+      new Set(user.roles.flatMap((r) => r.role.permissions.map((p) => p.permission.code))),
+    );
+    return { id: user.id, name: user.name, phone: user.phone, username: user.username, permissions };
+  }
 }

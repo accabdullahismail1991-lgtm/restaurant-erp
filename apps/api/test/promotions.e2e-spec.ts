@@ -38,15 +38,17 @@ describe('Phase 10b: promotions (e2e)', () => {
     await prisma.rolePermission.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: { in: [ADMIN_PHONE, NOPERM_PHONE] } } });
     await prisma.role.deleteMany({ where: { name: { startsWith: 'Promo-Test-' } } });
-    await prisma.permission.deleteMany({ where: { code: { in: ['promotions.manage', 'pos.apply_discount'] } } });
+    await prisma.permission.deleteMany({ where: { code: { in: ['promotions.manage', 'pos.apply_discount', 'pos.manage_shift'] } } });
 
     const perm = await prisma.permission.create({ data: { code: 'promotions.manage', label: 'إدارة العروض' } });
     // Needed for the manual-discountTotal test below -- OrdersService.create()
     // now requires this permission to accept a manual discount at all.
     const discountPerm = await prisma.permission.create({ data: { code: 'pos.apply_discount', label: 'تطبيق خصم يدوي' } });
+    const shiftPerm = await prisma.permission.create({ data: { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' } });
     const adminRole = await prisma.role.create({ data: { name: 'Promo-Test-Admin' } });
     await prisma.rolePermission.create({ data: { roleId: adminRole.id, permissionId: perm.id } });
     await prisma.rolePermission.create({ data: { roleId: adminRole.id, permissionId: discountPerm.id } });
+    await prisma.rolePermission.create({ data: { roleId: adminRole.id, permissionId: shiftPerm.id } });
     await prisma.role.create({ data: { name: 'Promo-Test-NoPerm' } });
 
     const makeUser = async (phone: string, roleId?: string) => {

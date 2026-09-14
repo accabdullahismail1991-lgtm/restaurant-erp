@@ -37,13 +37,14 @@ describe('Required-customer setting + Payment Methods management (e2e)', () => {
     await prisma.rolePermission.deleteMany({});
     await prisma.user.deleteMany({ where: { phone: { in: [ADMIN_PHONE, NOPERM_PHONE] } } });
     await prisma.role.deleteMany({ where: { name: { in: ['ReqCust-Manager', 'ReqCust-NoPerm'] } } });
-    await prisma.permission.deleteMany({ where: { code: { in: ['payment_methods.manage', 'branches.manage'] } } });
+    await prisma.permission.deleteMany({ where: { code: { in: ['payment_methods.manage', 'branches.manage', 'pos.manage_shift'] } } });
 
     const pmPerm = await prisma.permission.create({ data: { code: 'payment_methods.manage', label: 'إدارة طرق الدفع' } });
     const branchesPerm = await prisma.permission.create({ data: { code: 'branches.manage', label: 'إدارة الفروع' } });
+    const shiftPerm = await prisma.permission.create({ data: { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' } });
     const role = await prisma.role.create({ data: { name: 'ReqCust-Manager' } });
     await prisma.rolePermission.createMany({
-      data: [pmPerm, branchesPerm].map((p) => ({ roleId: role.id, permissionId: p.id })),
+      data: [pmPerm, branchesPerm, shiftPerm].map((p) => ({ roleId: role.id, permissionId: p.id })),
     });
     await prisma.role.create({ data: { name: 'ReqCust-NoPerm' } });
 
