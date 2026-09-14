@@ -994,3 +994,26 @@ model GeneratedReport {
   fileData    Bytes
   createdAt   DateTime @default(now())
 }
+
+// ---------------------------------------------------------------------------
+// النسخ الاحتياطي — مديول كامل لتصدير/استعادة قاعدة البيانات بأكملها
+// ---------------------------------------------------------------------------
+// A full logical dump of every table (see BackupService.MODEL_ORDER),
+// serialized to JSON and gzip-compressed, stored the same "no external
+// object storage" way GeneratedReport.fileData already is. Deliberately
+// broader than AdminService.fullWipe/resetMasterData -- this INCLUDES
+// Users/Roles/Permissions, because a restore is meant to bring a database
+// (e.g. a freshly-deployed empty environment) to an exact byte-for-byte
+// copy of another one, not just re-seed product/catalog data.
+model Backup {
+  id          String   @id @default(cuid())
+  // Who/what triggered this backup -- a User.id for an on-demand backup
+  // (POST /backups), or the literal string "SYSTEM_CRON" for the daily
+  // scheduled one, which has no acting user.
+  createdBy   String
+  note        String?
+  fileName    String
+  sizeBytes   Int // حجم fileData بعد الضغط -- لعرض قائمة النسخ دون تحميل كل bytea
+  fileData    Bytes
+  createdAt   DateTime @default(now())
+}

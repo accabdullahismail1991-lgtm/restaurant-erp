@@ -12,6 +12,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 // whatever User/Role/Permission rows it needs for login.
 //
 export async function resetDatabase(prisma: PrismaService) {
+  await prisma.backup.deleteMany({});
   await prisma.paymentMethod.deleteMany({});
   // Every existing suite that pays an order with method: 'CASH' and then
   // closes a shift expecting cash reconciliation to include it predates

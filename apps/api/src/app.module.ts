@@ -6,6 +6,7 @@ import { AdminModule } from './admin/admin.module';
 import { AlertsModule } from './alerts/alerts.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { AuthModule } from './auth/auth.module';
+import { BackupModule } from './backup/backup.module';
 import { BranchesModule } from './branches/branches.module';
 import { CombosModule } from './combos/combos.module';
 import { CustomersModule } from './customers/customers.module';
@@ -67,6 +68,7 @@ import { UsersModule } from './users/users.module';
     PermissionsModule,
     UnitsOfMeasureModule,
     AdminModule,
+    BackupModule,
   ],
   controllers: [AppController],
 })
