@@ -9,6 +9,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "ts-node prisma/seed.ts",
+    "import:shandouch-menu": "ts-node scripts/import-shandouch-menu.ts",
     "test:e2e": "jest --config test/jest-e2e.json --runInBand"
   },
   "dependencies": {

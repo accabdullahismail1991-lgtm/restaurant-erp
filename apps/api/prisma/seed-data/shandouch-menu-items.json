@@ -1,0 +1,2137 @@
+[
+ {
+  "name": "برجر لحم مشوى ع الفحم",
+  "category": "البرجر",
+  "price": 15,
+  "lines": [
+   {
+    "ingredient": "باربكيو",
+    "quantity": 10
+   },
+   {
+    "ingredient": "تكساس صوص",
+    "quantity": 20
+   },
+   {
+    "ingredient": "خس",
+    "quantity": 10
+   },
+   {
+    "ingredient": "خيار مخلل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 20
+   },
+   {
+    "ingredient": "طماطم",
+    "quantity": 20
+   },
+   {
+    "ingredient": "لحم",
+    "quantity": 100
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 20
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "خبز",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "دبل شماس برجر لحم",
+  "category": "البرجر",
+  "price": 23,
+  "lines": [
+   {
+    "ingredient": "باربكيو",
+    "quantity": 10
+   },
+   {
+    "ingredient": "بصل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "تكساس صوص",
+    "quantity": 20
+   },
+   {
+    "ingredient": "خس",
+    "quantity": 10
+   },
+   {
+    "ingredient": "خيار مخلل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 20
+   },
+   {
+    "ingredient": "طماطم",
+    "quantity": 20
+   },
+   {
+    "ingredient": "لحم",
+    "quantity": 200
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 20
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "خبز",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "سندوتش شاورما دجاج صاج (صغير)",
+  "category": "الشاورما",
+  "price": 8,
+  "lines": [
+   {
+    "ingredient": "بطاطس",
+    "quantity": 30
+   },
+   {
+    "ingredient": "ثومية",
+    "quantity": 20
+   },
+   {
+    "ingredient": "خيار مخلل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "شاورما",
+    "quantity": 50
+   },
+   {
+    "ingredient": "كاتشاب (جرام)",
+    "quantity": 10
+   },
+   {
+    "ingredient": "كوكتيل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "كاتشاب (ظرف)",
+    "quantity": 2
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "لقمة",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "سندوتش شاورما دجاج صاج (كبير)",
+  "category": "الشاورما",
+  "price": 11,
+  "lines": [
+   {
+    "ingredient": "بطاطس",
+    "quantity": 30
+   },
+   {
+    "ingredient": "ثومية",
+    "quantity": 20
+   },
+   {
+    "ingredient": "خيار مخلل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "شاورما",
+    "quantity": 70
+   },
+   {
+    "ingredient": "كاتشاب (جرام)",
+    "quantity": 10
+   },
+   {
+    "ingredient": "كوكتيل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "كاتشاب (ظرف)",
+    "quantity": 2
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "لقمة",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "بوكس شاورما دجاج عربى (صغير)",
+  "category": "الشاورما",
+  "price": 14,
+  "lines": [
+   {
+    "ingredient": "بطاطس",
+    "quantity": 200
+   },
+   {
+    "ingredient": "ثومية",
+    "quantity": 50
+   },
+   {
+    "ingredient": "خيار مخلل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "شاورما",
+    "quantity": 70
+   },
+   {
+    "ingredient": "كاتشاب (جرام)",
+    "quantity": 40
+   },
+   {
+    "ingredient": "كوكتيل",
+    "quantity": 50
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "لقمة",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "بوكس شاورما دجاج عربى (كبير)",
+  "category": "الشاورما",
+  "price": 25,
+  "lines": [
+   {
+    "ingredient": "بطاطس",
+    "quantity": 230
+   },
+   {
+    "ingredient": "ثومية",
+    "quantity": 70
+   },
+   {
+    "ingredient": "خيار مخلل",
+    "quantity": 40
+   },
+   {
+    "ingredient": "شاورما",
+    "quantity": 140
+   },
+   {
+    "ingredient": "كاتشاب (جرام)",
+    "quantity": 50
+   },
+   {
+    "ingredient": "كوكتيل",
+    "quantity": 70
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "لقمة",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "بوكس شاورما عربى مكس (كبير)",
+  "category": "الشاورما",
+  "price": 26,
+  "lines": [
+   {
+    "ingredient": "بصل+ بقدونس",
+    "quantity": 20
+   },
+   {
+    "ingredient": "بطاطس",
+    "quantity": 230
+   },
+   {
+    "ingredient": "ثومية",
+    "quantity": 50
+   },
+   {
+    "ingredient": "خيار مخلل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "شاورما دجاج",
+    "quantity": 70
+   },
+   {
+    "ingredient": "شاورما لحم",
+    "quantity": 70
+   },
+   {
+    "ingredient": "طحينة",
+    "quantity": 20
+   },
+   {
+    "ingredient": "كاتشاب (جرام)",
+    "quantity": 40
+   },
+   {
+    "ingredient": "كوكتيل",
+    "quantity": 70
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "لقمة",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "سندوتش شاورما لحم صاج (صغير)",
+  "category": "الشاورما",
+  "price": 8,
+  "lines": [
+   {
+    "ingredient": "بطاطس",
+    "quantity": 30
+   },
+   {
+    "ingredient": "سلطة بصل+ بقدونس",
+    "quantity": 20
+   },
+   {
+    "ingredient": "شاورما لحم",
+    "quantity": 50
+   },
+   {
+    "ingredient": "طحينة",
+    "quantity": 20
+   },
+   {
+    "ingredient": "كوكتيل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "كاتشاب (ظرف)",
+    "quantity": 2
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "لقمة",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "سندوتش شاورما لحم صاج (كبير)",
+  "category": "الشاورما",
+  "price": 12,
+  "lines": [
+   {
+    "ingredient": "بصل+ بقدونس",
+    "quantity": 20
+   },
+   {
+    "ingredient": "بطاطس",
+    "quantity": 30
+   },
+   {
+    "ingredient": "شاورما لحم",
+    "quantity": 70
+   },
+   {
+    "ingredient": "طحينة",
+    "quantity": 20
+   },
+   {
+    "ingredient": "كوكتيل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "كاتشاب (ظرف)",
+    "quantity": 2
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "لقمة",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "بوكس شاورما لحم عربى صغير",
+  "category": "الشاورما",
+  "price": 15,
+  "lines": [
+   {
+    "ingredient": "بطاطس",
+    "quantity": 20
+   },
+   {
+    "ingredient": "ثومية",
+    "quantity": 30
+   },
+   {
+    "ingredient": "سلطة",
+    "quantity": 20
+   },
+   {
+    "ingredient": "شاورما لحم",
+    "quantity": 70
+   },
+   {
+    "ingredient": "طحينة",
+    "quantity": 20
+   },
+   {
+    "ingredient": "كاتشاب (جرام)",
+    "quantity": 30
+   },
+   {
+    "ingredient": "كوكتيل",
+    "quantity": 50
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "لقمة",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "بوكس شاورما لحم عربى كبير",
+  "category": "الشاورما",
+  "price": 28,
+  "lines": [
+   {
+    "ingredient": "بطاطس",
+    "quantity": 230
+   },
+   {
+    "ingredient": "ثومية",
+    "quantity": 30
+   },
+   {
+    "ingredient": "سلطة",
+    "quantity": 40
+   },
+   {
+    "ingredient": "شاورما لحم",
+    "quantity": 140
+   },
+   {
+    "ingredient": "طحينة",
+    "quantity": 40
+   },
+   {
+    "ingredient": "كاتشاب (جرام)",
+    "quantity": 30
+   },
+   {
+    "ingredient": "كوكتيل",
+    "quantity": 70
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "لقمة",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "رغيف حواوشى صغير",
+  "category": "الحواوشى",
+  "price": 10,
+  "lines": [
+   {
+    "ingredient": "طحينة",
+    "quantity": 20
+   },
+   {
+    "ingredient": "لحم",
+    "quantity": 100
+   },
+   {
+    "ingredient": "مخلل (جرام)",
+    "quantity": 30
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "رغيف صغير",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "رغيف حواوشى كبير",
+  "category": "الحواوشى",
+  "price": 15,
+  "lines": [
+   {
+    "ingredient": "طحينة",
+    "quantity": 20
+   },
+   {
+    "ingredient": "لحم",
+    "quantity": 180
+   },
+   {
+    "ingredient": "مخلل (جرام)",
+    "quantity": 30
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "رغيف كبير",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب شاورما دجاج (عادى)",
+  "category": "كريب",
+  "price": 25,
+  "lines": [
+   {
+    "ingredient": "شاورما دجاج",
+    "quantity": 140
+   },
+   {
+    "ingredient": "صوص باربكيو",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص ثومية",
+    "quantity": 25
+   },
+   {
+    "ingredient": "صوص شطة",
+    "quantity": 10
+   },
+   {
+    "ingredient": "صوص كوكتيل",
+    "quantity": 25
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 70
+   },
+   {
+    "ingredient": "كاتشاب (ظرف)",
+    "quantity": 2
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب شاورما دجاج (كونو)",
+  "category": "كريب",
+  "price": 35,
+  "lines": [
+   {
+    "ingredient": "شاورما دجاج",
+    "quantity": 200
+   },
+   {
+    "ingredient": "صوص باربكيو",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص ثومية",
+    "quantity": 25
+   },
+   {
+    "ingredient": "صوص شطة",
+    "quantity": 10
+   },
+   {
+    "ingredient": "صوص كوكتيل",
+    "quantity": 25
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 140
+   },
+   {
+    "ingredient": "كاتشاب (ظرف)",
+    "quantity": 2
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب طاووق ع الفحم (عادى)",
+  "category": "كريب",
+  "price": 25,
+  "lines": [
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "صوص باربكيو",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شطة",
+    "quantity": 10
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص كوكتيل",
+    "quantity": 25
+   },
+   {
+    "ingredient": "طاووق نيىء",
+    "quantity": 200
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 70
+   },
+   {
+    "ingredient": "كاتشاب (ظرف)",
+    "quantity": 2
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب طاووق ع الفحم (كونو)",
+  "category": "كريب",
+  "price": 35,
+  "lines": [
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "صوص باربكيو",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شطة",
+    "quantity": 10
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص كوكتيل",
+    "quantity": 25
+   },
+   {
+    "ingredient": "طاووق نيىء",
+    "quantity": 350
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 140
+   },
+   {
+    "ingredient": "كاتشاب (ظرف)",
+    "quantity": 2
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب  سوبر كرانشى (عادى)",
+  "category": "كريب",
+  "price": 25,
+  "lines": [
+   {
+    "ingredient": "استريبس",
+    "quantity": 200
+   },
+   {
+    "ingredient": "تركى مدخن",
+    "quantity": 10
+   },
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "صوص رانش",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 20
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 70
+   },
+   {
+    "ingredient": "كاتشاب (ظرف)",
+    "quantity": 2
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب  سوبر كرانشى (كونو)",
+  "category": "كريب",
+  "price": 35,
+  "lines": [
+   {
+    "ingredient": "استريبس",
+    "quantity": 300
+   },
+   {
+    "ingredient": "تركى مدخن",
+    "quantity": 10
+   },
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "صوص رانش",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 20
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 140
+   },
+   {
+    "ingredient": "كاتشاب (ظرف)",
+    "quantity": 2
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب زنجر(عادى)",
+  "category": "كريب",
+  "price": 25,
+  "lines": [
+   {
+    "ingredient": "استريبس",
+    "quantity": 200
+   },
+   {
+    "ingredient": "تركى مدخن",
+    "quantity": 10
+   },
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "صوص رانش",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 20
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "مايونيز حار",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 70
+   },
+   {
+    "ingredient": "هاليبينو",
+    "quantity": 10
+   },
+   {
+    "ingredient": "كاتشاب (ظرف)",
+    "quantity": 2
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب زنجر(كونو)",
+  "category": "كريب",
+  "price": 35,
+  "lines": [
+   {
+    "ingredient": "استريبس",
+    "quantity": 300
+   },
+   {
+    "ingredient": "تركى مدخن",
+    "quantity": 10
+   },
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "صوص رانش",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 20
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "مايونيز",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 140
+   },
+   {
+    "ingredient": "هاليبينو",
+    "quantity": 10
+   },
+   {
+    "ingredient": "كاتشاب (ظرف)",
+    "quantity": 2
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب شاورما لحم (عادى)",
+  "category": "كريب",
+  "price": 27,
+  "lines": [
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "شاورما لحم",
+    "quantity": 140
+   },
+   {
+    "ingredient": "صوص باربكيو",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شطة",
+    "quantity": 10
+   },
+   {
+    "ingredient": "طحينة",
+    "quantity": 20
+   },
+   {
+    "ingredient": "طماطم",
+    "quantity": 20
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 70
+   },
+   {
+    "ingredient": "كاتشاب (ظرف)",
+    "quantity": 2
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب شاورما لحم (كونو)",
+  "category": "كريب",
+  "price": 37,
+  "lines": [
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "شاورما لحم",
+    "quantity": 200
+   },
+   {
+    "ingredient": "صوص باربكيو",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شطة",
+    "quantity": 10
+   },
+   {
+    "ingredient": "طحينة",
+    "quantity": 20
+   },
+   {
+    "ingredient": "طماطم",
+    "quantity": 20
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 140
+   },
+   {
+    "ingredient": "كاتشاب (ظرف)",
+    "quantity": 2
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب شيز برجر (عادى)",
+  "category": "كريب",
+  "price": 24,
+  "lines": [
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "شاورما لحم",
+    "quantity": 280
+   },
+   {
+    "ingredient": "صوص باربكيو",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص تكساس",
+    "quantity": 10
+   },
+   {
+    "ingredient": "صوص شطة",
+    "quantity": 10
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 30
+   },
+   {
+    "ingredient": "طماطم",
+    "quantity": 20
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 70
+   },
+   {
+    "ingredient": "كاتشاب (ظرف)",
+    "quantity": 2
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب شيز برجر (كونو)",
+  "category": "كريب",
+  "price": 34,
+  "lines": [
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "شاورما لحم",
+    "quantity": 300
+   },
+   {
+    "ingredient": "صوص باربكيو",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص تكساس",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شطة",
+    "quantity": 10
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 30
+   },
+   {
+    "ingredient": "طماطم",
+    "quantity": 20
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 140
+   },
+   {
+    "ingredient": "كاتشاب (ظرف)",
+    "quantity": 2
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب السجق (عادى)",
+  "category": "كريب",
+  "price": 33,
+  "lines": [
+   {
+    "ingredient": "بصل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "سجق",
+    "quantity": 200
+   },
+   {
+    "ingredient": "صوص باربكيو",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شطة",
+    "quantity": 10
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 20
+   },
+   {
+    "ingredient": "طحينة",
+    "quantity": 10
+   },
+   {
+    "ingredient": "طماطم",
+    "quantity": 20
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 70
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كاتشاب (حبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب السجق (كونو)",
+  "category": "كريب",
+  "price": 43,
+  "lines": [
+   {
+    "ingredient": "بصل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "سجق",
+    "quantity": 350
+   },
+   {
+    "ingredient": "صوص باربكيو",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شطة",
+    "quantity": 10
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 20
+   },
+   {
+    "ingredient": "طحينة",
+    "quantity": 10
+   },
+   {
+    "ingredient": "طماطم",
+    "quantity": 20
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 140
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كاتشاب (حبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب سوسيس (عادى)",
+  "category": "كريب",
+  "price": 25,
+  "lines": [
+   {
+    "ingredient": "رانش",
+    "quantity": 20
+   },
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "سويت شيلى",
+    "quantity": 10
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 20
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 70
+   },
+   {
+    "ingredient": "هوت دوج",
+    "quantity": 2
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كاتشاب (حبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب سوسيس (كونو)",
+  "category": "كريب",
+  "price": 35,
+  "lines": [
+   {
+    "ingredient": "رانش",
+    "quantity": 20
+   },
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "سويت شيلى",
+    "quantity": 10
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 20
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 140
+   },
+   {
+    "ingredient": "هوت دوج",
+    "quantity": 3
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كاتشاب (حبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب حركات (عادى)",
+  "category": "كريب",
+  "price": 25,
+  "lines": [
+   {
+    "ingredient": "استريبس",
+    "quantity": 50
+   },
+   {
+    "ingredient": "برجر",
+    "quantity": 50
+   },
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "سوسيس",
+    "quantity": 50
+   },
+   {
+    "ingredient": "شاورما دجاج",
+    "quantity": 50
+   },
+   {
+    "ingredient": "صوص باربكيو",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شطة",
+    "quantity": 10
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص كوكتيل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "مستردة",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 70
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كاتشاب (حبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب حركات (كونو)",
+  "category": "كريب",
+  "price": 35,
+  "lines": [
+   {
+    "ingredient": "استريبس",
+    "quantity": 100
+   },
+   {
+    "ingredient": "برجر",
+    "quantity": 100
+   },
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "سوسيس",
+    "quantity": 100
+   },
+   {
+    "ingredient": "شاورما دجاج",
+    "quantity": 50
+   },
+   {
+    "ingredient": "صوص باربكيو",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شطة",
+    "quantity": 10
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص كوكتيل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "مستردة",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 140
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كاتشاب (حبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب بطاطس بالجبنة (عادى)",
+  "category": "كريب",
+  "price": 14,
+  "lines": [
+   {
+    "ingredient": "بطاطس نص مقلية",
+    "quantity": 165
+   },
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 40
+   },
+   {
+    "ingredient": "صوص كوكتيل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 70
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كاتشاب (حبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب مكس جبن بسطرمة (عادى)",
+  "category": "كريب",
+  "price": 25,
+  "lines": [
+   {
+    "ingredient": "بسطرمة",
+    "quantity": 30
+   },
+   {
+    "ingredient": "جبنة روما",
+    "quantity": 40
+   },
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 40
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 100
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كاتشاب (حبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب كفته ع الفحم (عادى)",
+  "category": "كريب",
+  "price": 25,
+  "lines": [
+   {
+    "ingredient": "بصل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "صوص باربكيو",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شطة",
+    "quantity": 10
+   },
+   {
+    "ingredient": "طحينة",
+    "quantity": 20
+   },
+   {
+    "ingredient": "طماطم",
+    "quantity": 20
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "لحم",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 70
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كاتشاب (حبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب كفته ع الفحم (كونو)",
+  "category": "كريب",
+  "price": 35,
+  "lines": [
+   {
+    "ingredient": "بصل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "صوص باربكيو",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شطة",
+    "quantity": 10
+   },
+   {
+    "ingredient": "طحينة",
+    "quantity": 20
+   },
+   {
+    "ingredient": "طماطم",
+    "quantity": 20
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "لحم",
+    "quantity": 350
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 140
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كاتشاب (حبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب  جمبرى بانية (عادى)",
+  "category": "كريب",
+  "price": 35,
+  "lines": [
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "صوص راشى",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص سويت شيلى",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 20
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 70
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كاتشاب (حبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "جمبرى",
+    "quantity": 13
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب  جمبرى بانية (كونو)",
+  "category": "كريب",
+  "price": 45,
+  "lines": [
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "صوص راشى",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص سويت شيلى",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 20
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 140
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كاتشاب (حبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "جمبرى",
+    "quantity": 20
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب مكس دجاج (عادى)",
+  "category": "كريب",
+  "price": 25,
+  "lines": [
+   {
+    "ingredient": "استريبس",
+    "quantity": 100
+   },
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "صوص باربكيو",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شطة",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص كوكتيل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "طاووق",
+    "quantity": 100
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "مستردة",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 70
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كاتشاب (حبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب مكس دجاج (كونو)",
+  "category": "كريب",
+  "price": 35,
+  "lines": [
+   {
+    "ingredient": "استريبس",
+    "quantity": 150
+   },
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "صوص باربكيو",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شطة",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص كوكتيل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "طاووق",
+    "quantity": 200
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "مستردة",
+    "quantity": 20
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 140
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كاتشاب (حبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب  مكس لحوم (عادى)",
+  "category": "كريب",
+  "price": 25,
+  "lines": [
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "سجق",
+    "quantity": 50
+   },
+   {
+    "ingredient": "سوسيس",
+    "quantity": 50
+   },
+   {
+    "ingredient": "شاورما لحم",
+    "quantity": 50
+   },
+   {
+    "ingredient": "صوص باربكيو",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص تكساس",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شطة",
+    "quantity": 10
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 20
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "لحم كفتة",
+    "quantity": 50
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 70
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كاتشاب (حبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ },
+ {
+  "name": "كريب  مكس لحوم (كونو)",
+  "category": "كريب",
+  "price": 35,
+  "lines": [
+   {
+    "ingredient": "زيتون",
+    "quantity": 5
+   },
+   {
+    "ingredient": "سجق",
+    "quantity": 100
+   },
+   {
+    "ingredient": "سوسيس",
+    "quantity": 100
+   },
+   {
+    "ingredient": "شاورما لحم",
+    "quantity": 50
+   },
+   {
+    "ingredient": "صوص باربكيو",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص تكساس",
+    "quantity": 20
+   },
+   {
+    "ingredient": "صوص شطة",
+    "quantity": 10
+   },
+   {
+    "ingredient": "صوص شيدر",
+    "quantity": 20
+   },
+   {
+    "ingredient": "فلفل",
+    "quantity": 20
+   },
+   {
+    "ingredient": "لحم كفتة",
+    "quantity": 100
+   },
+   {
+    "ingredient": "موزريلا",
+    "quantity": 140
+   },
+   {
+    "ingredient": "باكينج",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كاتشاب (حبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "مخلل (علبة)",
+    "quantity": 1
+   },
+   {
+    "ingredient": "كريب",
+    "quantity": 1
+   }
+  ]
+ }
+]

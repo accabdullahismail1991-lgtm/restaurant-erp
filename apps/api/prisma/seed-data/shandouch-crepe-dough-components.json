@@ -1,0 +1,50 @@
+[
+ {
+  "name": "دقيق",
+  "unit_code": "kg",
+  "unit_cost": 0.84,
+  "qty_per_bite": 0.111111111111111
+ },
+ {
+  "name": "بيض",
+  "unit_code": "pcs",
+  "unit_cost": 0.415,
+  "qty_per_bite": 0.0444444444444444
+ },
+ {
+  "name": "حليب",
+  "unit_code": "l",
+  "unit_cost": 4.5,
+  "qty_per_bite": 0.0444444444444444
+ },
+ {
+  "name": "ملح",
+  "unit_code": "g",
+  "unit_cost": 0.0005,
+  "qty_per_bite": 0.555555555555556
+ },
+ {
+  "name": "سكر",
+  "unit_code": "g",
+  "unit_cost": 0.0034,
+  "qty_per_bite": 0.777777777777778
+ },
+ {
+  "name": "زيت",
+  "unit_code": "g",
+  "unit_cost": 0.0086,
+  "qty_per_bite": 1.11111111111111
+ },
+ {
+  "name": "زبدة",
+  "unit_code": "g",
+  "unit_cost": 0.01,
+  "qty_per_bite": 2.22222222222222
+ },
+ {
+  "name": "فانيليا",
+  "unit_code": "can",
+  "unit_cost": 1.4,
+  "qty_per_bite": 0.0444444444444444
+ }
+]

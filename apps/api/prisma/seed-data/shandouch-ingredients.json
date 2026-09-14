@@ -1,0 +1,474 @@
+[
+ {
+  "name": "استريبس",
+  "base_name": "استريبس",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.027,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "باربكيو",
+  "base_name": "باربكيو",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.05,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "برجر",
+  "base_name": "برجر",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.034,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "بسطرمة",
+  "base_name": "بسطرمة",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.128,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "بصل",
+  "base_name": "بصل",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.007,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "بصل+ بقدونس",
+  "base_name": "بصل+ بقدونس",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.0075,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "بطاطس",
+  "base_name": "بطاطس",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.006643,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "بطاطس نص مقلية",
+  "base_name": "بطاطس نص مقلية",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.006606,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "تركى مدخن",
+  "base_name": "تركى مدخن",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.054,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "تكساس صوص",
+  "base_name": "تكساس صوص",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.0225,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "ثومية",
+  "base_name": "ثومية",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.004,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "جبنة روما",
+  "base_name": "جبنة روما",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.035,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "خس",
+  "base_name": "خس",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.025,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "خيار مخلل",
+  "base_name": "خيار مخلل",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.002857,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "رانش",
+  "base_name": "رانش",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.014,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "زيتون",
+  "base_name": "زيتون",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.01,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "سجق",
+  "base_name": "سجق",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.045,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "سلطة",
+  "base_name": "سلطة",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.0075,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "سلطة بصل+ بقدونس",
+  "base_name": "سلطة بصل+ بقدونس",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.0075,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "سوسيس",
+  "base_name": "سوسيس",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.02885,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "سويت شيلى",
+  "base_name": "سويت شيلى",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.028,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "شاورما",
+  "base_name": "شاورما",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.0281,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "شاورما دجاج",
+  "base_name": "شاورما دجاج",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.02816,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "شاورما لحم",
+  "base_name": "شاورما لحم",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.0547,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "صوص باربكيو",
+  "base_name": "صوص باربكيو",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.014,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "صوص تكساس",
+  "base_name": "صوص تكساس",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.028125,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "صوص ثومية",
+  "base_name": "صوص ثومية",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.0032,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "صوص راشى",
+  "base_name": "صوص راشى",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.014,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "صوص رانش",
+  "base_name": "صوص رانش",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.013,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "صوص سويت شيلى",
+  "base_name": "صوص سويت شيلى",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.014,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "صوص شطة",
+  "base_name": "صوص شطة",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.023611,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "صوص شيدر",
+  "base_name": "صوص شيدر",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.010167,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "صوص كوكتيل",
+  "base_name": "صوص كوكتيل",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.007367,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "طاووق",
+  "base_name": "طاووق",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.023,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "طاووق نيىء",
+  "base_name": "طاووق نيىء",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.023,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "طحينة",
+  "base_name": "طحينة",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.005769,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "طماطم",
+  "base_name": "طماطم",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.00175,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "فلفل",
+  "base_name": "فلفل",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.0055,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "كاتشاب (جرام)",
+  "base_name": "كاتشاب",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.004095,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "كوكتيل",
+  "base_name": "كوكتيل",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.007406,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "لحم",
+  "base_name": "لحم",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.030197,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "لحم كفتة",
+  "base_name": "لحم كفتة",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.0308,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "مايونيز",
+  "base_name": "مايونيز",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.014,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "مايونيز حار",
+  "base_name": "مايونيز حار",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.014,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "مخلل (جرام)",
+  "base_name": "مخلل",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.01,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "مستردة",
+  "base_name": "مستردة",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.014,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "موزريلا",
+  "base_name": "موزريلا",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.02,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "هاليبينو",
+  "base_name": "هاليبينو",
+  "raw_unit": "جم",
+  "unit_code": "g",
+  "unit_cost": 0.04,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "هوت دوج",
+  "base_name": "هوت دوج",
+  "raw_unit": "صباع",
+  "unit_code": "pcs",
+  "unit_cost": 2.89,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "كاتشاب (ظرف)",
+  "base_name": "كاتشاب",
+  "raw_unit": "ظرف",
+  "unit_code": "sachet",
+  "unit_cost": 0.05,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "باكينج",
+  "base_name": "باكينج",
+  "raw_unit": "عدد",
+  "unit_code": "pcs",
+  "unit_cost": 0.346341,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "خبز",
+  "base_name": "خبز",
+  "raw_unit": "عدد",
+  "unit_code": "pcs",
+  "unit_cost": 0.75,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "رغيف صغير",
+  "base_name": "رغيف صغير",
+  "raw_unit": "عدد",
+  "unit_code": "pcs",
+  "unit_cost": 0.25,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "رغيف كبير",
+  "base_name": "رغيف كبير",
+  "raw_unit": "عدد",
+  "unit_code": "pcs",
+  "unit_cost": 0.33,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "كاتشاب (حبة)",
+  "base_name": "كاتشاب",
+  "raw_unit": "عدد",
+  "unit_code": "pcs",
+  "unit_cost": 0.1,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "لقمة",
+  "base_name": "لقمة",
+  "raw_unit": "عدد",
+  "unit_code": "pcs",
+  "unit_cost": 0.8,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "مخلل (علبة)",
+  "base_name": "مخلل",
+  "raw_unit": "علبة",
+  "unit_code": "can",
+  "unit_cost": 0.3,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "جمبرى",
+  "base_name": "جمبرى",
+  "raw_unit": "قطعة",
+  "unit_code": "pcs",
+  "unit_cost": 0.666077,
+  "kind": "RAW_MATERIAL"
+ },
+ {
+  "name": "كريب",
+  "base_name": "كريب",
+  "raw_unit": "لقمة",
+  "unit_code": "portion",
+  "unit_cost": 0.4087,
+  "kind": "SEMI_FINISHED"
+ }
+]
