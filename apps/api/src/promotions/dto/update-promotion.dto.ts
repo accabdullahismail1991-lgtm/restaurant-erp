@@ -1,5 +1,5 @@
 import { IsBoolean, IsDateString, IsIn, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
-import { OrderChannel, PromotionType } from '@prisma/client';
+import { PromotionType } from '@prisma/client';
 
 const IMPLEMENTED_TYPES = [PromotionType.PERCENTAGE_DISCOUNT, PromotionType.FIXED_DISCOUNT];
 
@@ -18,8 +18,8 @@ export class UpdatePromotionDto {
   value?: number;
 
   @IsOptional()
-  @IsIn(Object.values(OrderChannel))
-  channelLimit?: OrderChannel;
+  @IsString()
+  channelLimit?: string;
 
   @IsOptional()
   @IsDateString()

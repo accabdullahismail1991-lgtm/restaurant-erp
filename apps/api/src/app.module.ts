@@ -14,6 +14,7 @@ import { IngredientsModule } from './ingredients/ingredients.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { ItemsModule } from './items/items.module';
 import { KitchenModule } from './kitchen/kitchen.module';
+import { OrderTypesModule } from './order-types/order-types.module';
 import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -63,6 +64,7 @@ import { UsersModule } from './users/users.module';
     ReportsModule,
     AlertsModule,
     PaymentMethodsModule,
+    OrderTypesModule,
     CombosModule,
     RolesModule,
     PermissionsModule,

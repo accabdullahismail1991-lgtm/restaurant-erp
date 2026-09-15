@@ -1,5 +1,5 @@
 import { IsDateString, IsIn, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
-import { OrderChannel, PromotionType } from '@prisma/client';
+import { PromotionType } from '@prisma/client';
 
 // BOGO/COMBO stay valid Promotion.type values in the schema for later, but
 // the apply-engine (PromotionsService.findApplicablePromotion) only knows
@@ -19,9 +19,12 @@ export class CreatePromotionDto {
   @IsPositive()
   value!: number;
 
+  // References OrderType.code -- checked against the OrderType table (must
+  // exist and be active) in PromotionsService instead of a compile-time
+  // enum, since order types are now admin-manageable.
   @IsOptional()
-  @IsIn(Object.values(OrderChannel))
-  channelLimit?: OrderChannel;
+  @IsString()
+  channelLimit?: string;
 
   @IsOptional()
   @IsDateString()

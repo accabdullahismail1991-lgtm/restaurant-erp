@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { OrderChannel, Promotion, PromotionType } from '@prisma/client';
+import { Promotion, PromotionType } from '@prisma/client';
+import { OrderTypesService } from '../order-types/order-types.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePromotionDto } from './dto/create-promotion.dto';
 import { UpdatePromotionDto } from './dto/update-promotion.dto';
@@ -17,10 +18,14 @@ function validate(type: PromotionType | undefined, value: number | undefined, st
 
 @Injectable()
 export class PromotionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly orderTypes: OrderTypesService,
+  ) {}
 
-  create(dto: CreatePromotionDto) {
+  async create(dto: CreatePromotionDto) {
     validate(dto.type, dto.value, dto.startsAt, dto.endsAt);
+    if (dto.channelLimit) await this.orderTypes.assertActiveCode(dto.channelLimit, 'نوع الطلب المحدد');
     return this.prisma.promotion.create({
       data: {
         name: dto.name,
@@ -46,6 +51,7 @@ export class PromotionsService {
   async update(id: string, dto: UpdatePromotionDto) {
     const existing = await this.findOne(id);
     validate(dto.type ?? existing.type, dto.value ?? Number(existing.value ?? 0), dto.startsAt, dto.endsAt);
+    if (dto.channelLimit) await this.orderTypes.assertActiveCode(dto.channelLimit, 'نوع الطلب المحدد');
     return this.prisma.promotion.update({
       where: { id },
       data: {
@@ -68,7 +74,7 @@ export class PromotionsService {
   // channel-specific promotion beats a channel-agnostic one; among
   // equally specific candidates, the one giving the bigger discount wins.
   async findApplicablePromotion(
-    channel: OrderChannel,
+    channel: string,
     subtotal: number,
     at: Date = new Date(),
   ): Promise<{ promotion: Promotion; discount: number } | null> {

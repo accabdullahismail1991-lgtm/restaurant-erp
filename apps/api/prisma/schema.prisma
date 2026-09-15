@@ -328,7 +328,7 @@ model MenuItem {
   comboSelections   ComboSelection[]
 }
 
-// قناة بيع خارجية بسعرها الخاص -- مختلفة عن OrderChannel (التصنيف العام
+// قناة بيع خارجية بسعرها الخاص -- مختلفة عن OrderType (التصنيف العام
 // صالة/تيك أواي/توصيل/تطبيق المستخدم في التحليلات والعروض): هذه قوائم
 // أسعار قابلة للإضافة من لوحة التحكم بأي اسم (هنجر ستيشن، جاهز، مرسول...)
 // بدل قيمة enum ثابتة في الكود، لأن كل مطعم يتعامل مع تطبيقات توصيل مختلفة.
@@ -680,12 +680,19 @@ model Shift {
 // ---------------------------------------------------------------------------
 // الطلبات والمبيعات — القرار #2, #3, #10, #11, #14, #18
 // ---------------------------------------------------------------------------
-enum OrderChannel {
-  DINE_IN
-  TAKEAWAY
-  DRIVE_THRU
-  DELIVERY_PARTNER // منصة توصيل خارجية
-  BRAND_APP // تطبيق العلامة التجارية الخاص
+// أنواع الطلبات (صالة/تيك أواي/توصيل...) -- جدول قابل للإدارة من الإعدادات
+// بدل enum ثابت في الكود، بنفس نمط PaymentMethod: code مستقر لا يتغيّر (تُخزَّن
+// عليه كل Order.channel/Promotion.channelLimit القديمة والجديدة)، name/icon
+// قابلان للتعديل، isActive يُخفي النوع من واجهات الاختيار الجديدة دون كسر
+// الطلبات التاريخية التي تحمل كوده. منفصل تمامًا عن SalesChannel (قائمة
+// الأسعار) -- الاثنان قد يبدوان متشابهين بالاسم لكنهما مفهومان مختلفان.
+model OrderType {
+  id        String   @id @default(cuid())
+  name      String
+  code      String   @unique
+  icon      String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
 }
 
 enum OrderStatus {
@@ -717,9 +724,12 @@ model Order {
   tableId          String?
   customerId       String?
   shiftId          String?
-  channel          OrderChannel
+  // يخزّن OrderType.code (نص مستقر، وليس مفتاحًا أجنبيًا) -- نفس نمط
+  // PaymentMethod.code في Payment، يبقى صالحًا حتى لو أُلغي تفعيل/حُذف
+  // نوع الطلب لاحقًا. يُتحقق من وجوده وتفعيله عند الإنشاء في orders.service.ts.
+  channel          String
   // اختياري -- عند تحديده، سطور الطلب تُسعَّر بقائمة أسعار هذه القناة
-  // (MenuItemChannelPrice) بدل السعر الأساسي، منفصل تمامًا عن OrderChannel
+  // (MenuItemChannelPrice) بدل السعر الأساسي، منفصل تمامًا عن OrderType
   // أعلاه (التصنيف العام لأغراض العروض/التحليلات).
   salesChannelId   String?
   invoiceType      InvoiceType  @default(CASH)
@@ -987,7 +997,7 @@ model Promotion {
   name         String
   type         PromotionType
   value        Decimal?      @db.Decimal(10, 2) // نسبة أو مبلغ حسب النوع
-  channelLimit OrderChannel? // null = كل القنوات
+  channelLimit String? // OrderType.code -- null = كل القنوات
   startsAt     DateTime?
   endsAt       DateTime?
   isActive     Boolean       @default(true)

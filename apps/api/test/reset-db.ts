@@ -28,6 +28,23 @@ export async function resetDatabase(prisma: PrismaService) {
       { code: 'WALLET', name: 'محفظة إلكترونية', isCash: false },
     ],
   });
+  await prisma.orderType.deleteMany({});
+  // Every existing suite that creates an order with channel: 'DINE_IN' (or
+  // any of the other 4 pre-existing codes) predates OrderType existing at
+  // all -- OrdersService.create()/PromotionsService now validate
+  // dto.channel/channelLimit against this table (must exist + be active)
+  // instead of the old compile-time OrderChannel enum, so those suites
+  // would otherwise get a 400 without this baseline restored right after
+  // the wipe above, the same 5 codes prisma/seed.ts gives local dev.
+  await prisma.orderType.createMany({
+    data: [
+      { code: 'DINE_IN', name: 'صالة', icon: '🍽️' },
+      { code: 'TAKEAWAY', name: 'تيك أواي', icon: '🥡' },
+      { code: 'DRIVE_THRU', name: 'Drive-thru', icon: '🚗' },
+      { code: 'DELIVERY_PARTNER', name: 'توصيل خارجي', icon: '🛵' },
+      { code: 'BRAND_APP', name: 'تطبيق العلامة', icon: '📱' },
+    ],
+  });
   await prisma.generatedReport.deleteMany({});
   await prisma.approval.deleteMany({});
   await prisma.purchaseReturnLine.deleteMany({});

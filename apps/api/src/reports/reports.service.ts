@@ -6,6 +6,7 @@ import * as ExcelJS from 'exceljs';
 import PDFDocument = require('pdfkit');
 import { AnalyticsService } from '../analytics/analytics.service';
 import { scopedLocationIds } from '../common/location-scope.util';
+import { OrderTypesService } from '../order-types/order-types.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 // __dirname sits at apps/api/src/reports when run via ts-node/ts-jest, but
@@ -42,7 +43,6 @@ function fmtGeneratedAt(): string {
 // ones the frontend already uses for the exact same codes, so the exported
 // file reads the same as the on-screen chart it came from.
 export type DashboardKind = 'sales' | 'production' | 'purchasing' | 'items' | 'inventory';
-const DASH_CHANNEL_LABEL: Record<string, string> = { DINE_IN: 'صالة', TAKEAWAY: 'تيك أواي', DRIVE_THRU: 'Drive-thru', DELIVERY_PARTNER: 'توصيل خارجي', BRAND_APP: 'تطبيق العلامة' };
 const DASH_PAYMENT_METHOD_LABEL: Record<string, string> = { CASH: 'كاش', CARD: 'بطاقة', WALLET: 'محفظة إلكترونية' };
 const DASH_PO_STATUS_LABEL: Record<string, string> = { DRAFT: 'مسودة', PENDING_APPROVAL: 'بانتظار الاعتماد', APPROVED: 'معتمد', SENT_TO_SUPPLIER: 'مُرسل للمورد', RECEIVED: 'مُستلم', REJECTED: 'مرفوض', CANCELLED: 'ملغى' };
 const DASH_PRODUCTION_STATUS_LABEL: Record<string, string> = { PLANNED: 'مخطط', IN_PROGRESS: 'قيد التنفيذ', COMPLETED: 'مكتمل', CANCELLED: 'ملغى' };
@@ -64,6 +64,7 @@ export class ReportsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly analytics: AnalyticsService,
+    private readonly orderTypes: OrderTypesService,
   ) {}
 
   // Every report is assembled through the *ForLocation methods -- they take
@@ -387,19 +388,21 @@ export class ReportsService {
     };
 
     if (kind === 'sales') {
-      const [s, trend, topItems, payments, lowStock] = await Promise.all([
+      const [s, trend, topItems, payments, lowStock, orderTypes] = await Promise.all([
         this.analytics.salesSummary(userId, locationId, from, to),
         this.analytics.salesTrend(userId, locationId, from, to),
         this.analytics.topItems(userId, locationId, from, to, 50),
         this.analytics.paymentMethodsSummary(userId, locationId, from, to),
         this.analytics.lowStock(userId, locationId),
+        this.orderTypes.findAll(),
       ]);
+      const channelLabel = new Map(orderTypes.map((t) => [t.code, t.name]));
       addKpiRows([
         ['عدد الطلبات', s.orderCount], ['الإيراد', s.revenue, true], ['صافي المبيعات', s.netSales, true],
         ['الضريبة', s.vatCollected, true], ['متوسط الطلب', s.averageOrderValue, true],
       ]);
       addTableSheet('اتجاه المبيعات اليومي', ['التاريخ', 'عدد الطلبات', 'الإيراد'], trend.map((t) => [t.date, t.orderCount, t.revenue]), [2]);
-      addTableSheet('الإيراد حسب القناة', ['القناة', 'عدد الطلبات', 'الإيراد'], s.byChannel.map((c) => [DASH_CHANNEL_LABEL[c.channel] || c.channel, c.orderCount, c.revenue]), [2],
+      addTableSheet('الإيراد حسب القناة', ['القناة', 'عدد الطلبات', 'الإيراد'], s.byChannel.map((c) => [channelLabel.get(c.channel) || c.channel, c.orderCount, c.revenue]), [2],
         ['الإجمالي', s.byChannel.reduce((a, c) => a + c.orderCount, 0), s.byChannel.reduce((a, c) => a + c.revenue, 0)]);
       addTableSheet('طرق الدفع', ['الطريقة', 'العدد', 'الإجمالي'], payments.byMethod.map((m) => [DASH_PAYMENT_METHOD_LABEL[m.method] || m.method, m.count, m.total]), [2]);
       addTableSheet('الأصناف الأكثر مبيعًا', ['الصنف', 'الكمية', 'الإيراد'], topItems.map((i) => [i.name, i.quantity, i.revenue]), [2]);

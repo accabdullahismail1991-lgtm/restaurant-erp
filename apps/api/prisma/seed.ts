@@ -40,6 +40,7 @@ const PERMISSIONS: Array<{ code: string; label: string }> = [
   { code: 'combos.manage', label: 'إدارة وجبات الكمبو والبوكس' },
   { code: 'analytics.view', label: 'عرض التقارير التحليلية (مبيعات/تكلفة/مخزون)' },
   { code: 'payment_methods.manage', label: 'إدارة طرق الدفع' },
+  { code: 'order_types.manage', label: 'إدارة أنواع الطلبات' },
   { code: 'system.reset_data', label: 'حذف/تصفير بيانات النظام (إجراء حسّاس)' },
   { code: 'system.backup_manage', label: 'إنشاء/تحميل/استعادة النسخ الاحتياطية (إجراء حسّاس)' },
 ];
@@ -70,6 +71,18 @@ const DEFAULT_UNITS: Array<{ code: string; name: string }> = [
   { code: 'ml', name: 'مليلتر' },
   { code: 'l', name: 'لتر' },
   { code: 'pcs', name: 'قطعة' },
+];
+
+// The 5 order types that used to be the fixed OrderChannel enum -- seeded
+// once with the same codes so historical Order.channel/Promotion.channelLimit
+// values (and every e2e test fixture) keep working unchanged; an admin can
+// add more, rename, or deactivate these from the "أنواع الطلبات" screen.
+const DEFAULT_ORDER_TYPES: Array<{ code: string; name: string; icon: string }> = [
+  { code: 'DINE_IN', name: 'صالة', icon: '🍽️' },
+  { code: 'TAKEAWAY', name: 'تيك أواي', icon: '🥡' },
+  { code: 'DRIVE_THRU', name: 'Drive-thru', icon: '🚗' },
+  { code: 'DELIVERY_PARTNER', name: 'توصيل خارجي', icon: '🛵' },
+  { code: 'BRAND_APP', name: 'تطبيق العلامة', icon: '📱' },
 ];
 
 // Overridable via env so a real deployment (Render, etc.) isn't stuck with
@@ -107,6 +120,7 @@ async function main() {
     'combos.manage',
     'analytics.view',
     'payment_methods.manage',
+    'order_types.manage',
   ];
   // A cashier can run the daily POS (open/close their own shift; selling,
   // discounts/voids/returns are separately permission-gated per-action as
@@ -138,6 +152,10 @@ async function main() {
 
   for (const u of DEFAULT_UNITS) {
     await prisma.unitOfMeasure.upsert({ where: { code: u.code }, update: {}, create: u });
+  }
+
+  for (const t of DEFAULT_ORDER_TYPES) {
+    await prisma.orderType.upsert({ where: { code: t.code }, update: {}, create: t });
   }
 
   // eslint-disable-next-line no-console

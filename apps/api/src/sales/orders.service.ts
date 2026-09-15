@@ -4,6 +4,7 @@ import { scopedLocationIds } from '../common/location-scope.util';
 import { userHasPermission } from '../common/permission.util';
 import { CustomersService, EARN_CURRENCY_PER_POINT } from '../customers/customers.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { OrderTypesService } from '../order-types/order-types.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProductionOrdersService } from '../production/production-orders.service';
 import { PromotionsService } from '../promotions/promotions.service';
@@ -23,6 +24,7 @@ export class OrdersService {
     private readonly promotions: PromotionsService,
     private readonly customers: CustomersService,
     private readonly production: ProductionOrdersService,
+    private readonly orderTypes: OrderTypesService,
   ) {}
 
   private async assertLocationInScope(userId: string, locationId: string) {
@@ -58,6 +60,10 @@ export class OrdersService {
     if (!shift) throw new NotFoundException('الوردية غير موجودة');
     if (shift.locationId !== dto.locationId) throw new BadRequestException('الوردية لا تخص هذا الموقع');
     if (shift.closedAt) throw new BadRequestException('لا يمكن إنشاء طلب على وردية مغلقة');
+
+    // dto.channel references OrderType.code (an admin-manageable table --
+    // see order-types module -- replacing the old fixed OrderChannel enum).
+    await this.orderTypes.assertActiveCode(dto.channel, 'نوع الطلب');
 
     // Each line is EITHER a regular menu item OR a combo meal -- exactly
     // one, never both/neither (mirrors OrderLine's own DB-level CHECK

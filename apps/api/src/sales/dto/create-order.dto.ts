@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import { ArrayMinSize, IsArray, IsIn, IsInt, IsNumber, IsOptional, IsPositive, IsString, Min, ValidateNested } from 'class-validator';
-import { InvoiceType, OrderChannel } from '@prisma/client';
+import { InvoiceType } from '@prisma/client';
 
 // Which specific item the cashier picked for one combo slot -- quantity
 // lets a slot with maxSelect > 1 pick the SAME item more than once (e.g.
@@ -50,8 +50,11 @@ export class CreateOrderDto {
   @IsString()
   shiftId!: string;
 
-  @IsIn(Object.values(OrderChannel))
-  channel!: OrderChannel;
+  // References OrderType.code -- checked against the OrderType table (must
+  // exist and be active) in OrdersService.create() instead of a compile-time
+  // enum, since order types are now admin-manageable.
+  @IsString()
+  channel!: string;
 
   @IsOptional()
   @IsString()
