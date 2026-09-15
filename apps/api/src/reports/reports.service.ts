@@ -1,32 +1,12 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException, NotFoundException, OnModuleDestroy } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import * as fs from 'fs';
-import * as path from 'path';
 import * as ExcelJS from 'exceljs';
-import PDFDocument = require('pdfkit');
 import { AnalyticsService } from '../analytics/analytics.service';
 import { scopedLocationIds } from '../common/location-scope.util';
 import { OrderTypesService } from '../order-types/order-types.service';
 import { PrismaService } from '../prisma/prisma.service';
-
-// __dirname sits at apps/api/src/reports when run via ts-node/ts-jest, but
-// at apps/api/dist/src/reports once compiled -- one directory level deeper
-// -- so both distances up to apps/api are tried. This must not depend on
-// process.cwd(): Render's startCommand runs `node apps/api/dist/src/main.js`
-// from the repo root, not from apps/api, so a cwd-relative path resolves to
-// the wrong place in production even though it happens to work under the
-// test runner (which does start with cwd = apps/api).
-function resolveArabicFontPath(): string {
-  const candidates = [
-    path.join(__dirname, '..', '..', 'assets', 'fonts', 'NotoSansArabic.ttf'),
-    path.join(__dirname, '..', '..', '..', 'assets', 'fonts', 'NotoSansArabic.ttf'),
-    path.join(process.cwd(), 'assets', 'fonts', 'NotoSansArabic.ttf'),
-    path.join(process.cwd(), 'apps', 'api', 'assets', 'fonts', 'NotoSansArabic.ttf'),
-  ];
-  return candidates.find((p) => fs.existsSync(p)) ?? candidates[0];
-}
-
-const ARABIC_FONT_PATH = resolveArabicFontPath();
+import { barChartConfig, dataTable, doughnutChartConfig, fmtMoney, lineChartConfig, reportShell, sectionHeading, statTile } from './report-html.util';
+import { closeReportBrowser, renderHtmlToPdf } from './pdf-render.util';
 
 // Plain 'ar-SA' silently switches to the Hijri calendar with Eastern
 // Arabic-Indic numerals -- inconsistent with the Gregorian dates this
@@ -60,12 +40,19 @@ interface DailyReportData {
 }
 
 @Injectable()
-export class ReportsService {
+export class ReportsService implements OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly analytics: AnalyticsService,
     private readonly orderTypes: OrderTypesService,
   ) {}
+
+  // Closes the shared headless-Chromium instance PDF exports render
+  // through (pdf-render.util.ts) -- see that file's closeReportBrowser()
+  // comment for why this matters most under the e2e test runner.
+  async onModuleDestroy() {
+    await closeReportBrowser();
+  }
 
   // Every report is assembled through the *ForLocation methods -- they take
   // an already-resolved (or absent) locationId directly and never touch
@@ -165,99 +152,51 @@ export class ReportsService {
     return Buffer.from(buffer);
   }
 
-  // pdfkit does not perform Arabic contextual letter-shaping or BiDi
-  // reordering -- it draws whatever Unicode codepoints it's given as
-  // isolated glyphs in left-to-right order, and this sandboxed environment
-  // has no PDF-rendering/screenshot tool available to visually verify a
-  // reshape+reverse workaround. Rather than ship an unverified fix that
-  // might silently render garbled text, structural labels here are
-  // deliberately English; real Arabic proper-noun DATA (location/item
-  // names) is still included as literal text via the embedded Arabic font
-  // (so it at least renders as recognizable glyphs rather than blank
-  // boxes), with this same caveat about letter joining. The Excel export
-  // above is the fully Arabic-correct format for real use.
-  // Section dividers/boxes/footer below are pdfkit vector primitives
-  // (.rect/.moveTo/.lineTo) -- they carry none of the Arabic-shaping risk
-  // the comment above describes, so this is safe ground to make the
-  // layout read like a real report (Odoo/Foodics-style header band +
-  // ruled sections + footer) without touching how any text is drawn.
-  private pdfSectionHeading(doc: PDFKit.PDFDocument, title: string) {
-    const x = doc.page.margins.left;
-    const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-    doc.moveDown(0.5);
-    const y = doc.y;
-    doc.font('Helvetica-Bold').fontSize(13).fillColor('#37309F').text(title, x, y);
-    doc.moveTo(x, doc.y + 2).lineTo(x + width, doc.y + 2).lineWidth(1).strokeColor('#37309F').stroke();
-    doc.fillColor('#000000');
-    doc.moveDown(0.4);
-  }
-  private buildPdf(data: DailyReportData): Promise<Buffer> {
-    const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return new Promise((resolve, reject) => {
-      const doc = new PDFDocument({ margin: 40, bufferPages: true });
-      doc.registerFont('arabic', ARABIC_FONT_PATH);
-      const chunks: Buffer[] = [];
-      doc.on('data', (c: Buffer) => chunks.push(c));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
+  // Renders through a real headless-Chromium page (report-html.util.ts +
+  // pdf-render.util.ts) instead of drawing PDF primitives by hand -- see
+  // those files' comments for why. Arabic labels here deliberately match
+  // the XLSX export's above (same worksheet names/terms), so the two
+  // formats -- and the on-screen reports they summarize -- all read the
+  // same. A small chart (top items by revenue) is included for the same
+  // "looks like a real report, not a text dump" reason the header
+  // band/stat tiles are.
+  private async buildPdf(data: DailyReportData): Promise<Buffer> {
+    const topItemsForChart = data.topItems.slice(0, 10);
+    const html = reportShell({
+      title: 'التقرير اليومي',
+      subtitle: data.locationName,
+      periodLabel: `الفترة: ${data.periodStart.toISOString().slice(0, 10)} → ${data.periodEnd.toISOString().slice(0, 10)}`,
+      charts: topItemsForChart.length
+        ? [{ canvasId: 'topItemsChart', title: 'الأصناف الأكثر مبيعًا (الإيراد)', config: barChartConfig(topItemsForChart.map((i) => i.name), topItemsForChart.map((i) => i.revenue), 'الإيراد', true) }]
+        : [],
+      bodyHtml: `
+        ${sectionHeading('ملخص المبيعات')}
+        <div class="stats-row">
+          ${statTile('عدد الطلبات', data.salesSummary.orderCount)}
+          ${statTile('الإيراد', fmtMoney(data.salesSummary.revenue))}
+          ${statTile('صافي المبيعات', fmtMoney(data.salesSummary.netSales))}
+          ${statTile('ضريبة القيمة المضافة', fmtMoney(data.salesSummary.vatCollected))}
+          ${statTile('الخصومات', fmtMoney(data.salesSummary.discountGiven))}
+          ${statTile('متوسط قيمة الطلب', fmtMoney(data.salesSummary.averageOrderValue))}
+        </div>
 
-      // Header band: a filled bar with the report title, same accent color
-      // the admin panel's own reports use (var(--brand): #37309F).
-      const bandHeight = 56;
-      doc.rect(0, 0, doc.page.width, bandHeight).fill('#37309F');
-      doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(18).text('Daily Report', doc.page.margins.left, 16);
-      doc.font('arabic').fontSize(11).text(data.locationName, doc.page.margins.left, 38);
-      doc.fillColor('#000000').y = bandHeight + 16;
-      doc.font('Helvetica').fontSize(10).fillColor('#555555')
-        .text(`Period: ${data.periodStart.toISOString().slice(0, 10)} - ${data.periodEnd.toISOString().slice(0, 10)}    |    Generated: ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`);
-      doc.fillColor('#000000');
+        ${sectionHeading('الأصناف الأكثر مبيعًا')}
+        ${dataTable(['الصنف', 'الكمية', 'الإيراد'], data.topItems.map((i) => [i.name, i.quantity, fmtMoney(i.revenue)]), 'لا توجد مبيعات في هذه الفترة')}
 
-      this.pdfSectionHeading(doc, 'Sales Summary');
-      doc.font('Helvetica').fontSize(10);
-      doc.text(`Orders: ${data.salesSummary.orderCount}`);
-      doc.text(`Revenue: ${fmt(data.salesSummary.revenue)} SAR`);
-      doc.text(`Net sales: ${fmt(data.salesSummary.netSales)} SAR`);
-      doc.text(`VAT collected: ${fmt(data.salesSummary.vatCollected)} SAR`);
-      doc.text(`Discounts given: ${fmt(data.salesSummary.discountGiven)} SAR`);
-      doc.font('Helvetica-Bold').text(`Average order value: ${fmt(data.salesSummary.averageOrderValue)} SAR`);
+        ${sectionHeading('تكلفة الطعام')}
+        <div class="stats-row">
+          ${statTile('صافي المبيعات', fmtMoney(data.foodCost.netSales))}
+          ${statTile('تكلفة البضاعة المباعة', fmtMoney(data.foodCost.cogs))}
+          ${statTile('هامش الربح', fmtMoney(data.foodCost.grossMargin))}
+          ${statTile('نسبة تكلفة الطعام', data.foodCost.foodCostPercent.toFixed(1) + '%')}
+          ${statTile('نسبة هامش الربح', data.foodCost.grossMarginPercent.toFixed(1) + '%')}
+        </div>
 
-      this.pdfSectionHeading(doc, 'Top Items');
-      doc.font('Helvetica').fontSize(10);
-      for (const i of data.topItems) {
-        doc.font('arabic').text(`${i.name}: `, { continued: true });
-        doc.font('Helvetica').text(`qty ${i.quantity}, revenue ${fmt(i.revenue)} SAR`);
-      }
-      if (!data.topItems.length) doc.text('No sales in this period.');
-
-      this.pdfSectionHeading(doc, 'Food Cost');
-      doc.font('Helvetica').fontSize(10);
-      doc.text(`Net sales: ${fmt(data.foodCost.netSales)} SAR`);
-      doc.text(`COGS: ${fmt(data.foodCost.cogs)} SAR`);
-      doc.text(`Gross margin: ${fmt(data.foodCost.grossMargin)} SAR (${data.foodCost.grossMarginPercent.toFixed(1)}%)`);
-      doc.text(`Food cost: ${data.foodCost.foodCostPercent.toFixed(1)}%`);
-
-      this.pdfSectionHeading(doc, 'Low Stock Alerts');
-      doc.font('Helvetica').fontSize(10);
-      for (const r of data.lowStock) {
-        doc.font('arabic').text(`${r.name} (${r.locationName}): `, { continued: true });
-        doc.font('Helvetica').text(`${r.quantity} / min ${r.lowStockThreshold}`);
-      }
-      if (!data.lowStock.length) doc.text('Nothing below threshold.');
-
-      // Footer on every page: page number, added last (bufferPages: true
-      // lets pdfkit report the final page count only once generation is done).
-      const pageCount = doc.bufferedPageRange().count;
-      for (let i = 0; i < pageCount; i++) {
-        doc.switchToPage(i);
-        doc.font('Helvetica').fontSize(8).fillColor('#888888')
-          .text(`Page ${i + 1} of ${pageCount}`, doc.page.margins.left, doc.page.height - 30, {
-            width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
-            align: 'center',
-          });
-      }
-
-      doc.end();
+        ${sectionHeading('تنبيهات نقص المخزون')}
+        ${dataTable(['الخامة', 'الموقع', 'الكمية الحالية', 'الحد الأدنى'], data.lowStock.map((r) => [r.name, r.locationName, r.quantity, r.lowStockThreshold]), 'لا توجد أصناف أقل من الحد الأدنى')}
+      `,
     });
+    return renderHtmlToPdf(html);
   }
 
   private async assertLocationInScope(userId: string, locationId: string): Promise<void> {
@@ -440,6 +379,20 @@ export class ReportsService {
     return Buffer.from(buffer);
   }
 
+  // Same Arabic labels/section structure as buildDashboardXlsx above --
+  // this is the export the user complained didn't "look like the screen":
+  // the previous pdfkit version had only English text and, structurally,
+  // could never draw the on-screen dashboard's own Chart.js charts at all.
+  // Rendering through a real browser page (report-html.util.ts +
+  // pdf-render.util.ts) fixes both -- same Arabic labels as the XLSX/
+  // on-screen dashboard, and the SAME chart types the screen shows
+  // (mountChartOrEmpty/doughnutChartConfig/barChartConfig in
+  // admin_panel.html) built from the exact same numbers.
+  private readonly DASHBOARD_TITLE: Record<DashboardKind, string> = {
+    sales: 'لوحة المبيعات', production: 'لوحة الإنتاج', purchasing: 'لوحة المشتريات',
+    items: 'لوحة الأصناف', inventory: 'لوحة المخزون',
+  };
+
   private async buildDashboardPdf(
     kind: DashboardKind,
     locationName: string,
@@ -448,115 +401,104 @@ export class ReportsService {
     from?: string,
     to?: string,
   ): Promise<Buffer> {
-    const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const KIND_TITLE: Record<DashboardKind, string> = {
-      sales: 'Sales Dashboard', production: 'Production Dashboard', purchasing: 'Purchasing Dashboard',
-      items: 'Items Dashboard', inventory: 'Inventory Dashboard',
-    };
+    const periodLabel = from || to ? `الفترة: ${from ?? '...'} → ${to ?? '...'}` : 'كل الفترات';
+    let bodyHtml = '';
+    const charts: Array<{ canvasId: string; title: string; config: Record<string, unknown> }> = [];
 
-    return new Promise((resolve, reject) => {
-      const doc = new PDFDocument({ margin: 40, bufferPages: true });
-      doc.registerFont('arabic', ARABIC_FONT_PATH);
-      const chunks: Buffer[] = [];
-      doc.on('data', (c: Buffer) => chunks.push(c));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
+    if (kind === 'sales') {
+      const [s, topItems, lowStock, payments, orderTypes] = await Promise.all([
+        this.analytics.salesSummary(userId, locationId, from, to),
+        this.analytics.topItems(userId, locationId, from, to, 20),
+        this.analytics.lowStock(userId, locationId),
+        this.analytics.paymentMethodsSummary(userId, locationId, from, to),
+        this.orderTypes.findAll(),
+      ]);
+      const channelLabel = new Map(orderTypes.map((t) => [t.code, t.name]));
+      if (s.byChannel.length) charts.push({ canvasId: 'c1', title: 'الإيراد حسب القناة', config: doughnutChartConfig(s.byChannel.map((c) => channelLabel.get(c.channel) || c.channel), s.byChannel.map((c) => c.revenue)) });
+      if (payments.byMethod.length) charts.push({ canvasId: 'c2', title: 'طرق الدفع', config: doughnutChartConfig(payments.byMethod.map((m) => DASH_PAYMENT_METHOD_LABEL[m.method] || m.method), payments.byMethod.map((m) => m.total)) });
+      const topForChart = topItems.slice(0, 10);
+      if (topForChart.length) charts.push({ canvasId: 'c3', title: 'الأصناف الأكثر مبيعًا', config: barChartConfig(topForChart.map((i) => i.name), topForChart.map((i) => i.revenue), 'الإيراد', true) });
 
-      const bandHeight = 56;
-      doc.rect(0, 0, doc.page.width, bandHeight).fill('#37309F');
-      doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(18).text(KIND_TITLE[kind], doc.page.margins.left, 16);
-      doc.font('arabic').fontSize(11).text(locationName, doc.page.margins.left, 38);
-      doc.fillColor('#000000').y = bandHeight + 16;
-      doc.font('Helvetica').fontSize(10).fillColor('#555555')
-        .text(`Period: ${from ?? '...'} - ${to ?? '...'}    |    Generated: ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`);
-      doc.fillColor('#000000');
+      bodyHtml = `
+        ${sectionHeading('ملخص المبيعات')}
+        <div class="stats-row">
+          ${statTile('عدد الطلبات', s.orderCount)}${statTile('الإيراد', fmtMoney(s.revenue))}${statTile('صافي المبيعات', fmtMoney(s.netSales))}
+          ${statTile('الضريبة', fmtMoney(s.vatCollected))}${statTile('متوسط الطلب', fmtMoney(s.averageOrderValue))}
+        </div>
+        ${sectionHeading('الإيراد حسب القناة')}
+        ${dataTable(['القناة', 'عدد الطلبات', 'الإيراد'], s.byChannel.map((c) => [channelLabel.get(c.channel) || c.channel, c.orderCount, fmtMoney(c.revenue)]), 'لا توجد مبيعات في هذه الفترة')}
+        ${sectionHeading('طرق الدفع')}
+        ${dataTable(['الطريقة', 'العدد', 'الإجمالي'], payments.byMethod.map((m) => [DASH_PAYMENT_METHOD_LABEL[m.method] || m.method, m.count, fmtMoney(m.total)]), 'لا توجد مدفوعات في هذه الفترة')}
+        ${sectionHeading('الأصناف الأكثر مبيعًا')}
+        ${dataTable(['الصنف', 'الكمية', 'الإيراد'], topItems.map((i) => [i.name, i.quantity, fmtMoney(i.revenue)]), 'لا توجد مبيعات في هذه الفترة')}
+        ${sectionHeading('تنبيهات نقص المخزون')}
+        ${dataTable(['الصنف', 'الكمية المتبقية', 'الوحدة', 'الحد الأدنى'], lowStock.map((r) => [r.name, r.quantity, r.unit, r.lowStockThreshold]), 'لا توجد تنبيهات نقص مخزون')}
+      `;
+    } else if (kind === 'production') {
+      const res = await this.analytics.productionSummary(userId, locationId, from, to);
+      if (res.byStatus.length) charts.push({ canvasId: 'c1', title: 'أوامر الإنتاج حسب الحالة', config: doughnutChartConfig(res.byStatus.map((s) => DASH_PRODUCTION_STATUS_LABEL[s.status] || s.status), res.byStatus.map((s) => s.count)) });
+      const topOutput = res.byOutput.slice(0, 8);
+      if (topOutput.length) charts.push({ canvasId: 'c2', title: 'التكلفة حسب المنتج', config: barChartConfig(topOutput.map((o) => o.name), topOutput.map((o) => o.totalCost), 'التكلفة', true) });
 
-      const dataLine = (arabicLabel: string, englishSuffix: string) => {
-        doc.font('arabic').fontSize(10).text(`${arabicLabel}: `, { continued: true });
-        doc.font('Helvetica').text(englishSuffix);
-      };
-      const emptyLine = () => doc.font('Helvetica').fontSize(10).text('No data for this period.');
+      bodyHtml = `
+        ${sectionHeading('ملخص الإنتاج')}
+        <div class="stats-row">${statTile('عدد أوامر الإنتاج', res.ordersCount)}${statTile('إجمالي التكلفة', fmtMoney(res.totalCost))}</div>
+        ${sectionHeading('أوامر الإنتاج حسب الحالة')}
+        ${dataTable(['الحالة', 'العدد'], res.byStatus.map((s) => [DASH_PRODUCTION_STATUS_LABEL[s.status] || s.status, s.count]), 'لا توجد أوامر إنتاج في هذه الفترة')}
+        ${sectionHeading('التكلفة حسب المنتج')}
+        ${dataTable(['المنتج', 'عدد الأوامر', 'الكمية المنتجة', 'التكلفة الإجمالية', 'متوسط تكلفة الوحدة'], res.byOutput.map((o) => [o.name, o.ordersCount, fmtMoney(o.totalOutputQuantity), fmtMoney(o.totalCost), fmtMoney(o.avgUnitCost)]), 'لا توجد تكاليف إنتاج مسجّلة بعد')}
+      `;
+    } else if (kind === 'purchasing') {
+      const res = await this.analytics.purchasingSummary(userId, locationId, from, to);
+      if (res.byStatus.length) charts.push({ canvasId: 'c1', title: 'أوامر الشراء حسب الحالة', config: doughnutChartConfig(res.byStatus.map((s) => DASH_PO_STATUS_LABEL[s.status] || s.status), res.byStatus.map((s) => s.count)) });
+      if (res.topSuppliers.length) charts.push({ canvasId: 'c2', title: 'أعلى الموردين إنفاقًا', config: barChartConfig(res.topSuppliers.map((s) => s.supplierName), res.topSuppliers.map((s) => s.spend), 'الإنفاق', true) });
 
-      (async () => {
-        if (kind === 'sales') {
-          const [s, topItems, lowStock] = await Promise.all([
-            this.analytics.salesSummary(userId, locationId, from, to),
-            this.analytics.topItems(userId, locationId, from, to, 20),
-            this.analytics.lowStock(userId, locationId),
-          ]);
-          this.pdfSectionHeading(doc, 'Sales Summary');
-          doc.font('Helvetica').fontSize(10);
-          doc.text(`Orders: ${s.orderCount}`);
-          doc.text(`Revenue: ${fmt(s.revenue)}`);
-          doc.text(`Net sales: ${fmt(s.netSales)}`);
-          doc.text(`VAT collected: ${fmt(s.vatCollected)}`);
-          doc.font('Helvetica-Bold').text(`Average order value: ${fmt(s.averageOrderValue)}`);
+      bodyHtml = `
+        ${sectionHeading('ملخص المشتريات')}
+        <div class="stats-row">${statTile('عدد الأوامر', res.orderCount)}${statTile('إجمالي الإنفاق', fmtMoney(res.totalSpend))}${statTile('ضريبة تقديرية', fmtMoney(res.estimatedVat))}</div>
+        ${sectionHeading('أوامر الشراء حسب الحالة')}
+        ${dataTable(['الحالة', 'العدد'], res.byStatus.map((s) => [DASH_PO_STATUS_LABEL[s.status] || s.status, s.count]), 'لا توجد أوامر شراء في هذه الفترة')}
+        ${sectionHeading('أعلى الموردين إنفاقًا')}
+        ${dataTable(['المورد', 'الإنفاق'], res.topSuppliers.map((s) => [s.supplierName, fmtMoney(s.spend)]), 'لا يوجد إنفاق معتمد بعد لهذه الفترة')}
+      `;
+    } else if (kind === 'items') {
+      const [res, menuEng] = await Promise.all([this.analytics.menuItemCosts(userId, locationId), this.analytics.menuEngineering(userId, locationId, from, to)]);
+      const withRecipe = res.filter((i) => i.hasRecipe);
+      const avgCostPercent = withRecipe.length ? withRecipe.reduce((a, i) => a + i.costPercent, 0) / withRecipe.length : 0;
+      const topMargin = [...withRecipe].sort((a, b) => b.grossMargin - a.grossMargin).slice(0, 8);
+      const topCost = [...withRecipe].sort((a, b) => b.costPercent - a.costPercent).slice(0, 8);
+      if (topMargin.length) charts.push({ canvasId: 'c1', title: 'أعلى الأصناف هامش ربح', config: barChartConfig(topMargin.map((i) => i.name), topMargin.map((i) => i.grossMargin), 'هامش الربح', true) });
+      if (topCost.length) charts.push({ canvasId: 'c2', title: 'أعلى الأصناف نسبة تكلفة', config: barChartConfig(topCost.map((i) => i.name), topCost.map((i) => i.costPercent), 'نسبة التكلفة %', true) });
 
-          this.pdfSectionHeading(doc, 'Top Items');
-          if (!topItems.length) emptyLine();
-          for (const i of topItems) dataLine(i.name, `qty ${i.quantity}, revenue ${fmt(i.revenue)}`);
+      bodyHtml = `
+        ${sectionHeading('ملخص الأصناف')}
+        <div class="stats-row">${statTile('عدد الأصناف', res.length)}${statTile('متوسط نسبة التكلفة', avgCostPercent.toFixed(1) + '%')}</div>
+        ${sectionHeading('تكلفة وهامش ربح الأصناف')}
+        ${dataTable(['الصنف', 'السعر', 'التكلفة', 'نسبة التكلفة %', 'هامش الربح', 'لديه وصفة'], res.map((i) => [i.name, fmtMoney(i.price), fmtMoney(i.cost), i.costPercent.toFixed(1) + '%', fmtMoney(i.grossMargin), i.hasRecipe ? 'نعم' : 'لا']), 'لا توجد أصناف')}
+        ${sectionHeading('هندسة المنيو')}
+        <div class="stats-row">
+          ${statTile('⭐ نجوم', menuEng.counts.STAR)}${statTile('🐴 أحصنة عمل', menuEng.counts.PLOWHORSE)}
+          ${statTile('🧩 ألغاز', menuEng.counts.PUZZLE)}${statTile('🐶 ضعيفة', menuEng.counts.DOG)}
+        </div>
+        ${dataTable(['الصنف', 'الكمية المباعة', 'الشعبية %', 'هامش الربح', 'التصنيف'], menuEng.items.map((i) => [i.name, i.quantity, i.popularityPercent.toFixed(1) + '%', fmtMoney(i.margin), DASH_MENU_ENG_LABEL[i.classification]]), 'لا توجد مبيعات في هذه الفترة')}
+      `;
+    } else {
+      const [valuation, lowStock] = await Promise.all([this.analytics.inventoryValuation(userId, locationId), this.analytics.lowStock(userId, locationId)]);
+      const topValue = valuation.lines.slice(0, 8);
+      if (topValue.length) charts.push({ canvasId: 'c1', title: 'قيمة المخزون حسب المكوّن', config: barChartConfig(topValue.map((l) => l.name), topValue.map((l) => l.value), 'القيمة', true) });
 
-          this.pdfSectionHeading(doc, 'Low Stock Alerts');
-          if (!lowStock.length) emptyLine();
-          for (const r of lowStock) dataLine(r.name, `${r.quantity} ${r.unit} / min ${r.lowStockThreshold}`);
-        } else if (kind === 'production') {
-          const res = await this.analytics.productionSummary(userId, locationId, from, to);
-          this.pdfSectionHeading(doc, 'Production Summary');
-          doc.font('Helvetica').fontSize(10);
-          doc.text(`Orders: ${res.ordersCount}`);
-          doc.font('Helvetica-Bold').text(`Total cost: ${fmt(res.totalCost)}`);
+      bodyHtml = `
+        ${sectionHeading('ملخص المخزون')}
+        <div class="stats-row">${statTile('القيمة الإجمالية للمخزون', fmtMoney(valuation.totalValue))}${statTile('أصناف منخفضة المخزون', lowStock.length)}</div>
+        ${sectionHeading('قيمة المخزون حسب المكوّن')}
+        ${dataTable(['المكوّن', 'الكمية', 'الوحدة', 'القيمة'], valuation.lines.map((l) => [l.name, fmtMoney(l.quantity), l.unit, fmtMoney(l.value)]), 'لا يوجد مخزون مسجّل بعد')}
+        ${sectionHeading('تنبيهات نقص المخزون')}
+        ${dataTable(['المكوّن', 'الفرع', 'الكمية المتبقية', 'الوحدة', 'الحد الأدنى'], lowStock.map((r) => [r.name, r.locationName, r.quantity, r.unit, r.lowStockThreshold]), 'لا توجد تنبيهات نقص مخزون')}
+      `;
+    }
 
-          this.pdfSectionHeading(doc, 'Cost by Output');
-          if (!res.byOutput.length) emptyLine();
-          for (const o of res.byOutput) dataLine(o.name, `qty ${fmt(o.totalOutputQuantity)}, cost ${fmt(o.totalCost)}, avg/unit ${fmt(o.avgUnitCost)}`);
-        } else if (kind === 'purchasing') {
-          const res = await this.analytics.purchasingSummary(userId, locationId, from, to);
-          this.pdfSectionHeading(doc, 'Purchasing Summary');
-          doc.font('Helvetica').fontSize(10);
-          doc.text(`Orders: ${res.orderCount}`);
-          doc.text(`Total spend: ${fmt(res.totalSpend)}`);
-          doc.font('Helvetica-Bold').text(`Estimated VAT: ${fmt(res.estimatedVat)}`);
-
-          this.pdfSectionHeading(doc, 'Top Suppliers');
-          if (!res.topSuppliers.length) emptyLine();
-          for (const sup of res.topSuppliers) dataLine(sup.supplierName, `spend ${fmt(sup.spend)}`);
-        } else if (kind === 'items') {
-          const [res, menuEng] = await Promise.all([this.analytics.menuItemCosts(userId, locationId), this.analytics.menuEngineering(userId, locationId, from, to)]);
-          this.pdfSectionHeading(doc, 'Items Cost & Margin');
-          doc.font('Helvetica').fontSize(10);
-          if (!res.length) emptyLine();
-          for (const i of res) dataLine(i.name, `price ${fmt(i.price)}, cost ${fmt(i.cost)} (${i.costPercent.toFixed(1)}%), margin ${fmt(i.grossMargin)}`);
-
-          this.pdfSectionHeading(doc, 'Menu Engineering');
-          doc.font('Helvetica').fontSize(10)
-            .text(`Stars: ${menuEng.counts.STAR}    Plowhorses: ${menuEng.counts.PLOWHORSE}    Puzzles: ${menuEng.counts.PUZZLE}    Dogs: ${menuEng.counts.DOG}`);
-          if (!menuEng.items.length) emptyLine();
-          for (const i of menuEng.items) dataLine(i.name, `qty ${i.quantity} (${i.popularityPercent.toFixed(1)}%), margin ${fmt(i.margin)} -- ${i.classification}`);
-        } else {
-          const [valuation, lowStock] = await Promise.all([this.analytics.inventoryValuation(userId, locationId), this.analytics.lowStock(userId, locationId)]);
-          this.pdfSectionHeading(doc, 'Inventory Valuation');
-          doc.font('Helvetica-Bold').fontSize(10).text(`Total value: ${fmt(valuation.totalValue)}`);
-          doc.font('Helvetica').fontSize(10);
-          if (!valuation.lines.length) emptyLine();
-          for (const l of valuation.lines) dataLine(l.name, `qty ${fmt(l.quantity)} ${l.unit}, value ${fmt(l.value)}`);
-
-          this.pdfSectionHeading(doc, 'Low Stock Alerts');
-          if (!lowStock.length) emptyLine();
-          for (const r of lowStock) dataLine(`${r.name} (${r.locationName})`, `${r.quantity} ${r.unit} / min ${r.lowStockThreshold}`);
-        }
-
-        const pageCount = doc.bufferedPageRange().count;
-        for (let i = 0; i < pageCount; i++) {
-          doc.switchToPage(i);
-          doc.font('Helvetica').fontSize(8).fillColor('#888888')
-            .text(`Page ${i + 1} of ${pageCount}`, doc.page.margins.left, doc.page.height - 30, {
-              width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
-              align: 'center',
-            });
-        }
-        doc.end();
-      })().catch(reject);
-    });
+    const html = reportShell({ title: this.DASHBOARD_TITLE[kind], subtitle: locationName, periodLabel, charts, bodyHtml });
+    return renderHtmlToPdf(html);
   }
 
   // The real "scheduled reports" deliverable: runs automatically every

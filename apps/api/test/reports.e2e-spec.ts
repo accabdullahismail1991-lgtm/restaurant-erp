@@ -197,11 +197,30 @@ describe('Reports: scheduled Excel/PDF export (e2e)', () => {
     expect(download.status).toBe(200);
     expect(download.headers['content-type']).toBe('application/pdf');
 
+    // Rendered through a real headless-Chromium page (report-html.util.ts +
+    // pdf-render.util.ts) instead of pdfkit -- Arabic labels/data now match
+    // the XLSX export and the on-screen reports (pdfkit never shaped Arabic
+    // text correctly, hence the old English-only placeholder labels this
+    // replaces), and the page embeds a real Chart.js chart rather than only
+    // text.
+    //
+    // pdf-parse (pdf.js under the hood) does NOT reliably reconstruct
+    // logical reading order for RTL/bidi text runs -- visually the PDF is
+    // correct (verified manually), but extracted Arabic substrings can come
+    // back with scrambled glyph/word order, so asserting an exact Arabic
+    // phrase here would be testing pdf-parse's bidi handling, not this
+    // export. Numbers are plain LTR digit runs and DO extract as clean
+    // substrings even inside a scrambled Arabic line, so those are what's
+    // asserted for "the real sales numbers"; a plain Arabic-codepoint check
+    // covers "this is genuinely Arabic content, not the old English-only
+    // placeholder labels".
     const parsed = await pdfParse(download.body as Buffer);
-    expect(parsed.text).toContain('Daily Report');
-    expect(parsed.text).toContain('Orders: 1');
-    expect(parsed.text).toContain('Revenue: 115.00 SAR');
-    expect(parsed.text).toContain('Net sales: 100.00 SAR');
+    expect(parsed.text).toMatch(/[؀-ۿ]/);
+    expect(parsed.text).toContain('115.00'); // revenue
+    expect(parsed.text).toContain('100.00'); // net sales
+    // A rendered <canvas> chart is embedded as a real image XObject -- this
+    // guards against silently regressing back to a text-only export.
+    expect(download.body.toString('latin1')).toMatch(/\/Subtype\s*\/Image/);
   });
 
   it('lists reports scoped to the caller\'s own location', async () => {
@@ -296,10 +315,13 @@ describe('Reports: scheduled Excel/PDF export (e2e)', () => {
     );
     expect(download.status).toBe(200);
     expect(download.headers['content-type']).toBe('application/pdf');
+    // See the daily-bundle PDF test above for why Arabic content is checked
+    // via a codepoint match rather than an exact phrase (pdf-parse's bidi
+    // text-order reconstruction is unreliable, not this export's rendering).
     const parsed = await pdfParse(download.body as Buffer);
-    expect(parsed.text).toContain('Sales Dashboard');
-    expect(parsed.text).toContain('Orders: 1');
-    expect(parsed.text).toContain('Revenue: 115.00');
+    expect(parsed.text).toMatch(/[؀-ۿ]/);
+    expect(parsed.text).toContain('115.00'); // revenue
+    expect(download.body.toString('latin1')).toMatch(/\/Subtype\s*\/Image/);
   });
 
   it('exports the Inventory dashboard as a real XLSX reflecting real batch valuation', async () => {
