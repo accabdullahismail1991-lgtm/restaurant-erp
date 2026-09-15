@@ -35,9 +35,14 @@ export class CustomersService {
     return bulkImportRows(CreateCustomerDto, rows, (dto) => this.create(dto));
   }
 
+  // `phone` here is really a free-text search term -- every customer-search
+  // box in the admin panel (New Order, and each filtered report's customer
+  // filter) sends whatever the cashier types into one field, which is just
+  // as often a name as a phone number, so this matches either rather than
+  // silently returning nothing for a name search.
   findAll(phone?: string) {
     return this.prisma.customer.findMany({
-      where: phone ? { phone: { contains: phone } } : undefined,
+      where: phone ? { OR: [{ phone: { contains: phone } }, { name: { contains: phone, mode: 'insensitive' } }] } : undefined,
       orderBy: { createdAt: 'desc' },
     });
   }
