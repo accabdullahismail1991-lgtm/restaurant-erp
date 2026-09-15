@@ -46,22 +46,40 @@ export class AnalyticsService {
     return { gte, lte };
   }
 
-  async salesSummary(userId: string, locationId?: string, from?: string, to?: string) {
+  async salesSummary(
+    userId: string,
+    locationId?: string,
+    from?: string,
+    to?: string,
+    channel?: string,
+    paymentMethod?: string,
+    customerId?: string,
+  ) {
     const ids = await this.resolveLocationIds(userId, locationId);
-    return this.salesSummaryCore(ids, from, to);
+    return this.salesSummaryCore(ids, from, to, channel, paymentMethod, customerId);
   }
 
   salesSummaryForLocation(locationId: string | undefined, from?: string, to?: string) {
     return this.salesSummaryCore(locationId ? [locationId] : undefined, from, to);
   }
 
-  private async salesSummaryCore(ids: string[] | undefined, from?: string, to?: string) {
+  private async salesSummaryCore(
+    ids: string[] | undefined,
+    from?: string,
+    to?: string,
+    channel?: string,
+    paymentMethod?: string,
+    customerId?: string,
+  ) {
     const { gte, lte } = this.parseRange(from, to);
     const orders = await this.prisma.order.findMany({
       where: {
         status: OrderStatus.PAID,
         locationId: ids ? { in: ids } : undefined,
         paidAt: gte || lte ? { gte, lte } : undefined,
+        channel,
+        customerId,
+        payments: paymentMethod ? { some: { method: paymentMethod } } : undefined,
       },
       select: { grandTotal: true, subtotal: true, discountTotal: true, vatTotal: true, channel: true },
     });
@@ -154,18 +172,36 @@ export class AnalyticsService {
   // just order count -- one customer can place several orders), average
   // invoice, and a day-by-day breakdown for the same figures so a trend is
   // visible without opening sales-trend separately.
-  async netSales(userId: string, locationId?: string, from?: string, to?: string) {
+  async netSales(
+    userId: string,
+    locationId?: string,
+    from?: string,
+    to?: string,
+    channel?: string,
+    paymentMethod?: string,
+    customerId?: string,
+  ) {
     const ids = await this.resolveLocationIds(userId, locationId);
-    return this.netSalesCore(ids, from, to);
+    return this.netSalesCore(ids, from, to, channel, paymentMethod, customerId);
   }
 
-  private async netSalesCore(ids: string[] | undefined, from?: string, to?: string) {
+  private async netSalesCore(
+    ids: string[] | undefined,
+    from?: string,
+    to?: string,
+    channel?: string,
+    paymentMethod?: string,
+    customerId?: string,
+  ) {
     const { gte, lte } = this.parseRange(from, to);
     const orders = await this.prisma.order.findMany({
       where: {
         status: OrderStatus.PAID,
         locationId: ids ? { in: ids } : undefined,
         paidAt: gte || lte ? { gte, lte } : undefined,
+        channel,
+        customerId,
+        payments: paymentMethod ? { some: { method: paymentMethod } } : undefined,
       },
       select: { paidAt: true, subtotal: true, discountTotal: true, vatTotal: true, grandTotal: true, customerId: true },
     });
@@ -254,6 +290,142 @@ export class AnalyticsService {
       .map(([menuItemId, v]) => ({ menuItemId, name: v.name, quantity: v.quantity, revenue: round2(v.revenue) }))
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, limit);
+  }
+
+  // Detailed sales log: one row per paid invoice, not a summary/breakdown
+  // like salesSummaryCore -- this is what "تقرير تفصيلي" actually needs
+  // (every invoice, exportable/filterable), same underlying Order rows the
+  // KPI cards above already aggregate. Capped at 2000 rows per request --
+  // a restaurant's per-location/day order volume is nowhere near that, and
+  // an unbounded export isn't a UI a cashier ever needs (they'd narrow the
+  // date range instead).
+  private static readonly SALES_LOG_MAX_ROWS = 2000;
+  async salesLog(
+    userId: string,
+    locationId?: string,
+    from?: string,
+    to?: string,
+    channel?: string,
+    paymentMethod?: string,
+    customerId?: string,
+  ) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.salesLogCore(ids, from, to, channel, paymentMethod, customerId);
+  }
+
+  private async salesLogCore(
+    ids: string[] | undefined,
+    from?: string,
+    to?: string,
+    channel?: string,
+    paymentMethod?: string,
+    customerId?: string,
+  ) {
+    const { gte, lte } = this.parseRange(from, to);
+    const orders = await this.prisma.order.findMany({
+      where: {
+        status: OrderStatus.PAID,
+        locationId: ids ? { in: ids } : undefined,
+        paidAt: gte || lte ? { gte, lte } : undefined,
+        channel,
+        customerId,
+        payments: paymentMethod ? { some: { method: paymentMethod } } : undefined,
+      },
+      select: {
+        id: true,
+        dailySequence: true,
+        shiftSequence: true,
+        paidAt: true,
+        channel: true,
+        invoiceType: true,
+        subtotal: true,
+        discountTotal: true,
+        vatTotal: true,
+        grandTotal: true,
+        location: { select: { name: true } },
+        servedBy: { select: { name: true } },
+        customer: { select: { id: true, name: true, phone: true } },
+        payments: { select: { method: true, amount: true } },
+      },
+      orderBy: { paidAt: 'desc' },
+      take: AnalyticsService.SALES_LOG_MAX_ROWS,
+    });
+
+    return orders.map((o) => ({
+      id: o.id,
+      dailySequence: o.dailySequence,
+      shiftSequence: o.shiftSequence,
+      paidAt: o.paidAt,
+      locationName: o.location.name,
+      cashierName: o.servedBy?.name ?? null,
+      customerId: o.customer?.id ?? null,
+      customerName: o.customer?.name ?? null,
+      customerPhone: o.customer?.phone ?? null,
+      channel: o.channel,
+      invoiceType: o.invoiceType,
+      paymentMethods: [...new Set(o.payments.map((p) => p.method))],
+      subtotal: Number(o.subtotal),
+      discountTotal: Number(o.discountTotal),
+      vatTotal: Number(o.vatTotal),
+      grandTotal: Number(o.grandTotal),
+    }));
+  }
+
+  // Top customers by revenue -- distinct from customerExperienceCore below
+  // (which measures SERVICE metrics: repeat rate, service speed, void
+  // rate -- never a per-customer money figure). Same "fetch paid orders,
+  // reduce in JS" style as every other report here; walk-in orders
+  // (customerId null) are excluded since there's no customer to rank.
+  async topCustomers(userId: string, locationId?: string, from?: string, to?: string, limit = 50) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.topCustomersCore(ids, from, to, limit);
+  }
+
+  private async topCustomersCore(ids: string[] | undefined, from?: string, to?: string, limit = 50) {
+    const { gte, lte } = this.parseRange(from, to);
+    const orders = await this.prisma.order.findMany({
+      where: {
+        status: OrderStatus.PAID,
+        locationId: ids ? { in: ids } : undefined,
+        paidAt: gte || lte ? { gte, lte } : undefined,
+        customerId: { not: null },
+      },
+      select: { customerId: true, grandTotal: true, paidAt: true },
+    });
+
+    const byCustomer = new Map<string, { orderCount: number; revenue: number; lastOrderAt: Date }>();
+    for (const o of orders) {
+      const customerId = o.customerId!;
+      const cur = byCustomer.get(customerId) ?? { orderCount: 0, revenue: 0, lastOrderAt: o.paidAt! };
+      cur.orderCount += 1;
+      cur.revenue += Number(o.grandTotal);
+      if (o.paidAt! > cur.lastOrderAt) cur.lastOrderAt = o.paidAt!;
+      byCustomer.set(customerId, cur);
+    }
+
+    const ranked = [...byCustomer.entries()]
+      .map(([customerId, v]) => ({
+        customerId,
+        orderCount: v.orderCount,
+        revenue: round2(v.revenue),
+        averageOrderValue: round2(v.revenue / v.orderCount),
+        lastOrderAt: v.lastOrderAt,
+      }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, limit);
+
+    const customers = await this.prisma.customer.findMany({
+      where: { id: { in: ranked.map((r) => r.customerId) } },
+      select: { id: true, name: true, phone: true, points: true },
+    });
+    const customerById = new Map(customers.map((c) => [c.id, c]));
+
+    return ranked.map((r) => ({
+      ...r,
+      name: customerById.get(r.customerId)?.name ?? null,
+      phone: customerById.get(r.customerId)?.phone ?? '',
+      points: customerById.get(r.customerId)?.points ?? 0,
+    }));
   }
 
   // ABC/Pareto analysis -- one of the most standard inventory/menu-priority
@@ -763,15 +935,50 @@ export class AnalyticsService {
         paidAt: gte || lte ? { gte, lte } : undefined,
       },
       select: {
+        id: true,
+        dailySequence: true,
+        shiftSequence: true,
+        paidAt: true,
         subtotal: true,
         discountTotal: true,
         vatTotal: true,
+        grandTotal: true,
+        location: { select: { name: true } },
         lines: { select: { quantity: true, unitPrice: true, menuItem: { select: { taxType: true } } } },
       },
+      orderBy: { paidAt: 'desc' },
     });
 
     const salesTaxableSubtotal = round2(orders.reduce((s, o) => s + Number(o.subtotal) - Number(o.discountTotal), 0));
     const salesVatCollected = round2(orders.reduce((s, o) => s + Number(o.vatTotal), 0));
+
+    // Per-invoice and per-day breakdowns -- the summary totals above answer
+    // "how much VAT this period", these answer "which invoice/which day"
+    // for a VAT filing or an audit trail. Invoices capped like salesLogCore
+    // (2000 rows) for the same reason: no UI ever needs an unbounded dump,
+    // and a real filing period is narrowed by date anyway.
+    const invoices = orders.slice(0, AnalyticsService.SALES_LOG_MAX_ROWS).map((o) => ({
+      id: o.id,
+      dailySequence: o.dailySequence,
+      shiftSequence: o.shiftSequence,
+      paidAt: o.paidAt,
+      locationName: o.location.name,
+      taxableSubtotal: round2(Number(o.subtotal) - Number(o.discountTotal)),
+      vatTotal: Number(o.vatTotal),
+      grandTotal: Number(o.grandTotal),
+    }));
+    const byDayMap = new Map<string, { invoiceCount: number; taxableSubtotal: number; vatCollected: number }>();
+    for (const o of orders) {
+      const day = o.paidAt!.toISOString().slice(0, 10);
+      const cur = byDayMap.get(day) ?? { invoiceCount: 0, taxableSubtotal: 0, vatCollected: 0 };
+      cur.invoiceCount += 1;
+      cur.taxableSubtotal += Number(o.subtotal) - Number(o.discountTotal);
+      cur.vatCollected += Number(o.vatTotal);
+      byDayMap.set(day, cur);
+    }
+    const byDay = [...byDayMap.entries()]
+      .map(([date, v]) => ({ date, invoiceCount: v.invoiceCount, taxableSubtotal: round2(v.taxableSubtotal), vatCollected: round2(v.vatCollected) }))
+      .sort((a, b) => (a.date < b.date ? 1 : -1));
 
     const byTaxTypeMap = new Map<string, number>();
     for (const o of orders) {
@@ -798,6 +1005,8 @@ export class AnalyticsService {
         taxableSubtotal: salesTaxableSubtotal,
         vatCollected: salesVatCollected,
         byTaxType: [...byTaxTypeMap.entries()].map(([taxType, revenue]) => ({ taxType, revenue: round2(revenue) })),
+        byDay,
+        invoices,
       },
       purchasing: {
         totalAmount: purchasingTotalAmount,

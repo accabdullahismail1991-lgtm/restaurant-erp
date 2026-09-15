@@ -21,8 +21,11 @@ export class AnalyticsController {
     @Query('locationId') locationId?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('channel') channel?: string,
+    @Query('paymentMethod') paymentMethod?: string,
+    @Query('customerId') customerId?: string,
   ) {
-    return this.analytics.salesSummary(user.userId, locationId, from, to);
+    return this.analytics.salesSummary(user.userId, locationId, from, to, channel, paymentMethod, customerId);
   }
 
   @Get('sales-trend')
@@ -44,6 +47,30 @@ export class AnalyticsController {
     @Query('limit') limit?: string,
   ) {
     return this.analytics.topItems(user.userId, locationId, from, to, limit ? parseInt(limit, 10) : undefined);
+  }
+
+  @Get('sales-log')
+  salesLog(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('channel') channel?: string,
+    @Query('paymentMethod') paymentMethod?: string,
+    @Query('customerId') customerId?: string,
+  ) {
+    return this.analytics.salesLog(user.userId, locationId, from, to, channel, paymentMethod, customerId);
+  }
+
+  @Get('top-customers')
+  topCustomers(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.analytics.topCustomers(user.userId, locationId, from, to, limit ? parseInt(limit, 10) : undefined);
   }
 
   @Get('menu-engineering')
@@ -217,8 +244,11 @@ export class AnalyticsController {
     @Query('locationId') locationId?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('channel') channel?: string,
+    @Query('paymentMethod') paymentMethod?: string,
+    @Query('customerId') customerId?: string,
   ) {
-    return this.analytics.netSales(user.userId, locationId, from, to);
+    return this.analytics.netSales(user.userId, locationId, from, to, channel, paymentMethod, customerId);
   }
 
   @Get('daily-consumption')
