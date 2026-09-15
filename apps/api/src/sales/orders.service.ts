@@ -134,8 +134,9 @@ export class OrdersService {
       if (!item.isActive) throw new BadRequestException(`الصنف "${item.name}" ضمن الكمبو غير متاح حاليًا`);
     }
 
+    let customer: { defaultSalesChannelId: string | null } | null = null;
     if (dto.customerId) {
-      const customer = await this.prisma.customer.findUnique({ where: { id: dto.customerId } });
+      customer = await this.prisma.customer.findUnique({ where: { id: dto.customerId } });
       if (!customer) throw new BadRequestException('العميل غير موجود');
     }
 
@@ -144,13 +145,18 @@ export class OrdersService {
     // classification above, used for promotions/analytics) -- when set,
     // it overrides the unit price used for both the subtotal and every
     // OrderLine below, falling back to each item's base price for any
-    // item that has no override on that channel.
+    // item that has no override on that channel. An explicit choice on
+    // THIS order always wins; otherwise a customer linked to a default
+    // price list (Customer.defaultSalesChannelId) applies automatically --
+    // e.g. picking a known delivery-app account applies its own pricing
+    // with no extra step from the cashier.
+    const effectiveSalesChannelId = dto.salesChannelId ?? customer?.defaultSalesChannelId ?? undefined;
     let priceOverrides = new Map<string, number>();
-    if (dto.salesChannelId) {
-      const channel = await this.prisma.salesChannel.findUnique({ where: { id: dto.salesChannelId } });
+    if (effectiveSalesChannelId) {
+      const channel = await this.prisma.salesChannel.findUnique({ where: { id: effectiveSalesChannelId } });
       if (!channel || !channel.isActive) throw new BadRequestException('قناة البيع غير موجودة أو غير مفعّلة');
       const overrides = await this.prisma.menuItemChannelPrice.findMany({
-        where: { channelId: dto.salesChannelId, menuItemId: { in: menuItemIds } },
+        where: { channelId: effectiveSalesChannelId, menuItemId: { in: menuItemIds } },
       });
       priceOverrides = new Map(overrides.map((o) => [o.menuItemId, Number(o.price)]));
     }
@@ -241,7 +247,7 @@ export class OrdersService {
           customerId: dto.customerId,
           shiftId: dto.shiftId,
           channel: dto.channel,
-          salesChannelId: dto.salesChannelId,
+          salesChannelId: effectiveSalesChannelId,
           invoiceType,
           shiftSequence,
           dailySequence,

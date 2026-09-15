@@ -37,6 +37,7 @@ describe('Phase 10a: kitchen / KDS (e2e)', () => {
     prisma = app.get(PrismaService);
 
     await resetDatabase(prisma);
+    await prisma.userRole.deleteMany({ where: { user: { phone: ADMIN_PHONE } } });
     await prisma.user.deleteMany({ where: { phone: ADMIN_PHONE } });
 
     const passwordHash = await bcrypt.hash(PASSWORD, 10);

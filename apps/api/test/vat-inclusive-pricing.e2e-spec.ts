@@ -20,7 +20,7 @@ describe('Location.pricesIncludeVat: VAT-inclusive pricing (e2e)', () => {
   let prisma: PrismaService;
   let adminToken: string;
 
-  const ADMIN_PHONE = '+966500000080';
+  const ADMIN_PHONE = '+966500000280';
   const PASSWORD = 'VatInclusiveTest123';
   const VAT_NUMBER = '399999999900027';
 

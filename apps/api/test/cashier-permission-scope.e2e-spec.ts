@@ -37,6 +37,8 @@ describe('Finer-grained cashier permission scope (e2e)', () => {
     await resetDatabase(prisma);
     await prisma.userRole.deleteMany({ where: { user: { phone: BARE_PHONE } } });
     await prisma.user.deleteMany({ where: { phone: BARE_PHONE } });
+    await prisma.rolePermission.deleteMany({ where: { role: { name: 'Grant-Shift-Only-Test' } } });
+    await prisma.role.deleteMany({ where: { name: 'Grant-Shift-Only-Test' } });
 
     const passwordHash = await bcrypt.hash(BARE_PASSWORD, 10);
     const bareUser = await prisma.user.create({ data: { name: 'Bare Cashier', phone: BARE_PHONE, passwordHash } });

@@ -17,10 +17,18 @@ type Db = Pick<PrismaService, 'customer' | 'loyaltyTransaction'>;
 export class CustomersService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private async assertSalesChannelUsable(channelId: string) {
+    const channel = await this.prisma.salesChannel.findUnique({ where: { id: channelId } });
+    if (!channel || !channel.isActive) throw new BadRequestException('قائمة الأسعار غير موجودة أو غير مفعّلة');
+  }
+
   async create(dto: CreateCustomerDto) {
     const existing = await this.prisma.customer.findUnique({ where: { phone: dto.phone } });
     if (existing) throw new ConflictException('رقم الجوال مستخدم بالفعل لعميل آخر');
-    return this.prisma.customer.create({ data: { phone: dto.phone, name: dto.name } });
+    if (dto.defaultSalesChannelId) await this.assertSalesChannelUsable(dto.defaultSalesChannelId);
+    return this.prisma.customer.create({
+      data: { phone: dto.phone, name: dto.name, defaultSalesChannelId: dto.defaultSalesChannelId },
+    });
   }
 
   bulkImport(rows: unknown[]) {
@@ -46,6 +54,7 @@ export class CustomersService {
       const existing = await this.prisma.customer.findUnique({ where: { phone: dto.phone } });
       if (existing && existing.id !== id) throw new ConflictException('رقم الجوال مستخدم بالفعل لعميل آخر');
     }
+    if (dto.defaultSalesChannelId) await this.assertSalesChannelUsable(dto.defaultSalesChannelId);
     return this.prisma.customer.update({ where: { id }, data: dto });
   }
 

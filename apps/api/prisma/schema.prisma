@@ -340,6 +340,7 @@ model SalesChannel {
 
   itemPrices MenuItemChannelPrice[]
   orders     Order[]
+  customers  Customer[]
 }
 
 // سعر مخصّص لصنف منيو معيّن على قناة بيع معيّنة -- إن لم يوجد سطر هنا
@@ -605,6 +606,15 @@ model Customer {
   // below is the actual source of truth (Phase 10c, CustomersService),
   // same "ledger + cached aggregate" split as StockMovement/InventoryBalance.
   points    Int      @default(0)
+  // Ties this customer to a price list (SalesChannel) -- e.g. a delivery-
+  // app aggregator's own account, a wholesale/company customer, etc.
+  // OrdersService.create() applies it automatically once this customer is
+  // selected on an order, UNLESS the cashier explicitly picked a different
+  // salesChannelId on that specific order (an explicit choice always wins).
+  // Null means "no default -- base MenuItem.price applies", same as any
+  // walk-in customer today.
+  defaultSalesChannelId String?
+  defaultSalesChannel   SalesChannel? @relation(fields: [defaultSalesChannelId], references: [id])
   createdAt DateTime @default(now())
 
   orders              Order[]
