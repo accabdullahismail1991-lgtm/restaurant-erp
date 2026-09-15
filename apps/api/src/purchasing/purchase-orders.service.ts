@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { POStatus } from '@prisma/client';
+import { POStatus, TaxType } from '@prisma/client';
 import { scopedLocationIds } from '../common/location-scope.util';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -27,6 +27,9 @@ export class PurchaseOrdersService {
   async create(dto: CreatePurchaseOrderDto, userId: string) {
     await this.assertLocationInScope(userId, dto.locationId);
 
+    const location = await this.prisma.location.findUnique({ where: { id: dto.locationId } });
+    if (!location) throw new BadRequestException('الموقع غير موجود');
+
     const supplier = await this.prisma.supplier.findUnique({ where: { id: dto.supplierId } });
     if (!supplier) throw new BadRequestException('المورد غير موجود');
     if (supplier.scopeLocationId && supplier.scopeLocationId !== dto.locationId) {
@@ -39,15 +42,40 @@ export class PurchaseOrdersService {
       throw new BadRequestException('أحد المكوّنات المطلوبة غير موجود');
     }
 
-    const totalAmount = round2(dto.lines.reduce((sum, l) => sum + l.quantity * l.unitCost, 0));
+    // Same subtotal/vatTotal/totalAmount split OrdersService.create() uses
+    // for sales, mirrored here for purchases: pricesIncludeVat says whether
+    // each line's unitCost (as entered, matching the supplier's own invoice
+    // format) already has VAT baked in, and only STANDARD-taxed lines
+    // (line.taxType) contribute VAT at all -- a ZERO_RATED/EXEMPT line's
+    // unitCost is never touched regardless of the PO's pricesIncludeVat flag.
+    const pricesIncludeVat = dto.pricesIncludeVat ?? false;
+    const vatRate = Number(location.vatRate) / 100;
+    const subtotal = round2(dto.lines.reduce((sum, l) => sum + l.quantity * l.unitCost, 0));
+    const taxableSubtotal = round2(
+      dto.lines.reduce((sum, l) => sum + ((l.taxType ?? TaxType.STANDARD) === TaxType.STANDARD ? l.quantity * l.unitCost : 0), 0),
+    );
+    const vatTotal = pricesIncludeVat
+      ? round2(taxableSubtotal - taxableSubtotal / (1 + vatRate))
+      : round2(taxableSubtotal * vatRate);
+    const totalAmount = pricesIncludeVat ? subtotal : round2(subtotal + vatTotal);
 
     return this.prisma.purchaseOrder.create({
       data: {
         locationId: dto.locationId,
         supplierId: dto.supplierId,
         createdById: userId,
+        pricesIncludeVat,
+        subtotal,
+        vatTotal,
         totalAmount,
-        lines: { create: dto.lines.map((l) => ({ ingredientId: l.ingredientId, quantity: l.quantity, unitCost: l.unitCost })) },
+        lines: {
+          create: dto.lines.map((l) => ({
+            ingredientId: l.ingredientId,
+            quantity: l.quantity,
+            unitCost: l.unitCost,
+            taxType: l.taxType ?? TaxType.STANDARD,
+          })),
+        },
       },
       include: { lines: true },
     });
@@ -130,14 +158,26 @@ export class PurchaseOrdersService {
     if (po.status !== POStatus.APPROVED && po.status !== POStatus.SENT_TO_SUPPLIER) {
       throw new BadRequestException('لا يمكن استلام أمر شراء إلا بعد اعتماده');
     }
+    const location = await this.prisma.location.findUniqueOrThrow({ where: { id: po.locationId } });
+    const vatRate = Number(location.vatRate) / 100;
 
     return this.prisma.$transaction(async (tx) => {
       for (const line of po.lines) {
+        // Inventory cost must always exclude VAT -- input tax paid to a
+        // supplier is reclaimable, not a real cost of the ingredient, so a
+        // STANDARD-taxed line entered under pricesIncludeVat has its VAT
+        // portion stripped back out before the batch is created (regardless
+        // of the PO's pricing mode, InventoryBatch.unitCost is always the
+        // ex-VAT figure -- ZERO_RATED/EXEMPT lines have none to strip).
+        const unitCostExclVat =
+          po.pricesIncludeVat && line.taxType === TaxType.STANDARD
+            ? round2(Number(line.unitCost) / (1 + vatRate))
+            : Number(line.unitCost);
         await this.inventory.receive(tx, {
           locationId: po.locationId,
           ingredientId: line.ingredientId,
           quantity: Number(line.quantity),
-          unitCost: Number(line.unitCost),
+          unitCost: unitCostExclVat,
           sourceType: 'PURCHASE',
           sourceId: po.id,
           reason: 'PURCHASE_RECEIPT',

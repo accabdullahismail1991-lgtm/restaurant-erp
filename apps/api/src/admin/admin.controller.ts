@@ -3,7 +3,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermission } from '../auth/require-permission.decorator';
 import { AdminService } from './admin.service';
-import { ConfirmFullWipeDto, ConfirmResetMasterDataDto } from './dto/confirm-reset.dto';
+import { ConfirmFullWipeDto, ConfirmResetMasterDataDto, ConfirmResetTransactionsDto } from './dto/confirm-reset.dto';
 
 // A single, deliberately narrow permission (system.reset_data) gates both
 // endpoints -- neither is included in the "مدير فرع" (branch manager) role
@@ -13,6 +13,11 @@ import { ConfirmFullWipeDto, ConfirmResetMasterDataDto } from './dto/confirm-res
 @RequirePermission('system.reset_data')
 export class AdminController {
   constructor(private readonly admin: AdminService) {}
+
+  @Post('reset-transactions')
+  resetTransactions(@Body() _dto: ConfirmResetTransactionsDto) {
+    return this.admin.resetTransactions();
+  }
 
   @Post('reset-master-data')
   resetMasterData(@Body() _dto: ConfirmResetMasterDataDto) {

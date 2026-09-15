@@ -380,7 +380,7 @@ export class ReportsService implements OnModuleDestroy {
         res.byOutput.map((o) => [o.name, o.ordersCount, o.totalOutputQuantity, o.totalCost, o.avgUnitCost]), [3, 4]);
     } else if (kind === 'purchasing') {
       const res = await this.analytics.purchasingSummary(userId, locationId, from, to);
-      addKpiRows([['عدد الأوامر', res.orderCount], ['إجمالي الإنفاق', res.totalSpend, true], ['ضريبة تقديرية', res.estimatedVat, true]]);
+      addKpiRows([['عدد الأوامر', res.orderCount], ['إجمالي الإنفاق', res.totalSpend, true], ['ضريبة المدخلات', res.vatTotal, true]]);
       addTableSheet('أوامر الشراء حسب الحالة', ['الحالة', 'العدد'], res.byStatus.map((s) => [DASH_PO_STATUS_LABEL[s.status] || s.status, s.count]));
       addTableSheet('أعلى الموردين إنفاقًا', ['المورد', 'الإنفاق'], res.topSuppliers.map((s) => [s.supplierName, s.spend]), [1]);
     } else if (kind === 'items') {
@@ -481,7 +481,7 @@ export class ReportsService implements OnModuleDestroy {
 
       bodyHtml = `
         ${sectionHeading('ملخص المشتريات')}
-        <div class="stats-row">${statTile('عدد الأوامر', res.orderCount)}${statTile('إجمالي الإنفاق', fmtMoney(res.totalSpend))}${statTile('ضريبة تقديرية', fmtMoney(res.estimatedVat))}</div>
+        <div class="stats-row">${statTile('عدد الأوامر', res.orderCount)}${statTile('إجمالي الإنفاق', fmtMoney(res.totalSpend))}${statTile('ضريبة المدخلات', fmtMoney(res.vatTotal))}</div>
         ${sectionHeading('أوامر الشراء حسب الحالة')}
         ${dataTable(['الحالة', 'العدد'], res.byStatus.map((s) => [DASH_PO_STATUS_LABEL[s.status] || s.status, s.count]), 'لا توجد أوامر شراء في هذه الفترة')}
         ${sectionHeading('أعلى الموردين إنفاقًا')}

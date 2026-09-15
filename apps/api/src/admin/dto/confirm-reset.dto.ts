@@ -13,3 +13,8 @@ export class ConfirmFullWipeDto {
   @Equals('FULL-WIPE-EVERYTHING')
   confirm: string;
 }
+
+export class ConfirmResetTransactionsDto {
+  @Equals('RESET-TRANSACTIONS')
+  confirm: string;
+}

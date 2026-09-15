@@ -899,17 +899,16 @@ export class AnalyticsService {
     const { gte, lte } = this.parseRange(from, to);
     const pos = await this.prisma.purchaseOrder.findMany({
       where: { locationId: ids ? { in: ids } : undefined, createdAt: gte || lte ? { gte, lte } : undefined },
-      select: { totalAmount: true, status: true, supplier: { select: { name: true } }, location: { select: { vatRate: true } } },
+      select: { totalAmount: true, vatTotal: true, status: true, supplier: { select: { name: true } } },
     });
 
     const committed = pos.filter((po) => AnalyticsService.COMMITTED_PO_STATUSES.includes(po.status));
     const totalSpend = round2(committed.reduce((s, po) => s + Number(po.totalAmount), 0));
-    // PurchaseOrderLine.unitCost/PurchaseOrder.totalAmount are recorded
-    // tax-EXCLUSIVE (the raw cost paid to the supplier, same convention as
-    // Order.subtotal) -- this is an ESTIMATE of input VAT using each PO's
-    // own branch's configured rate, not a value ZATCA or the supplier
-    // actually reported; there's no supplier-invoice VAT field to read yet.
-    const estimatedVat = round2(committed.reduce((s, po) => s + Number(po.totalAmount) * (Number(po.location.vatRate) / 100), 0));
+    // Real input VAT captured per PO at creation (PurchaseOrder.vatTotal --
+    // see PurchaseOrdersService.create), from each line's own taxType and
+    // the PO's own pricesIncludeVat flag matching that supplier's invoice
+    // format. No longer an estimate/guess off the branch's flat vatRate.
+    const vatTotal = round2(committed.reduce((s, po) => s + Number(po.vatTotal), 0));
 
     const byStatusMap = new Map<string, number>();
     for (const po of pos) byStatusMap.set(po.status, (byStatusMap.get(po.status) ?? 0) + 1);
@@ -920,7 +919,7 @@ export class AnalyticsService {
     return {
       orderCount: pos.length,
       totalSpend,
-      estimatedVat,
+      vatTotal,
       byStatus: [...byStatusMap.entries()].map(([status, count]) => ({ status, count })),
       topSuppliers: [...bySupplierMap.entries()]
         .map(([supplierName, spend]) => ({ supplierName, spend: round2(spend) }))
@@ -930,14 +929,15 @@ export class AnalyticsService {
   }
 
   // Combines both sides of VAT the restaurant deals with -- output tax
-  // collected on sales (already tracked exactly per order.vatTotal, which
-  // OrdersService.create() computes per-line off each item's taxType) and
-  // input tax estimated on purchasing (same estimate purchasingSummaryCore
-  // already makes, since there's no supplier-invoice VAT field to read
-  // exactly). The by-tax-type sales split reads each line's CURRENT
-  // menuItem.taxType (not a historical snapshot -- same simplification
-  // menuItemCosts/foodCost already make elsewhere in this file), so
-  // changing an item's tax type reclassifies its past lines here too.
+  // collected on sales (Order.vatTotal, computed per-line off each item's
+  // taxType in OrdersService.create()) and input tax paid on purchasing
+  // (PurchaseOrder.vatTotal, computed per-line off each line's taxType and
+  // the PO's own pricesIncludeVat flag in PurchaseOrdersService.create()) --
+  // both are real captured figures now, not estimates. The by-tax-type
+  // sales split reads each line's CURRENT menuItem.taxType (not a
+  // historical snapshot -- same simplification menuItemCosts/foodCost
+  // already make elsewhere in this file), so changing an item's tax type
+  // reclassifies its past lines here too.
   async taxSummary(userId: string, locationId?: string, from?: string, to?: string) {
     const ids = await this.resolveLocationIds(userId, locationId);
     return this.taxSummaryCore(ids, from, to);
@@ -1011,25 +1011,29 @@ export class AnalyticsService {
 
     const pos = await this.prisma.purchaseOrder.findMany({
       where: { locationId: ids ? { in: ids } : undefined, createdAt: gte || lte ? { gte, lte } : undefined },
-      select: { totalAmount: true, status: true, location: { select: { vatRate: true } } },
+      select: { totalAmount: true, vatTotal: true, status: true },
     });
     const committedPos = pos.filter((po) => AnalyticsService.COMMITTED_PO_STATUSES.includes(po.status));
     const purchasingTotalAmount = round2(committedPos.reduce((s, po) => s + Number(po.totalAmount), 0));
-    const purchasingEstimatedVat = round2(committedPos.reduce((s, po) => s + Number(po.totalAmount) * (Number(po.location.vatRate) / 100), 0));
+    // Real input VAT (PurchaseOrder.vatTotal, from each PO's own
+    // pricesIncludeVat + per-line taxType at creation time) -- no longer
+    // guessed off the branch's flat vatRate against a tax-blind totalAmount.
+    const purchasingVat = round2(committedPos.reduce((s, po) => s + Number(po.vatTotal), 0));
 
     return {
       sales: {
         taxableSubtotal: salesTaxableSubtotal,
         vatCollected: salesVatCollected,
+        grandTotal: round2(orders.reduce((s, o) => s + Number(o.grandTotal), 0)),
         byTaxType: [...byTaxTypeMap.entries()].map(([taxType, revenue]) => ({ taxType, revenue: round2(revenue) })),
         byDay,
         invoices,
       },
       purchasing: {
         totalAmount: purchasingTotalAmount,
-        estimatedVat: purchasingEstimatedVat,
+        vatTotal: purchasingVat,
       },
-      netVatPosition: round2(salesVatCollected - purchasingEstimatedVat),
+      netVatPosition: round2(salesVatCollected - purchasingVat),
     };
   }
 

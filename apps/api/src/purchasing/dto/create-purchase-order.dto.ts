@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsNumber, IsPositive, IsString, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsBoolean, IsEnum, IsNumber, IsOptional, IsPositive, IsString, ValidateNested } from 'class-validator';
+import { TaxType } from '@prisma/client';
 
 export class PurchaseOrderLineInputDto {
   @IsString()
@@ -12,6 +13,10 @@ export class PurchaseOrderLineInputDto {
   @IsNumber()
   @IsPositive()
   unitCost!: number;
+
+  @IsOptional()
+  @IsEnum(TaxType)
+  taxType?: TaxType;
 }
 
 export class CreatePurchaseOrderDto {
@@ -20,6 +25,12 @@ export class CreatePurchaseOrderDto {
 
   @IsString()
   supplierId!: string;
+
+  // مطابق لهيئة فاتورة المورد: هل سعر الوحدة المُدخل في كل سطر شامل الضريبة
+  // أم لا -- انظر تعليق PurchaseOrder.pricesIncludeVat في schema.prisma.
+  @IsOptional()
+  @IsBoolean()
+  pricesIncludeVat?: boolean;
 
   @IsArray()
   @ArrayMinSize(1)

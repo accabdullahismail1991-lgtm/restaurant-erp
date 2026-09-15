@@ -458,6 +458,19 @@ model PurchaseOrder {
   locationId  String // موقع الوجهة (فرع أو مطبخ مركزي)
   supplierId  String
   status      POStatus @default(DRAFT)
+  // نفس منطق Location.pricesIncludeVat لكن لكل أمر شراء على حدة -- يعتمد
+  // على شكل فاتورة هذا المورد بالذات (بعض الموردين يكتبون السعر شامل
+  // الضريبة، وبعضهم قبلها)، فليست خاصية ثابتة للفرع كما هي في المبيعات.
+  pricesIncludeVat Boolean @default(false)
+  // subtotal: مجموع (الكمية × سعر الوحدة) كما أُدخل تمامًا، بغض النظر عن
+  // كونه شامل الضريبة أو لا. vatTotal: حصيلة الضريبة فقط (تُستخرج من
+  // subtotal إن كانت الأسعار شاملة، أو تُضاف عليه إن لم تكن) -- بنفس صيغة
+  // OrdersService.create(). totalAmount يبقى الإجمالي النهائي (شامل
+  // الضريبة دائمًا) الذي تعتمد عليه مصفوفة الموافقات (ApprovalRulesService)
+  // ولا داعي لتغيير اسمه لأنه ما زال يمثّل نفس الشيء الذي كان يمثّله قبل
+  // إضافة الضريبة.
+  subtotal    Decimal  @db.Decimal(12, 2) @default(0)
+  vatTotal    Decimal  @db.Decimal(12, 2) @default(0)
   totalAmount Decimal  @db.Decimal(12, 2)
   createdById String
   createdAt   DateTime @default(now())
@@ -475,6 +488,11 @@ model PurchaseOrderLine {
   ingredientId    String
   quantity        Decimal @db.Decimal(12, 3)
   unitCost        Decimal @db.Decimal(12, 4)
+  // يحدّد ما إذا كان هذا السطر خاضعًا للضريبة أصلًا -- بعض المواد (كالخضروات
+  // الطازجة في بعض الأنظمة الضريبية) قد تكون معفاة أو بنسبة صفرية حتى لو
+  // كان باقي أمر الشراء خاضعًا للضريبة العادية. نفس enum المستخدم في
+  // MenuItem.taxType، بلا تكرار.
+  taxType         TaxType @default(STANDARD)
 
   purchaseOrder PurchaseOrder       @relation(fields: [purchaseOrderId], references: [id])
   ingredient    Ingredient          @relation(fields: [ingredientId], references: [id])

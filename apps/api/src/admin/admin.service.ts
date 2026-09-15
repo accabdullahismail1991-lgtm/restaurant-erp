@@ -15,6 +15,55 @@ export class AdminService {
   // promotions, payment methods, approval rules, and every user/role/
   // permission -- the operational setup an admin would have to rebuild by
   // hand, as opposed to product data they're about to re-import in bulk.
+  // The narrower sibling of resetMasterData() below -- clears every
+  // transaction/operational document (orders, shifts, purchase/production/
+  // transfer orders, stocktakes, and the inventory batches/movements they
+  // produced) while leaving the product catalog itself untouched: branches,
+  // ingredients, recipes, menu items, and combos survive intact. Meant for
+  // "wipe test invoices/sessions and start clean on the same setup" rather
+  // than resetMasterData()'s "clear the catalog too, I'm about to re-import
+  // it" use case. Same FK-driven ordering resetMasterData() already uses,
+  // just stopping short of the catalog tables themselves.
+  async resetTransactions() {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.comboSelection.deleteMany({});
+      await tx.orderReturnLine.deleteMany({});
+      await tx.orderReturn.deleteMany({});
+      await tx.payment.deleteMany({});
+      await tx.orderActivityLog.deleteMany({});
+      await tx.orderLine.deleteMany({});
+      const orders = await tx.order.deleteMany({});
+      await tx.productionOrderLine.deleteMany({});
+      const productionOrders = await tx.productionOrder.deleteMany({});
+      await tx.approval.deleteMany({});
+      await tx.purchaseOrderLine.deleteMany({});
+      const purchaseOrders = await tx.purchaseOrder.deleteMany({});
+      await tx.purchaseReturnLine.deleteMany({});
+      await tx.purchaseReturn.deleteMany({});
+      await tx.transferLine.deleteMany({});
+      const transfers = await tx.transfer.deleteMany({});
+      await tx.stocktakeLine.deleteMany({});
+      const stocktakes = await tx.stocktake.deleteMany({});
+      const movements = await tx.stockMovement.deleteMany({});
+      await tx.inventoryBatch.deleteMany({});
+      await tx.inventoryBalance.deleteMany({});
+      await tx.dayClose.deleteMany({});
+      await tx.dailyInvoiceCounter.deleteMany({});
+      await tx.loyaltyTransaction.deleteMany({});
+      const shifts = await tx.shift.deleteMany({});
+
+      return {
+        orders: orders.count,
+        productionOrders: productionOrders.count,
+        purchaseOrders: purchaseOrders.count,
+        transfers: transfers.count,
+        stocktakes: stocktakes.count,
+        stockMovements: movements.count,
+        shifts: shifts.count,
+      };
+    });
+  }
+
   async resetMasterData() {
     return this.prisma.$transaction(async (tx) => {
       await tx.comboSelection.deleteMany({});

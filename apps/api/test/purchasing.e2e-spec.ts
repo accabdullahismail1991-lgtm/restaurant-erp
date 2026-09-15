@@ -131,14 +131,18 @@ describe('Phase 5: purchasing + approval matrix (e2e)', () => {
 
   let noRuleDraftId: string;
 
-  it('creates a PO in DRAFT with a server-computed totalAmount', async () => {
+  // subtotal 10*2=20, exclusive-priced STANDARD line at the location's
+  // 15% vatRate -> vatTotal 3, totalAmount 23 (see PurchaseOrdersService.create).
+  it('creates a PO in DRAFT with a server-computed subtotal/vatTotal/totalAmount', async () => {
     const res = await request(app.getHttpServer())
       .post('/purchase-orders')
       .set(auth(adminToken))
       .send({ locationId, supplierId, lines: [{ ingredientId, quantity: 10, unitCost: 2 }] });
     expect(res.status).toBe(201);
     expect(res.body.status).toBe('DRAFT');
-    expect(Number(res.body.totalAmount)).toBe(20);
+    expect(Number(res.body.subtotal)).toBe(20);
+    expect(Number(res.body.vatTotal)).toBe(3);
+    expect(Number(res.body.totalAmount)).toBe(23);
     noRuleDraftId = res.body.id;
   });
 
@@ -192,7 +196,7 @@ describe('Phase 5: purchasing + approval matrix (e2e)', () => {
     const createRes = await request(app.getHttpServer())
       .post('/purchase-orders')
       .set(auth(adminToken))
-      .send({ locationId, supplierId, lines: [{ ingredientId, quantity: 100, unitCost: 2 }] }); // total = 200
+      .send({ locationId, supplierId, lines: [{ ingredientId, quantity: 100, unitCost: 2 }] }); // subtotal 200, totalAmount 230 incl. 15% VAT -- over the 100 threshold either way
     pendingPoId = createRes.body.id;
 
     const submitRes = await request(app.getHttpServer()).post(`/purchase-orders/${pendingPoId}/submit`).set(auth(adminToken));
@@ -240,7 +244,7 @@ describe('Phase 5: purchasing + approval matrix (e2e)', () => {
     const createRes = await request(app.getHttpServer())
       .post('/purchase-orders')
       .set(auth(adminToken))
-      .send({ locationId, supplierId, lines: [{ ingredientId, quantity: 60, unitCost: 2 }] }); // total = 120
+      .send({ locationId, supplierId, lines: [{ ingredientId, quantity: 60, unitCost: 2 }] }); // subtotal 120, totalAmount 138 incl. 15% VAT -- over the 100 threshold either way
     rejectedPoId = createRes.body.id;
     await request(app.getHttpServer()).post(`/purchase-orders/${rejectedPoId}/submit`).set(auth(adminToken));
 

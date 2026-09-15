@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/com
 import { Prisma } from '@prisma/client';
 import { scopedLocationIds } from '../common/location-scope.util';
 import { PrismaService } from '../prisma/prisma.service';
-import { ReceiveInventoryDto, WasteInventoryDto } from './dto/adjust-inventory.dto';
+import { CostAdjustmentDto, ReceiveInventoryDto, WasteInventoryDto } from './dto/adjust-inventory.dto';
 
 // Any Prisma client shape that exposes the models this service touches --
 // either the real PrismaService (standalone calls, e.g. a manual
@@ -183,5 +183,34 @@ export class InventoryService {
       quantity: dto.quantity,
       reason: 'WASTE',
     });
+  }
+
+  // Revalues every open batch's unitCost to newUnitCost -- deliberately the
+  // ONLY inventory-writing path that never touches quantity or writes a
+  // StockMovement (that ledger is a quantity trail; a cost-only correction
+  // has no quantity delta to record). InventoryBalance similarly stays
+  // untouched. Straightforward overwrite rather than a blended average:
+  // this is "the recorded cost was wrong, here's the right one", not a
+  // partial receipt at a different price (that's what a real PO/receive
+  // does, which correctly keeps old and new batches side by side).
+  async recordCostAdjustment(dto: CostAdjustmentDto, userId: string) {
+    await this.assertLocationInScope(userId, dto.locationId);
+    const batches = await this.prisma.inventoryBatch.findMany({
+      where: { locationId: dto.locationId, ingredientId: dto.ingredientId, quantity: { gt: 0 } },
+    });
+    if (!batches.length) {
+      throw new BadRequestException('لا يوجد رصيد مخزون حالي لهذا الصنف في هذا الموقع لتسوية تكلفته');
+    }
+    await this.prisma.inventoryBatch.updateMany({
+      where: { id: { in: batches.map((b) => b.id) } },
+      data: { unitCost: dto.newUnitCost },
+    });
+    return {
+      ingredientId: dto.ingredientId,
+      locationId: dto.locationId,
+      batchesUpdated: batches.length,
+      totalQuantity: batches.reduce((s, b) => s + Number(b.quantity), 0),
+      newUnitCost: dto.newUnitCost,
+    };
   }
 }

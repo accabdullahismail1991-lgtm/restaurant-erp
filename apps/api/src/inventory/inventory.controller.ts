@@ -3,7 +3,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermission } from '../auth/require-permission.decorator';
-import { ReceiveInventoryDto, WasteInventoryDto } from './dto/adjust-inventory.dto';
+import { CostAdjustmentDto, ReceiveInventoryDto, WasteInventoryDto } from './dto/adjust-inventory.dto';
 import { InventoryService } from './inventory.service';
 
 @Controller('inventory')
@@ -29,5 +29,11 @@ export class InventoryController {
   @RequirePermission('inventory.adjust')
   waste(@Body() dto: WasteInventoryDto, @CurrentUser() user: { userId: string }) {
     return this.inventory.recordWaste(dto, user.userId);
+  }
+
+  @Post('cost-adjustments')
+  @RequirePermission('inventory.adjust')
+  adjustCost(@Body() dto: CostAdjustmentDto, @CurrentUser() user: { userId: string }) {
+    return this.inventory.recordCostAdjustment(dto, user.userId);
   }
 }
