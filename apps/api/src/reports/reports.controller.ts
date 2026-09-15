@@ -5,6 +5,7 @@ import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermission } from '../auth/require-permission.decorator';
 import { GenerateAllReportsDto } from './dto/generate-all-reports.dto';
 import { GenerateReportDto } from './dto/generate-report.dto';
+import { RenderSnapshotDto } from './dto/render-snapshot.dto';
 import { DashboardKind, ReportsService } from './reports.service';
 
 const CONTENT_TYPE: Record<string, string> = {
@@ -69,6 +70,24 @@ export class ReportsController {
     return new StreamableFile(buffer, {
       type: CONTENT_TYPE[format],
       disposition: `attachment; filename="${fileName}"`,
+    });
+  }
+
+  // Generic "export whatever report screen I'm already looking at" PDF --
+  // covers every report popup that doesn't have (and doesn't need) its own
+  // hand-built export like the two above (see renderSnapshotPdf's comment).
+  // Still gated by this controller's own analytics.view guard, same as
+  // every other route here.
+  @Post('render-snapshot')
+  async renderSnapshot(@Body() dto: RenderSnapshotDto) {
+    const buffer = await this.reports.renderSnapshotPdf(dto.css, dto.bodyHtml);
+    // Plain ASCII filename here -- the client overrides it via the blob
+    // download's own `download` attribute (see the DTO's comment); a
+    // Content-Disposition filename with Arabic text would throw
+    // ERR_INVALID_CHAR (Node's http headers are Latin1-only).
+    return new StreamableFile(buffer, {
+      type: 'application/pdf',
+      disposition: 'attachment; filename="report.pdf"',
     });
   }
 }

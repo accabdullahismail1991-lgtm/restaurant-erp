@@ -35,16 +35,58 @@ function getBrowser(): Promise<Browser> {
 // finished constructing) rather than a fixed delay, with a bounded
 // timeout so a page that never sets it (a bug, or no charts at all)
 // doesn't hang the request forever.
+// A4 width (210mm) minus the left+right margins page.pdf() applies below
+// (10mm each) = 190mm of actual printable content width, in CSS px at the
+// standard 96dpi (190 * 96 / 25.4). Chromium's real print/PDF layout pass
+// reflows to the PAPER width regardless of the page's viewport, but that
+// reflow only happens internally inside page.pdf() itself -- anything
+// measured via page.evaluate() beforehand (like the column-fit check
+// below) still sees whatever viewport the page was created with. Setting
+// the viewport to this same printable width up front makes what gets
+// measured/laid out before page.pdf() match what page.pdf() will actually
+// produce, instead of measuring against an unrelated (and usually much
+// wider) default browser viewport.
+const PRINT_CONTENT_WIDTH_PX = 718;
+
 export async function renderHtmlToPdf(html: string): Promise<Buffer> {
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
+    await page.setViewportSize({ width: PRINT_CONTENT_WIDTH_PX, height: 1400 });
+    // Forces @media print rules to apply -- report-html.util.ts's own
+    // styles have none (so this is a no-op there), but a render-snapshot
+    // PDF embeds the admin panel's actual stylesheet verbatim, which DOES
+    // carry @media print overrides (hiding live filter controls, letting
+    // an otherwise-scrolled table/popup render in full rather than
+    // clipped to one screen's height) -- exactly what a "printed" render
+    // should apply, and generating a PDF is inherently that.
+    await page.emulateMedia({ media: 'print' });
     await page.setContent(html, { waitUntil: 'load' });
     await page.waitForFunction(() => (window as unknown as { __reportReady?: boolean }).__reportReady === true, { timeout: 8000 }).catch(() => {
       // A report with no charts still sets the flag (see reportShell), so
       // this only fires on a genuine rendering problem -- proceeding
       // anyway still produces a PDF (just possibly missing a chart image)
       // rather than failing the whole export outright.
+    });
+    // A wide table (many columns, like the Sales Log's 11) is naturally
+    // wider than its .table-wrap box once overflow:visible (see the print
+    // CSS) stops it from being scrolled/clipped -- but page.pdf() below
+    // still has a fixed A4 width, so without this the table's rightmost
+    // columns would simply run off the page edge and vanish from the
+    // export, silently dropping data instead of just looking cramped.
+    // Shrinking the table (via the non-standard but Chromium-supported
+    // `zoom`, which -- unlike transform:scale -- reflows layout at the new
+    // size instead of needing manual width/height compensation) to fit the
+    // wrap's own allotted width keeps every column on the page.
+    await page.evaluate(() => {
+      document.querySelectorAll('.table-wrap').forEach((wrap) => {
+        const table = wrap.querySelector('table');
+        if (!(table instanceof HTMLElement) || !(wrap instanceof HTMLElement)) return;
+        table.style.zoom = '1';
+        const available = wrap.clientWidth;
+        const needed = table.scrollWidth;
+        if (available > 0 && needed > available) table.style.zoom = String(available / needed);
+      });
     });
     return await page.pdf({ format: 'A4', printBackground: true, margin: { top: '14mm', bottom: '14mm', left: '10mm', right: '10mm' } });
   } finally {

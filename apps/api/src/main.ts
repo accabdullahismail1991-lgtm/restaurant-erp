@@ -1,9 +1,17 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // bodyParser:false + these two manual parsers (rather than layering a
+  // second app.use(express.json()) after Nest's own default one) -- the
+  // default express.json()/urlencoded() Nest registers cap bodies at 100kb,
+  // too small for POST /reports/render-snapshot's payload (a report
+  // screen's HTML plus one or two base64 chart-image snapshots).
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  app.use(json({ limit: '15mb' }));
+  app.use(urlencoded({ extended: true, limit: '15mb' }));
   // Open CORS -- this is an API meant to be called from a browser-based POS
   // (and, for now, the standalone demo login page in prototypes/), not a
   // server-to-server-only service. Tighten this to an explicit origin list

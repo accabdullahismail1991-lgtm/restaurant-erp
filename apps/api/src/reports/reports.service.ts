@@ -5,7 +5,7 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { scopedLocationIds } from '../common/location-scope.util';
 import { OrderTypesService } from '../order-types/order-types.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { barChartConfig, dataTable, doughnutChartConfig, fmtMoney, lineChartConfig, reportShell, sectionHeading, statTile } from './report-html.util';
+import { arabicFontFaceCss, barChartConfig, dataTable, doughnutChartConfig, fmtMoney, lineChartConfig, reportShell, sectionHeading, statTile } from './report-html.util';
 import { closeReportBrowser, renderHtmlToPdf } from './pdf-render.util';
 
 // Plain 'ar-SA' silently switches to the Hijri calendar with Eastern
@@ -196,6 +196,32 @@ export class ReportsService implements OnModuleDestroy {
         ${dataTable(['الخامة', 'الموقع', 'الكمية الحالية', 'الحد الأدنى'], data.lowStock.map((r) => [r.name, r.locationName, r.quantity, r.lowStockThreshold]), 'لا توجد أصناف أقل من الحد الأدنى')}
       `,
     });
+    return renderHtmlToPdf(html);
+  }
+
+  // Every OTHER report screen (sales log, top customers, tax, peak hours,
+  // the standard-report suite, kitchen performance, customer experience,
+  // shift/day-close reports...) doesn't get its own hand-built HTML
+  // template like buildPdf/buildDashboardPdf above -- there's no reason
+  // to, since the admin panel's own screen already IS a correctly
+  // formatted, correctly labeled render of that exact data. This takes
+  // whatever HTML+CSS that screen already produced (title, the same
+  // <style> block the page itself uses, and the populated .view-card
+  // with any Chart.js <canvas> already swapped for a static <img> client-
+  // side, since a canvas carries no content once serialized) and renders
+  // it through the same headless-Chromium pipeline -- guaranteed to match
+  // the screen exactly, including whichever language it happened to be
+  // showing, because it IS that screen, not a reconstruction of it.
+  async renderSnapshotPdf(css: string, bodyHtml: string): Promise<Buffer> {
+    // No Chart.js construction happens here (charts already arrived as
+    // static <img> data URIs baked into bodyHtml), so the ready flag
+    // renderHtmlToPdf waits on is set immediately rather than waiting out
+    // its full timeout for a signal that would otherwise never come.
+    const html = `<!doctype html>
+<html dir="rtl" lang="ar">
+<head><meta charset="utf-8"><style>${arabicFontFaceCss()}${css}</style></head>
+<body>${bodyHtml}<script>window.__reportReady = true;</script></body>
+</html>`;
     return renderHtmlToPdf(html);
   }
 

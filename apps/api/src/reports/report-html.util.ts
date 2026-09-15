@@ -25,7 +25,7 @@ function resolveAssetPath(...segments: string[]): string {
 }
 
 let cachedFontFace: string | null = null;
-function arabicFontFaceCss(): string {
+export function arabicFontFaceCss(): string {
   if (cachedFontFace) return cachedFontFace;
   const fontPath = resolveAssetPath('fonts', 'NotoSansArabic.ttf');
   const base64 = fs.readFileSync(fontPath).toString('base64');
