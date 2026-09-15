@@ -8,6 +8,10 @@ export class UpdateIngredientDto {
 
   @IsOptional()
   @IsString()
+  category?: string;
+
+  @IsOptional()
+  @IsString()
   unit?: string;
 
   @IsOptional()
@@ -17,6 +21,11 @@ export class UpdateIngredientDto {
   @IsOptional()
   @IsEnum(ValuationMethod)
   valuationMethod?: ValuationMethod;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  openingCost?: number;
 
   @IsOptional()
   @IsNumber()

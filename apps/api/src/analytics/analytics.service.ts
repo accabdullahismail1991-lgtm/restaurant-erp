@@ -701,10 +701,21 @@ export class AnalyticsService {
       cur.value += Number(b.quantity) * Number(b.unitCost);
       byIngredient.set(b.ingredientId, cur);
     }
+    // Ingredient.openingCost (see schema comment) -- a per-unit reference
+    // cost entered when the ingredient was defined, read ONLY as a fallback
+    // for a line with zero real batches; the moment a real batch exists
+    // (even a tiny one), byIngredient above wins and this is never
+    // consulted for that ingredient again.
+    const openingCosts = await this.prisma.ingredient.findMany({ select: { id: true, openingCost: true } });
+    const openingCostById = new Map(openingCosts.map((i) => [i.id, i.openingCost != null ? Number(i.openingCost) : null]));
+    let usedOpeningCost = false;
     const avgCost = (ingredientId: string) => {
       if (costOverrides?.has(ingredientId)) return costOverrides.get(ingredientId)!;
       const c = byIngredient.get(ingredientId);
-      return c && c.qty > 0 ? c.value / c.qty : 0;
+      if (c && c.qty > 0) return c.value / c.qty;
+      const opening = openingCostById.get(ingredientId);
+      if (opening != null) { usedOpeningCost = true; return opening; }
+      return 0;
     };
 
     const items = await this.prisma.menuItem.findMany({
@@ -714,6 +725,7 @@ export class AnalyticsService {
     });
 
     return items.map((item) => {
+      usedOpeningCost = false;
       const cost = round2(item.recipe.reduce((s, l) => s + Number(l.quantity) * avgCost(l.ingredientId), 0));
       const price = round2(Number(item.price));
       return {
@@ -724,6 +736,11 @@ export class AnalyticsService {
         costPercent: price > 0 ? round2((cost / price) * 100) : 0,
         grossMargin: round2(price - cost),
         hasRecipe: item.recipe.length > 0,
+        // True when at least one recipe line had no real batch data yet and
+        // fell back to its ingredient's openingCost -- the admin panel
+        // shows this as "تقديرية" rather than presenting it as a real
+        // weighted-average cost.
+        costIsEstimated: usedOpeningCost,
       };
     });
   }

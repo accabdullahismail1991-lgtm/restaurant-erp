@@ -224,9 +224,16 @@ model UnitOfMeasure {
 model Ingredient {
   id                String          @id @default(cuid())
   name              String
+  category          String? // تصنيف حر (خضروات، لحوم، ألبان...) -- نفس نمط MenuItem.category لكن اختياري لأن الأصناف الموجودة مسبقًا ليس لها تصنيف
   unit              String // g, ml, pcs...
   kind              IngredientKind  @default(RAW_MATERIAL)
   valuationMethod   ValuationMethod @default(WEIGHTED_AVERAGE) // القرار #9: لكل صنف طريقته
+  // تكلفة تقديرية لكل وحدة تُدخَل عند تعريف الصنف، قبل وجود أي دفعة مخزون
+  // حقيقية له -- تُستخدم فقط كبديل احتياطي في حساب التكلفة النظرية
+  // (menuItemCostsCore) لحد ما أول عملية شراء/إنتاج فعلية تُنشئ دفعة
+  // حقيقية؛ من هذه اللحظة تكلفة الدفعات الفعلية هي المرجع دائمًا، وهذا
+  // الحقل لا يُقرأ بعدها إطلاقًا (ليست قيمة تُخلَط في متوسط مرجّح حقيقي).
+  openingCost       Decimal?        @db.Decimal(12, 4)
   lowStockThreshold Decimal         @db.Decimal(12, 3)
   shelfLifeDays     Int? // لحساب تاريخ الصلاحية الافتراضي عند الإنتاج/الاستلام
   createdAt         DateTime        @default(now())

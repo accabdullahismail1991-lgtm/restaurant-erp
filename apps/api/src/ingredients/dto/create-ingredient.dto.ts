@@ -5,6 +5,10 @@ export class CreateIngredientDto {
   @IsString()
   name!: string;
 
+  @IsOptional()
+  @IsString()
+  category?: string;
+
   @IsString()
   unit!: string;
 
@@ -14,6 +18,11 @@ export class CreateIngredientDto {
   @IsOptional()
   @IsEnum(ValuationMethod)
   valuationMethod?: ValuationMethod;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  openingCost?: number;
 
   @IsNumber()
   @Min(0)
