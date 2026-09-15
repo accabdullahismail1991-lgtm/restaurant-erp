@@ -342,6 +342,76 @@ export class ShiftsService {
     });
   }
 
+  // Settlement gate for OrdersService.create() (القرار: no new invoice while
+  // yesterday's till is still open) -- two distinct problems, reported and
+  // blocked separately: (1) a shift opened before today that's still open
+  // (nobody reconciled the till), and (2) a calendar day whose shifts are
+  // ALL closed but no DayClose rollup was ever made for it (nobody hit
+  // "إنهاء اليوم"). A day with an open stale shift only shows up in (1) --
+  // once that shift is closed it falls into (2) until closeDay() runs.
+  private async buildSettlementStatus(locationId: string, lookbackDays = 31) {
+    const today = startOfUtcDay(new Date());
+    const lookbackStart = new Date(today.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
+
+    const openShifts = await this.prisma.shift.findMany({
+      where: { locationId, closedAt: null, openedAt: { lt: today } },
+      select: { id: true, shiftNumber: true, openedAt: true, openedBy: { select: { name: true } } },
+      orderBy: { openedAt: 'asc' },
+    });
+
+    const shiftsInWindow = await this.prisma.shift.findMany({
+      where: { locationId, openedAt: { gte: lookbackStart, lt: today } },
+      select: { openedAt: true, closedAt: true },
+    });
+    const dayMap = new Map<number, boolean>(); // day (ms) -> has an open shift that day
+    for (const s of shiftsInWindow) {
+      const dayMs = startOfUtcDay(s.openedAt).getTime();
+      dayMap.set(dayMs, (dayMap.get(dayMs) ?? false) || !s.closedAt);
+    }
+    const fullyClosedDays = [...dayMap.entries()].filter(([, hasOpen]) => !hasOpen).map(([ms]) => new Date(ms));
+    const existingCloses = fullyClosedDays.length
+      ? await this.prisma.dayClose.findMany({
+          where: { locationId, businessDate: { in: fullyClosedDays } },
+          select: { businessDate: true },
+        })
+      : [];
+    const closedDaySet = new Set(existingCloses.map((c) => c.businessDate.getTime()));
+    const unclosedDays = fullyClosedDays
+      .filter((d) => !closedDaySet.has(d.getTime()))
+      .sort((a, b) => a.getTime() - b.getTime());
+
+    return {
+      openStaleShifts: openShifts.map((s) => ({
+        id: s.id,
+        shiftNumber: s.shiftNumber,
+        openedAt: s.openedAt,
+        openedByName: s.openedBy?.name ?? null,
+      })),
+      unclosedDays: unclosedDays.map((d) => ({ businessDate: d })),
+    };
+  }
+
+  async settlementStatus(userId: string, locationId: string) {
+    await this.assertLocationInScope(userId, locationId);
+    return this.buildSettlementStatus(locationId);
+  }
+
+  // Called from OrdersService.create() -- throws a clear, actionable Arabic
+  // message rather than letting a new invoice silently land on top of an
+  // unsettled yesterday. Location scope is already checked by the caller
+  // (OrdersService.assertLocationInScope), so this skips it too.
+  async assertNoUnsettledPriorDays(locationId: string) {
+    const status = await this.buildSettlementStatus(locationId);
+    if (status.openStaleShifts.length > 0) {
+      throw new BadRequestException(
+        'يوجد ورديات مفتوحة من يوم سابق لم يتم إغلاقها -- يرجى إغلاق جميع الورديات المفتوحة قبل إنشاء فاتورة جديدة',
+      );
+    }
+    if (status.unclosedDays.length > 0) {
+      throw new BadRequestException('يوجد يوم عمل سابق لم يتم إنهاؤه -- يرجى إنهاء اليوم (إنهاء اليوم) قبل إنشاء فاتورة جديدة');
+    }
+  }
+
   // Forgotten-shift safety net (docs on Location.autoCloseEnabled) -- runs
   // hourly, only touches locations that opted in. A shift with unpaid
   // orders is left alone (same guard close() itself enforces --

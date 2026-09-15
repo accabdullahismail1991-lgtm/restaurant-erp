@@ -12,6 +12,7 @@ import { ZatcaService } from '../zatca/zatca.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { HoldOrderDto } from './dto/hold-order.dto';
 import { PayOrderDto } from './dto/pay-order.dto';
+import { ShiftsService } from './shifts.service';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -25,6 +26,7 @@ export class OrdersService {
     private readonly customers: CustomersService,
     private readonly production: ProductionOrdersService,
     private readonly orderTypes: OrderTypesService,
+    private readonly shifts: ShiftsService,
   ) {}
 
   private async assertLocationInScope(userId: string, locationId: string) {
@@ -60,6 +62,13 @@ export class OrdersService {
     if (!shift) throw new NotFoundException('الوردية غير موجودة');
     if (shift.locationId !== dto.locationId) throw new BadRequestException('الوردية لا تخص هذا الموقع');
     if (shift.closedAt) throw new BadRequestException('لا يمكن إنشاء طلب على وردية مغلقة');
+
+    // No new invoice while a prior day is unsettled -- a shift left open
+    // from before today, or a fully-closed day that never got its "إنهاء
+    // اليوم" rollup, must be resolved first (see ShiftsService.
+    // assertNoUnsettledPriorDays / GET /shifts/settlement-status for the UI
+    // popup listing exactly what's outstanding).
+    await this.shifts.assertNoUnsettledPriorDays(dto.locationId);
 
     // dto.channel references OrderType.code (an admin-manageable table --
     // see order-types module -- replacing the old fixed OrderChannel enum).

@@ -75,6 +75,12 @@ export async function resetDatabase(prisma: PrismaService) {
   await prisma.table.deleteMany({});
   await prisma.loyaltyTransaction.deleteMany({});
   await prisma.customer.deleteMany({});
+  // Must go before location.deleteMany() below -- DayClose.location has no
+  // cascade delete, so any leftover end-of-day rollup (from a suite
+  // exercising ShiftsService.closeDay/autoCloseSweep or the settlement-
+  // status gate) would otherwise block the location's own deletion with an
+  // FK violation.
+  await prisma.dayClose.deleteMany({});
   await prisma.shift.deleteMany({});
   await prisma.stockMovement.deleteMany({});
   await prisma.inventoryBatch.deleteMany({});

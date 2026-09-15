@@ -28,6 +28,15 @@ export class ShiftsController {
     return this.shifts.findAll(user.userId, locationId, openOnly === 'true', from, to);
   }
 
+  // Registered before ':id' below so 'settlement-status' isn't swallowed as
+  // an id param -- feeds the Sales-screen "unsettled day" banner/popup
+  // (open stale shifts + calendar days closed but never end-of-day'd),
+  // the same data OrdersService.create() now blocks on via assertNoUnsettledPriorDays.
+  @Get('settlement-status')
+  settlementStatus(@CurrentUser() user: { userId: string }, @Query('locationId') locationId: string) {
+    return this.shifts.settlementStatus(user.userId, locationId);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
     return this.shifts.findOne(id, user.userId);
