@@ -23,6 +23,18 @@ export class ReturnsService {
     }
   }
 
+  // Same query PermissionsGuard runs for a route-level @RequirePermission --
+  // reimplemented here because the kitchen-block bypass below is a
+  // conditional, in-service check (only relevant when notReady.length),
+  // not a blanket route guard every /returns caller would otherwise need.
+  private async hasPermission(userId: string, code: string): Promise<boolean> {
+    const match = await this.prisma.rolePermission.findFirst({
+      where: { permission: { code }, role: { users: { some: { userId } } } },
+      select: { roleId: true },
+    });
+    return !!match;
+  }
+
   // What's left returnable per line of a given order -- the admin panel's
   // return form is built entirely from this (quantity sold minus whatever
   // was already returned across any PRIOR OrderReturn for the same line).
@@ -94,9 +106,18 @@ export class ReturnsService {
     // ingredients that were never taken out in the first place and
     // silently double the inventory. READY/SERVED are the only states the
     // kitchen has genuinely finished (or handed over) the item in.
+    //
+    // A holder of pos.override_kitchen_block can push through anyway (e.g.
+    // a manager clearing a stuck order) -- dto.overrideKitchenBlock is just
+    // the caller's stated intent, the permission check below is what
+    // actually decides it, so sending the flag without the permission still
+    // 400s exactly like not sending it at all.
     const notReady = orderLines.filter((l) => l.kitchenStatus !== 'READY' && l.kitchenStatus !== 'SERVED');
     if (notReady.length) {
-      throw new BadRequestException('لا يمكن إرجاع صنف لم يخرج من المطبخ بعد -- بعض السطور المطلوبة ما زالت قيد التحضير في المطبخ');
+      const overriding = dto.overrideKitchenBlock && (await this.hasPermission(userId, 'pos.override_kitchen_block'));
+      if (!overriding) {
+        throw new BadRequestException('لا يمكن إرجاع صنف لم يخرج من المطبخ بعد -- بعض السطور المطلوبة ما زالت قيد التحضير في المطبخ');
+      }
     }
 
     const priorLines = await this.prisma.orderReturnLine.findMany({ where: { orderLineId: { in: orderLineIds } } });
@@ -144,6 +165,16 @@ export class ReturnsService {
       await tx.orderActivityLog.create({
         data: { orderId: order.id, action: 'RETURNED', note: dto.reason, createdById: userId },
       });
+      if (notReady.length) {
+        await tx.orderActivityLog.create({
+          data: {
+            orderId: order.id,
+            action: 'RETURN_KITCHEN_BLOCK_OVERRIDDEN',
+            note: `تم تجاوز حظر المطبخ لعدد ${notReady.length} من سطور هذا المرتجع`,
+            createdById: userId,
+          },
+        });
+      }
 
       return tx.orderReturn.findUniqueOrThrow({ where: { id: ret.id }, include: { lines: true } });
     });

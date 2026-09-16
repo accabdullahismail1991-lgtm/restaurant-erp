@@ -14,12 +14,14 @@ describe('Returns (e2e)', () => {
   let prisma: PrismaService;
   let manageToken: string;
   let noPermToken: string;
+  let overrideToken: string;
   let locationId: string;
   let ingredientId: string;
   let menuItemId: string;
 
   const MANAGE_PHONE = '+966500000160';
   const NOPERM_PHONE = '+966500000161';
+  const OVERRIDE_PHONE = '+966500000162';
   const PASSWORD = 'ReturnsTest123';
 
   const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
@@ -34,11 +36,12 @@ describe('Returns (e2e)', () => {
     await resetDatabase(prisma);
     await prisma.userRole.deleteMany({});
     await prisma.rolePermission.deleteMany({});
-    await prisma.user.deleteMany({ where: { phone: { in: [MANAGE_PHONE, NOPERM_PHONE] } } });
-    await prisma.role.deleteMany({ where: { name: { in: ['Returns-Test-Manager', 'Returns-Test-NoPerm'] } } });
-    await prisma.permission.deleteMany({ where: { code: 'pos.return_order' } });
+    await prisma.user.deleteMany({ where: { phone: { in: [MANAGE_PHONE, NOPERM_PHONE, OVERRIDE_PHONE] } } });
+    await prisma.role.deleteMany({ where: { name: { in: ['Returns-Test-Manager', 'Returns-Test-NoPerm', 'Returns-Test-Override'] } } });
+    await prisma.permission.deleteMany({ where: { code: { in: ['pos.return_order', 'pos.override_kitchen_block'] } } });
 
     const returnPerm = await prisma.permission.create({ data: { code: 'pos.return_order', label: 'تسجيل مرتجع عميل' } });
+    const overridePerm = await prisma.permission.create({ data: { code: 'pos.override_kitchen_block', label: 'تجاوز حظر إرجاع صنف لم يخرج من المطبخ بعد' } });
     // pos.void_order may already exist (seeded globally / created by another
     // suite sharing this DB) -- upsert rather than create so this doesn't
     // collide with its unique `code` regardless of run order.
@@ -57,6 +60,11 @@ describe('Returns (e2e)', () => {
     const role = await prisma.role.create({ data: { name: 'Returns-Test-Manager' } });
     await prisma.rolePermission.createMany({ data: [returnPerm, voidPerm, shiftPerm].map((p) => ({ roleId: role.id, permissionId: p.id })) });
     await prisma.role.create({ data: { name: 'Returns-Test-NoPerm' } });
+    // Holds pos.return_order (can submit a return at all) but deliberately
+    // NOT pos.override_kitchen_block -- isolates the override permission
+    // check below from the base return permission.
+    const overrideRole = await prisma.role.create({ data: { name: 'Returns-Test-Override' } });
+    await prisma.rolePermission.createMany({ data: [returnPerm, shiftPerm, overridePerm].map((p) => ({ roleId: overrideRole.id, permissionId: p.id })) });
 
     const makeUser = async (phone: string, roleId?: string) => {
       const passwordHash = await bcrypt.hash(PASSWORD, 10);
@@ -67,6 +75,7 @@ describe('Returns (e2e)', () => {
     };
     manageToken = await makeUser(MANAGE_PHONE, role.id);
     noPermToken = await makeUser(NOPERM_PHONE);
+    overrideToken = await makeUser(OVERRIDE_PHONE, overrideRole.id);
 
     const location = await prisma.location.create({ data: { name: 'فرع اختبار المرتجعات', type: 'BRANCH' } });
     locationId = location.id;
@@ -196,6 +205,51 @@ describe('Returns (e2e)', () => {
       .set(auth(manageToken))
       .send({ orderId: payRes.body.id, lines: [{ orderLineId: stillQueuedLineId, quantity: 1 }] });
     expect(res2.status).toBe(201);
+
+    await request(app.getHttpServer()).post(`/shifts/${shiftId}/close`).set(auth(manageToken)).send({ closingCounted: 200 });
+  });
+
+  it('rejects overrideKitchenBlock:true from a user who lacks pos.override_kitchen_block -- same 400 as not sending it', async () => {
+    await prisma.inventoryBatch.create({
+      data: { locationId, ingredientId, batchNumber: 'RET-OVERRIDE-' + Date.now(), quantity: 3, unitCost: 2, sourceType: 'ADJUSTMENT' },
+    });
+    await prisma.inventoryBalance.upsert({
+      where: { ingredientId_locationId: { ingredientId, locationId } },
+      update: { quantity: { increment: 3 } },
+      create: { ingredientId, locationId, quantity: 3 },
+    });
+    const shiftRes = await request(app.getHttpServer()).post('/shifts').set(auth(manageToken)).send({ locationId, openingFloat: 200 });
+    const shiftId = shiftRes.body.id;
+    const orderRes = await request(app.getHttpServer())
+      .post('/orders')
+      .set(auth(manageToken))
+      .send({ locationId, shiftId, channel: 'DINE_IN', lines: [{ menuItemId, quantity: 1 }] });
+    const payRes = await request(app.getHttpServer())
+      .post(`/orders/${orderRes.body.id}/pay`)
+      .set(auth(manageToken))
+      .send({ payments: [{ method: 'CASH', mode: 'MANUAL', amount: Number(orderRes.body.grandTotal) }] });
+    const queuedLineId = payRes.body.lines[0].id;
+
+    // manageToken holds pos.return_order but NOT pos.override_kitchen_block --
+    // the flag alone must not be enough.
+    const blocked = await request(app.getHttpServer())
+      .post('/returns')
+      .set(auth(manageToken))
+      .send({ orderId: payRes.body.id, lines: [{ orderLineId: queuedLineId, quantity: 1 }], overrideKitchenBlock: true });
+    expect(blocked.status).toBe(400);
+
+    // overrideToken holds BOTH pos.return_order and pos.override_kitchen_block --
+    // the same request now succeeds, and the override is logged on the order.
+    const allowed = await request(app.getHttpServer())
+      .post('/returns')
+      .set(auth(overrideToken))
+      .send({ orderId: payRes.body.id, lines: [{ orderLineId: queuedLineId, quantity: 1 }], overrideKitchenBlock: true });
+    expect(allowed.status).toBe(201);
+
+    const order = await prisma.order.findUniqueOrThrow({ where: { id: payRes.body.id }, include: { activityLog: true } });
+    const actions = order.activityLog.map((a) => a.action);
+    expect(actions).toContain('RETURNED');
+    expect(actions).toContain('RETURN_KITCHEN_BLOCK_OVERRIDDEN');
 
     await request(app.getHttpServer()).post(`/shifts/${shiftId}/close`).set(auth(manageToken)).send({ closingCounted: 200 });
   });

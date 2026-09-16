@@ -834,7 +834,7 @@ model DailyInvoiceCounter {
 model OrderActivityLog {
   id        String   @id @default(cuid())
   orderId   String
-  action    String // "HELD" حاليًا فقط
+  action    String // HELD / VOIDED / RETURNED / RETURN_KITCHEN_BLOCK_OVERRIDDEN
   note      String?
   createdById String
   createdAt DateTime @default(now())
