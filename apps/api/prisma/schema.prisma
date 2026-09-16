@@ -800,6 +800,12 @@ model Order {
   zatcaPreviousInvoiceHash String?  @db.Text
   createdAt        DateTime     @default(now())
   paidAt           DateTime?
+  // Set the moment kitchen staff dismiss a cancelled order's ticket from
+  // the KDS board (KitchenService.acknowledgeCancel) -- null means a
+  // VOIDED order with a line the kitchen hadn't finished yet is still
+  // owed an explicit "stop cooking this" notice, so KitchenService.queue()
+  // keeps surfacing it. Irrelevant for an order that was never VOIDED.
+  kitchenCancelAckAt DateTime?
 
   location     Location      @relation("OrderLocation", fields: [locationId], references: [id])
   table        Table?        @relation(fields: [tableId], references: [id])

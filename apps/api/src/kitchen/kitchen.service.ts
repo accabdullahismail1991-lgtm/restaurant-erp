@@ -24,14 +24,32 @@ export class KitchenService {
     }
   }
 
-  // The active queue is exactly the orders the kitchen still owes work on
-  // -- SENT_TO_KITCHEN. Once every line on an order reaches READY/SERVED,
-  // advance() flips the order itself to READY (see below) and it drops off
-  // this list on its own; no separate filtering needed here.
+  // The active queue is the orders the kitchen still owes work on
+  // (SENT_TO_KITCHEN -- once every line reaches READY/SERVED, advance()
+  // flips the order itself to READY and it drops off this list on its own)
+  // PLUS any order that got VOIDED (via OrdersService.void() pre-payment,
+  // or ReturnsService.voidPaidOrder() after payment) while the kitchen
+  // still had a line QUEUED/PREPARING on it -- neither void path touches
+  // kitchenStatus, so that line is still sitting there mid-prep with no
+  // idea the sale behind it was cancelled. Surfacing it here (instead of
+  // it just silently vanishing) is the closest thing to a "kitchen
+  // notification" this polling-based board has; it stays until
+  // acknowledgeCancel() below dismisses it. A VOIDED order whose lines
+  // were already all READY/SERVED never needed telling in the first place.
   async queue(userId: string, locationId: string) {
     await this.assertLocationInScope(userId, locationId);
     const orders = await this.prisma.order.findMany({
-      where: { locationId, status: OrderStatus.SENT_TO_KITCHEN },
+      where: {
+        locationId,
+        OR: [
+          { status: OrderStatus.SENT_TO_KITCHEN },
+          {
+            status: OrderStatus.VOIDED,
+            kitchenCancelAckAt: null,
+            lines: { some: { kitchenStatus: { in: [KitchenLineStatus.QUEUED, KitchenLineStatus.PREPARING] } } },
+          },
+        ],
+      },
       orderBy: { createdAt: 'asc' },
       include: {
         table: true,
@@ -56,6 +74,7 @@ export class KitchenService {
       shiftSequence: order.shiftSequence,
       dailySequence: order.dailySequence,
       shiftNumber: order.shift?.shiftNumber ?? null,
+      cancelled: order.status === OrderStatus.VOIDED,
       lines: order.lines.map((line) =>
         line.menuItem
           ? {
@@ -76,6 +95,19 @@ export class KitchenService {
             },
       ),
     }));
+  }
+
+  // Dismisses a cancelled ticket from the KDS board -- the only action
+  // available on a VOIDED order's ticket (its lines can't be "advance"d
+  // any further, there's nothing left to bump).
+  async acknowledgeCancel(orderId: string, userId: string) {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    if (!order) throw new NotFoundException('الطلب غير موجود');
+    await this.assertLocationInScope(userId, order.locationId);
+    if (order.status !== OrderStatus.VOIDED) {
+      throw new BadRequestException('هذا الطلب ليس ملغى');
+    }
+    return this.prisma.order.update({ where: { id: orderId }, data: { kitchenCancelAckAt: new Date() } });
   }
 
   async advance(lineId: string, userId: string) {

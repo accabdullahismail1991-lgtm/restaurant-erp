@@ -233,4 +233,78 @@ describe('Phase 10a: kitchen / KDS (e2e)', () => {
     const advanceRes = await request(app.getHttpServer()).post(`/kitchen/lines/${lineId}/advance`).set(auth(adminToken));
     expect(advanceRes.status).toBe(400);
   });
+
+  it('keeps a just-VOIDED order on the queue, tagged cancelled, since its line never left QUEUED', async () => {
+    const orderRes = await request(app.getHttpServer())
+      .post('/orders')
+      .set(auth(adminToken))
+      .send({ locationId: otherLocationId, shiftId: otherShiftId, channel: 'TAKEAWAY', lines: [{ menuItemId: menuItemAId, quantity: 1 }] });
+    await request(app.getHttpServer()).post(`/orders/${orderRes.body.id}/void`).set(auth(adminToken));
+
+    const queueRes = await request(app.getHttpServer()).get(`/kitchen/queue?locationId=${otherLocationId}`).set(auth(adminToken));
+    const ticket = queueRes.body.find((t: any) => t.orderId === orderRes.body.id);
+    expect(ticket).toBeDefined();
+    expect(ticket.cancelled).toBe(true);
+    expect(ticket.lines[0].kitchenStatus).toBe('QUEUED');
+
+    // acknowledgeCancel dismisses it -- it must not reappear on the next poll.
+    const ackRes = await request(app.getHttpServer()).post(`/kitchen/orders/${orderRes.body.id}/acknowledge-cancel`).set(auth(adminToken));
+    expect(ackRes.status).toBe(200);
+    const queueAfterAck = await request(app.getHttpServer()).get(`/kitchen/queue?locationId=${otherLocationId}`).set(auth(adminToken));
+    expect(queueAfterAck.body.some((t: any) => t.orderId === orderRes.body.id)).toBe(false);
+  });
+
+  it('does NOT surface a VOIDED order whose line was already READY/SERVED -- nothing left to stop cooking', async () => {
+    const orderRes = await request(app.getHttpServer())
+      .post('/orders')
+      .set(auth(adminToken))
+      .send({ locationId: otherLocationId, shiftId: otherShiftId, channel: 'TAKEAWAY', lines: [{ menuItemId: menuItemAId, quantity: 1 }] });
+    const lineId = orderRes.body.lines[0].id;
+    await request(app.getHttpServer()).post(`/kitchen/lines/${lineId}/advance`).set(auth(adminToken));
+    await request(app.getHttpServer()).post(`/kitchen/lines/${lineId}/advance`).set(auth(adminToken)); // now READY
+
+    await request(app.getHttpServer())
+      .post(`/orders/${orderRes.body.id}/pay`)
+      .set(auth(adminToken))
+      .send({ payments: [{ method: 'CASH', mode: 'MANUAL', amount: Number(orderRes.body.grandTotal) }] });
+
+    const voidPaidPerm = await prisma.permission.upsert({
+      where: { code: 'pos.void_paid_order' },
+      update: {},
+      create: { code: 'pos.void_paid_order', label: 'إلغاء فاتورة مدفوعة بالكامل' },
+    });
+    const voidPaidRole = await prisma.role.upsert({ where: { name: 'Kitchen-Test-VoidPaid' }, update: {}, create: { name: 'Kitchen-Test-VoidPaid' } });
+    await prisma.rolePermission.upsert({
+      where: { roleId_permissionId: { roleId: voidPaidRole.id, permissionId: voidPaidPerm.id } },
+      update: {},
+      create: { roleId: voidPaidRole.id, permissionId: voidPaidPerm.id },
+    });
+    const user = await prisma.user.findUniqueOrThrow({ where: { phone: ADMIN_PHONE } });
+    await prisma.userRole.upsert({
+      where: { userId_roleId: { userId: user.id, roleId: voidPaidRole.id } },
+      update: {},
+      create: { userId: user.id, roleId: voidPaidRole.id },
+    });
+
+    const voidPaidRes = await request(app.getHttpServer()).post(`/returns/void-paid-order/${orderRes.body.id}`).set(auth(adminToken));
+    expect(voidPaidRes.status).toBe(200);
+
+    const queueRes = await request(app.getHttpServer()).get(`/kitchen/queue?locationId=${otherLocationId}`).set(auth(adminToken));
+    expect(queueRes.body.some((t: any) => t.orderId === orderRes.body.id)).toBe(false);
+  });
+
+  it('rejects acknowledging a cancel on an order that is not VOIDED', async () => {
+    const orderRes = await request(app.getHttpServer())
+      .post('/orders')
+      .set(auth(adminToken))
+      .send({ locationId: otherLocationId, shiftId: otherShiftId, channel: 'TAKEAWAY', lines: [{ menuItemId: menuItemAId, quantity: 1 }] });
+
+    const res = await request(app.getHttpServer()).post(`/kitchen/orders/${orderRes.body.id}/acknowledge-cancel`).set(auth(adminToken));
+    expect(res.status).toBe(400);
+
+    await request(app.getHttpServer())
+      .post(`/orders/${orderRes.body.id}/pay`)
+      .set(auth(adminToken))
+      .send({ payments: [{ method: 'CASH', mode: 'MANUAL', amount: Number(orderRes.body.grandTotal) }] });
+  });
 });

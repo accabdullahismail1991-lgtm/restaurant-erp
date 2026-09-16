@@ -22,4 +22,10 @@ export class KitchenController {
   advance(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
     return this.kitchen.advance(id, user.userId);
   }
+
+  @Post('orders/:orderId/acknowledge-cancel')
+  @HttpCode(200)
+  acknowledgeCancel(@Param('orderId') orderId: string, @CurrentUser() user: { userId: string }) {
+    return this.kitchen.acknowledgeCancel(orderId, user.userId);
+  }
 }
