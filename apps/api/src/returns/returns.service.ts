@@ -1,14 +1,11 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, TaxType } from '@prisma/client';
 import { scopedLocationIds } from '../common/location-scope.util';
 import { userHasPermission } from '../common/permission.util';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReturnDto } from './dto/create-return.dto';
 
-// KSA standard VAT rate -- same constant re-declared per-file as
-// OrdersService/ZatcaService already do (docs/DECISIONS.md #3).
-const VAT_RATE = 0.15;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 @Injectable()
@@ -65,18 +62,27 @@ export class ReturnsService {
   // them), at the ingredient's CURRENT weighted-average cost -- a
   // deliberate simplification, same one stocktake variance valuation
   // already uses, since a return doesn't cleanly identify which original
-  // batch(es) each returned unit came from. Refund is unitPrice x quantity
-  // grossed up by the flat VAT rate (this MVP doesn't allocate the
-  // original order's discount proportionally across lines).
+  // batch(es) each returned unit came from. Refund is computed by
+  // computeLineRefund() below, which mirrors OrdersService.create()'s own
+  // pricing exactly (branch VAT rate, per-item tax type, pricesIncludeVat,
+  // pro-rated discount) so the return never disagrees with what the
+  // original invoice actually charged for that line.
   //
   // Loyalty points earned on the original order are NOT reversed here --
   // a documented scope boundary rather than a half-built proportional
   // reversal, same "don't fake what isn't built" stance as ZATCA submit.
   async create(dto: CreateReturnDto, userId: string) {
-    const order = await this.prisma.order.findUnique({ where: { id: dto.orderId }, include: { lines: true } });
+    const order = await this.prisma.order.findUnique({
+      where: { id: dto.orderId },
+      include: { lines: { include: { menuItem: { select: { taxType: true } } } } },
+    });
     if (!order) throw new NotFoundException('الطلب غير موجود');
     await this.assertLocationInScope(userId, order.locationId);
     if (order.status !== 'PAID') throw new BadRequestException('لا يمكن عمل مرتجع إلا لطلب مدفوع بالكامل');
+    const location = await this.prisma.location.findUniqueOrThrow({
+      where: { id: order.locationId },
+      select: { vatRate: true, pricesIncludeVat: true },
+    });
 
     const orderLineIds = dto.lines.map((l) => l.orderLineId);
     const orderLines = order.lines.filter((l) => orderLineIds.includes(l.id));
@@ -121,7 +127,7 @@ export class ReturnsService {
       if (already + l.quantity > orderLine.quantity) {
         throw new BadRequestException(`الكمية المطلوب إرجاعها أكبر من المتبقي القابل للإرجاع لهذا الصنف`);
       }
-      const refundAmount = round2(Number(orderLine.unitPrice) * l.quantity * (1 + VAT_RATE));
+      const refundAmount = this.computeLineRefund(orderLine, l.quantity, order, location);
       refundTotal += refundAmount;
       return { orderLine, quantity: l.quantity, refundAmount };
     });
@@ -155,6 +161,30 @@ export class ReturnsService {
 
       return tx.orderReturn.findUniqueOrThrow({ where: { id: ret.id }, include: { lines: true } });
     });
+  }
+
+  // Refund for one returned line, built to agree exactly with what
+  // OrdersService.create() charged for it on the original invoice: the
+  // line's undiscounted share (unitPrice x quantity) gets the order's own
+  // discountTotal stripped off pro-rata by that line's share of the
+  // order's subtotal (the same proration OrdersService uses for its
+  // taxable-portion split, just applied per line instead of per bucket),
+  // then VAT is grossed up ONLY when the item is STANDARD-rated AND the
+  // branch charges VAT on top -- a ZERO_RATED/EXEMPT item never carries
+  // VAT, and a pricesIncludeVat branch already has it embedded in
+  // unitPrice, exactly like the original grandTotal computation.
+  private computeLineRefund(
+    orderLine: { unitPrice: Prisma.Decimal | number; menuItem: { taxType: TaxType } | null },
+    quantity: number,
+    order: { subtotal: Prisma.Decimal | number; discountTotal: Prisma.Decimal | number },
+    location: { vatRate: Prisma.Decimal | number; pricesIncludeVat: boolean },
+  ) {
+    const lineGross = Number(orderLine.unitPrice) * quantity;
+    const subtotal = Number(order.subtotal);
+    const discountShare = subtotal > 0 ? Number(order.discountTotal) * (lineGross / subtotal) : 0;
+    const lineNet = round2(lineGross - discountShare);
+    const taxable = orderLine.menuItem?.taxType === TaxType.STANDARD && !location.pricesIncludeVat;
+    return taxable ? round2(lineNet * (1 + Number(location.vatRate) / 100)) : lineNet;
   }
 
   // Restocks the recipe of every computed return line into `tx`, tagged to
@@ -195,10 +225,17 @@ export class ReturnsService {
   // manager-only permission from pos.return_order), never by the per-line
   // kitchen-block override.
   async voidPaidOrder(orderId: string, userId: string, reason?: string) {
-    const order = await this.prisma.order.findUnique({ where: { id: orderId }, include: { lines: true } });
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { lines: { include: { menuItem: { select: { taxType: true } } } } },
+    });
     if (!order) throw new NotFoundException('الطلب غير موجود');
     await this.assertLocationInScope(userId, order.locationId);
     if (order.status !== 'PAID') throw new BadRequestException('لا يمكن إلغاء إلا طلبًا مدفوعًا بالكامل -- الطلبات غير المدفوعة تُلغى عبر إلغاء الطلب العادي');
+    const location = await this.prisma.location.findUniqueOrThrow({
+      where: { id: order.locationId },
+      select: { vatRate: true, pricesIncludeVat: true },
+    });
 
     // A combo line has no per-item recipe to restock (same v1 boundary as
     // create()) -- voiding the WHOLE order can't leave one line un-restocked
@@ -217,7 +254,7 @@ export class ReturnsService {
     const computed = menuItemLines
       .map((orderLine) => {
         const remaining = orderLine.quantity - (returnedByLine.get(orderLine.id) || 0);
-        const refundAmount = round2(Number(orderLine.unitPrice) * remaining * (1 + VAT_RATE));
+        const refundAmount = this.computeLineRefund(orderLine, remaining, order, location);
         return { orderLine, quantity: remaining, refundAmount };
       })
       .filter((c) => c.quantity > 0);

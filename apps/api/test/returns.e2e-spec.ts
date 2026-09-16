@@ -60,8 +60,17 @@ describe('Returns (e2e)', () => {
       update: {},
       create: { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' },
     });
+    // Manual-discount permission -- needed by the return-pricing describe
+    // block below to place a discounted order and verify the return
+    // prorates it correctly. Upserted for the same shared-DB reason as
+    // pos.void_order/pos.manage_shift above.
+    const discountPerm = await prisma.permission.upsert({
+      where: { code: 'pos.apply_discount' },
+      update: {},
+      create: { code: 'pos.apply_discount', label: 'تطبيق خصم يدوي على فاتورة مبيعات' },
+    });
     const role = await prisma.role.create({ data: { name: 'Returns-Test-Manager' } });
-    await prisma.rolePermission.createMany({ data: [returnPerm, voidPerm, shiftPerm].map((p) => ({ roleId: role.id, permissionId: p.id })) });
+    await prisma.rolePermission.createMany({ data: [returnPerm, voidPerm, shiftPerm, discountPerm].map((p) => ({ roleId: role.id, permissionId: p.id })) });
     await prisma.role.create({ data: { name: 'Returns-Test-NoPerm' } });
     // Holds pos.return_order (can submit a return at all) but deliberately
     // NOT pos.override_kitchen_block -- isolates the override permission
@@ -449,6 +458,100 @@ describe('Returns (e2e)', () => {
       expect(Number(balanceAfter!.quantity)).toBe(Number(balanceBefore!.quantity)); // nothing left to restock
 
       await request(app.getHttpServer()).post(`/shifts/${shiftId}/close`).set(auth(manageToken)).send({ closingCounted: 200 });
+    });
+  });
+
+  // A return must refund exactly what the original invoice charged for
+  // that line -- previously the refund calc used a hardcoded flat 15% VAT
+  // regardless of the item's real tax type, the branch's real VAT rate,
+  // pricesIncludeVat, or any discount applied to the original order.
+  describe('return refund pricing -- agrees with the original invoice', () => {
+    async function placeAndReturn(opts: {
+      locId: string;
+      itemId: string;
+      quantity: number;
+      returnQuantity: number;
+      discountTotal?: number;
+    }) {
+      const shiftRes = await request(app.getHttpServer()).post('/shifts').set(auth(manageToken)).send({ locationId: opts.locId, openingFloat: 200 });
+      const shiftId = shiftRes.body.id;
+      const orderRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set(auth(manageToken))
+        .send({
+          locationId: opts.locId,
+          shiftId,
+          channel: 'DINE_IN',
+          lines: [{ menuItemId: opts.itemId, quantity: opts.quantity }],
+          ...(opts.discountTotal != null ? { discountTotal: opts.discountTotal } : {}),
+        });
+      expect(orderRes.status).toBe(201);
+      const payRes = await request(app.getHttpServer())
+        .post(`/orders/${orderRes.body.id}/pay`)
+        .set(auth(manageToken))
+        .send({ payments: [{ method: 'CASH', mode: 'MANUAL', amount: Number(orderRes.body.grandTotal) }] });
+      expect(payRes.status).toBe(200);
+      const lineId = orderRes.body.lines[0].id;
+      await request(app.getHttpServer()).post(`/kitchen/lines/${lineId}/advance`).set(auth(manageToken));
+      await request(app.getHttpServer()).post(`/kitchen/lines/${lineId}/advance`).set(auth(manageToken));
+
+      const returnRes = await request(app.getHttpServer())
+        .post('/returns')
+        .set(auth(manageToken))
+        .send({ orderId: orderRes.body.id, lines: [{ orderLineId: lineId, quantity: opts.returnQuantity }] });
+      await request(app.getHttpServer()).post(`/shifts/${shiftId}/close`).set(auth(manageToken)).send({ closingCounted: 200 });
+      return { order: orderRes.body, returnRes };
+    }
+
+    it('a ZERO_RATED item is refunded with no VAT grossed up (not the flat 15%)', async () => {
+      const item = await prisma.menuItem.create({ data: { name: 'صنف صفري الضريبة', category: 'اختبار', price: 20, taxType: 'ZERO_RATED' } });
+      const { returnRes } = await placeAndReturn({ locId: locationId, itemId: item.id, quantity: 1, returnQuantity: 1 });
+      expect(returnRes.status).toBe(201);
+      // unitPrice 20, ZERO_RATED -> no VAT at all, unlike the old flat 20*1.15=23.
+      expect(Number(returnRes.body.refundTotal)).toBe(20);
+    });
+
+    it('an EXEMPT item is likewise refunded with no VAT', async () => {
+      const item = await prisma.menuItem.create({ data: { name: 'صنف معفى من الضريبة', category: 'اختبار', price: 30, taxType: 'EXEMPT' } });
+      const { returnRes } = await placeAndReturn({ locId: locationId, itemId: item.id, quantity: 1, returnQuantity: 1 });
+      expect(returnRes.status).toBe(201);
+      expect(Number(returnRes.body.refundTotal)).toBe(30);
+    });
+
+    it('a pricesIncludeVat branch is refunded the tax-inclusive price, not price x 1.15', async () => {
+      const inclLocation = await prisma.location.create({ data: { name: 'فرع ضريبة شاملة للسعر', type: 'BRANCH', pricesIncludeVat: true } });
+      const item = await prisma.menuItem.create({ data: { name: 'صنف سعر شامل الضريبة', category: 'اختبار', price: 23 } });
+      const { order, returnRes } = await placeAndReturn({ locId: inclLocation.id, itemId: item.id, quantity: 1, returnQuantity: 1 });
+      expect(returnRes.status).toBe(201);
+      expect(Number(order.grandTotal)).toBe(23); // VAT already embedded, nothing added on top.
+      expect(Number(returnRes.body.refundTotal)).toBe(23); // not 23 * 1.15 = 26.45.
+    });
+
+    it("a branch on a non-default VAT rate is refunded at ITS rate, not the hardcoded 15%", async () => {
+      const lowVatLocation = await prisma.location.create({ data: { name: 'فرع ضريبة 5%', type: 'BRANCH', vatRate: 5 } });
+      const item = await prisma.menuItem.create({ data: { name: 'صنف فرع ضريبة منخفضة', category: 'اختبار', price: 20 } });
+      const { order, returnRes } = await placeAndReturn({ locId: lowVatLocation.id, itemId: item.id, quantity: 1, returnQuantity: 1 });
+      expect(returnRes.status).toBe(201);
+      expect(Number(order.grandTotal)).toBe(21); // 20 + 5% VAT.
+      expect(Number(returnRes.body.refundTotal)).toBe(21); // not 20 * 1.15 = 23.
+    });
+
+    it("prorates the original order's manual discount into a partial return", async () => {
+      const item = await prisma.menuItem.create({ data: { name: 'صنف اختبار خصم المرتجع', category: 'اختبار', price: 20 } });
+      // 2 units @ 20 = 40 subtotal, 10 discount -> taxable 30, vat 4.5, grandTotal 34.5.
+      const { order, returnRes } = await placeAndReturn({ locId: locationId, itemId: item.id, quantity: 2, returnQuantity: 1, discountTotal: 10 });
+      expect(Number(order.grandTotal)).toBe(34.5);
+      expect(returnRes.status).toBe(201);
+      // Returning half the line refunds half the discounted+taxed amount:
+      // lineGross 20, discountShare 10*(20/40)=5, net 15, +15% VAT = 17.25 -- not the old flat 20*1.15=23.
+      expect(Number(returnRes.body.refundTotal)).toBe(17.25);
+    });
+
+    it('returning the full discounted order refunds exactly what was charged (grandTotal)', async () => {
+      const item = await prisma.menuItem.create({ data: { name: 'صنف اختبار خصم كامل المرتجع', category: 'اختبار', price: 20 } });
+      const { order, returnRes } = await placeAndReturn({ locId: locationId, itemId: item.id, quantity: 2, returnQuantity: 2, discountTotal: 10 });
+      expect(returnRes.status).toBe(201);
+      expect(Number(returnRes.body.refundTotal)).toBe(Number(order.grandTotal));
     });
   });
 });
