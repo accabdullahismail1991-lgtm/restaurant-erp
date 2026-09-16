@@ -1,5 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { scopedLocationIds } from '../common/location-scope.util';
+import { userHasPermission } from '../common/permission.util';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReturnDto } from './dto/create-return.dto';
@@ -21,18 +23,6 @@ export class ReturnsService {
     if (allowedIds && !allowedIds.includes(locationId)) {
       throw new ForbiddenException('الموقع خارج نطاق صلاحيتك');
     }
-  }
-
-  // Same query PermissionsGuard runs for a route-level @RequirePermission --
-  // reimplemented here because the kitchen-block bypass below is a
-  // conditional, in-service check (only relevant when notReady.length),
-  // not a blanket route guard every /returns caller would otherwise need.
-  private async hasPermission(userId: string, code: string): Promise<boolean> {
-    const match = await this.prisma.rolePermission.findFirst({
-      where: { permission: { code }, role: { users: { some: { userId } } } },
-      select: { roleId: true },
-    });
-    return !!match;
   }
 
   // What's left returnable per line of a given order -- the admin panel's
@@ -114,7 +104,7 @@ export class ReturnsService {
     // 400s exactly like not sending it at all.
     const notReady = orderLines.filter((l) => l.kitchenStatus !== 'READY' && l.kitchenStatus !== 'SERVED');
     if (notReady.length) {
-      const overriding = dto.overrideKitchenBlock && (await this.hasPermission(userId, 'pos.override_kitchen_block'));
+      const overriding = dto.overrideKitchenBlock && (await userHasPermission(this.prisma, userId, 'pos.override_kitchen_block'));
       if (!overriding) {
         throw new BadRequestException('لا يمكن إرجاع صنف لم يخرج من المطبخ بعد -- بعض السطور المطلوبة ما زالت قيد التحضير في المطبخ');
       }
@@ -146,21 +136,8 @@ export class ReturnsService {
         await tx.orderReturnLine.create({
           data: { returnId: ret.id, orderLineId: c.orderLine.id, quantity: c.quantity, refundAmount: c.refundAmount },
         });
-
-        const recipeLines = await tx.recipeLine.findMany({ where: { menuItemId: c.orderLine.menuItemId! } });
-        for (const recipeLine of recipeLines) {
-          const unitCost = await this.inventory.averageUnitCost(order.locationId, recipeLine.ingredientId);
-          await this.inventory.receive(tx, {
-            locationId: order.locationId,
-            ingredientId: recipeLine.ingredientId,
-            quantity: Number(recipeLine.quantity) * c.quantity,
-            unitCost: Number(unitCost),
-            sourceType: 'RETURN',
-            sourceId: ret.id,
-            reason: 'SALE_RETURN',
-          });
-        }
       }
+      await this.restockComputedLines(tx, order.locationId, ret.id, computed);
 
       await tx.orderActivityLog.create({
         data: { orderId: order.id, action: 'RETURNED', note: dto.reason, createdById: userId },
@@ -177,6 +154,93 @@ export class ReturnsService {
       }
 
       return tx.orderReturn.findUniqueOrThrow({ where: { id: ret.id }, include: { lines: true } });
+    });
+  }
+
+  // Restocks the recipe of every computed return line into `tx`, tagged to
+  // `returnId` -- the inventory-side half of both create() above and
+  // voidPaidOrder() below, pulled out so neither has to duplicate the
+  // per-line recipe lookup + weighted-average costing.
+  private async restockComputedLines(
+    tx: Prisma.TransactionClient,
+    locationId: string,
+    returnId: string,
+    computed: Array<{ orderLine: { menuItemId: string | null }; quantity: number }>,
+  ) {
+    for (const c of computed) {
+      const recipeLines = await tx.recipeLine.findMany({ where: { menuItemId: c.orderLine.menuItemId! } });
+      for (const recipeLine of recipeLines) {
+        const unitCost = await this.inventory.averageUnitCost(locationId, recipeLine.ingredientId);
+        await this.inventory.receive(tx, {
+          locationId,
+          ingredientId: recipeLine.ingredientId,
+          quantity: Number(recipeLine.quantity) * c.quantity,
+          unitCost: Number(unitCost),
+          sourceType: 'RETURN',
+          sourceId: returnId,
+          reason: 'SALE_RETURN',
+        });
+      }
+    }
+  }
+
+  // Cancels a PAID order in full -- distinct from OrdersService.void() (only
+  // reachable BEFORE payment): this refunds/restocks every remaining
+  // returnable line exactly like create() above, then flips the order to
+  // VOIDED so it reads as cancelled rather than merely "fully returned".
+  // Deliberately does NOT enforce the kitchen-readiness block create() does
+  // -- voiding the whole order means none of it should have happened, so a
+  // line still QUEUED restocks the same as one that reached READY. Gated
+  // entirely by pos.void_paid_order at the controller (a stricter,
+  // manager-only permission from pos.return_order), never by the per-line
+  // kitchen-block override.
+  async voidPaidOrder(orderId: string, userId: string, reason?: string) {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId }, include: { lines: true } });
+    if (!order) throw new NotFoundException('الطلب غير موجود');
+    await this.assertLocationInScope(userId, order.locationId);
+    if (order.status !== 'PAID') throw new BadRequestException('لا يمكن إلغاء إلا طلبًا مدفوعًا بالكامل -- الطلبات غير المدفوعة تُلغى عبر إلغاء الطلب العادي');
+
+    // A combo line has no per-item recipe to restock (same v1 boundary as
+    // create()) -- voiding the WHOLE order can't leave one line un-restocked
+    // silently, so an order carrying any combo line is rejected entirely
+    // rather than voiding everything else around it.
+    if (order.lines.some((l) => l.comboMealId)) {
+      throw new BadRequestException('لا يمكن حاليًا إلغاء فاتورة تحتوي على وجبة كمبو -- يُرجى التواصل مع الإدارة');
+    }
+
+    const menuItemLines = order.lines.filter((l) => l.menuItemId);
+    const priorLines = await this.prisma.orderReturnLine.findMany({ where: { orderLineId: { in: menuItemLines.map((l) => l.id) } } });
+    const returnedByLine = new Map<string, number>();
+    for (const p of priorLines) returnedByLine.set(p.orderLineId, (returnedByLine.get(p.orderLineId) || 0) + p.quantity);
+
+    let refundTotal = 0;
+    const computed = menuItemLines
+      .map((orderLine) => {
+        const remaining = orderLine.quantity - (returnedByLine.get(orderLine.id) || 0);
+        const refundAmount = round2(Number(orderLine.unitPrice) * remaining * (1 + VAT_RATE));
+        return { orderLine, quantity: remaining, refundAmount };
+      })
+      .filter((c) => c.quantity > 0);
+    refundTotal = round2(computed.reduce((s, c) => s + c.refundAmount, 0));
+
+    return this.prisma.$transaction(async (tx) => {
+      if (computed.length) {
+        const ret = await tx.orderReturn.create({
+          data: { orderId: order.id, reason: reason ?? 'إلغاء الفاتورة بالكامل', refundTotal, createdById: userId },
+        });
+        for (const c of computed) {
+          await tx.orderReturnLine.create({
+            data: { returnId: ret.id, orderLineId: c.orderLine.id, quantity: c.quantity, refundAmount: c.refundAmount },
+          });
+        }
+        await this.restockComputedLines(tx, order.locationId, ret.id, computed);
+      }
+
+      await tx.orderActivityLog.create({
+        data: { orderId: order.id, action: 'VOIDED', note: reason ?? 'إلغاء فاتورة مدفوعة بالكامل', createdById: userId },
+      });
+
+      return tx.order.update({ where: { id: order.id }, data: { status: 'VOIDED' }, include: { lines: true } });
     });
   }
 

@@ -15,6 +15,7 @@ describe('Returns (e2e)', () => {
   let manageToken: string;
   let noPermToken: string;
   let overrideToken: string;
+  let voidPaidToken: string;
   let locationId: string;
   let ingredientId: string;
   let menuItemId: string;
@@ -22,6 +23,7 @@ describe('Returns (e2e)', () => {
   const MANAGE_PHONE = '+966500000160';
   const NOPERM_PHONE = '+966500000161';
   const OVERRIDE_PHONE = '+966500000162';
+  const VOID_PAID_PHONE = '+966500000163';
   const PASSWORD = 'ReturnsTest123';
 
   const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
@@ -36,12 +38,13 @@ describe('Returns (e2e)', () => {
     await resetDatabase(prisma);
     await prisma.userRole.deleteMany({});
     await prisma.rolePermission.deleteMany({});
-    await prisma.user.deleteMany({ where: { phone: { in: [MANAGE_PHONE, NOPERM_PHONE, OVERRIDE_PHONE] } } });
-    await prisma.role.deleteMany({ where: { name: { in: ['Returns-Test-Manager', 'Returns-Test-NoPerm', 'Returns-Test-Override'] } } });
-    await prisma.permission.deleteMany({ where: { code: { in: ['pos.return_order', 'pos.override_kitchen_block'] } } });
+    await prisma.user.deleteMany({ where: { phone: { in: [MANAGE_PHONE, NOPERM_PHONE, OVERRIDE_PHONE, VOID_PAID_PHONE] } } });
+    await prisma.role.deleteMany({ where: { name: { in: ['Returns-Test-Manager', 'Returns-Test-NoPerm', 'Returns-Test-Override', 'Returns-Test-VoidPaid'] } } });
+    await prisma.permission.deleteMany({ where: { code: { in: ['pos.return_order', 'pos.override_kitchen_block', 'pos.void_paid_order'] } } });
 
     const returnPerm = await prisma.permission.create({ data: { code: 'pos.return_order', label: 'تسجيل مرتجع عميل' } });
     const overridePerm = await prisma.permission.create({ data: { code: 'pos.override_kitchen_block', label: 'تجاوز حظر إرجاع صنف لم يخرج من المطبخ بعد' } });
+    const voidPaidPerm = await prisma.permission.create({ data: { code: 'pos.void_paid_order', label: 'إلغاء فاتورة مدفوعة بالكامل' } });
     // pos.void_order may already exist (seeded globally / created by another
     // suite sharing this DB) -- upsert rather than create so this doesn't
     // collide with its unique `code` regardless of run order.
@@ -65,6 +68,12 @@ describe('Returns (e2e)', () => {
     // check below from the base return permission.
     const overrideRole = await prisma.role.create({ data: { name: 'Returns-Test-Override' } });
     await prisma.rolePermission.createMany({ data: [returnPerm, shiftPerm, overridePerm].map((p) => ({ roleId: overrideRole.id, permissionId: p.id })) });
+    // Holds pos.void_paid_order (and the shift/create scaffolding it needs
+    // to set up its own test orders) -- isolated from manageToken so the
+    // "lacks pos.void_paid_order" negative test can reuse manageToken
+    // without also holding this permission.
+    const voidPaidRole = await prisma.role.create({ data: { name: 'Returns-Test-VoidPaid' } });
+    await prisma.rolePermission.createMany({ data: [shiftPerm, voidPaidPerm].map((p) => ({ roleId: voidPaidRole.id, permissionId: p.id })) });
 
     const makeUser = async (phone: string, roleId?: string) => {
       const passwordHash = await bcrypt.hash(PASSWORD, 10);
@@ -76,6 +85,7 @@ describe('Returns (e2e)', () => {
     manageToken = await makeUser(MANAGE_PHONE, role.id);
     noPermToken = await makeUser(NOPERM_PHONE);
     overrideToken = await makeUser(OVERRIDE_PHONE, overrideRole.id);
+    voidPaidToken = await makeUser(VOID_PAID_PHONE, voidPaidRole.id);
 
     const location = await prisma.location.create({ data: { name: 'فرع اختبار المرتجعات', type: 'BRANCH' } });
     locationId = location.id;
@@ -321,5 +331,124 @@ describe('Returns (e2e)', () => {
     expect(res.body.length).toBeGreaterThanOrEqual(2);
     expect(res.body[0].order.id).toBe(paidOrderId);
     expect(res.body[0].lines[0].orderLine.menuItem.name).toBe('صنف اختبار مرتجعات');
+  });
+
+  describe('voidPaidOrder -- full cancellation of a PAID order', () => {
+    async function placeAndPayFreshOrder(quantity: number) {
+      await prisma.inventoryBatch.create({
+        data: { locationId, ingredientId, batchNumber: 'VOID-TEST-' + Date.now(), quantity: quantity * 3, unitCost: 2, sourceType: 'ADJUSTMENT' },
+      });
+      await prisma.inventoryBalance.upsert({
+        where: { ingredientId_locationId: { ingredientId, locationId } },
+        update: { quantity: { increment: quantity * 3 } },
+        create: { ingredientId, locationId, quantity: quantity * 3 },
+      });
+      const shiftRes = await request(app.getHttpServer()).post('/shifts').set(auth(manageToken)).send({ locationId, openingFloat: 200 });
+      const shiftId = shiftRes.body.id;
+      const orderRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set(auth(manageToken))
+        .send({ locationId, shiftId, channel: 'DINE_IN', lines: [{ menuItemId, quantity }] });
+      const payRes = await request(app.getHttpServer())
+        .post(`/orders/${orderRes.body.id}/pay`)
+        .set(auth(manageToken))
+        .send({ payments: [{ method: 'CASH', mode: 'MANUAL', amount: Number(orderRes.body.grandTotal) }] });
+      return { order: payRes.body, shiftId };
+    }
+
+    it('rejects without pos.void_paid_order (403)', async () => {
+      const { order, shiftId } = await placeAndPayFreshOrder(2);
+      const res = await request(app.getHttpServer()).post(`/returns/void-paid-order/${order.id}`).set(auth(manageToken));
+      expect(res.status).toBe(403);
+      await request(app.getHttpServer()).post(`/shifts/${shiftId}/close`).set(auth(manageToken)).send({ closingCounted: 200 });
+    });
+
+    it('rejects voiding an order that is not PAID (400)', async () => {
+      const shiftRes = await request(app.getHttpServer()).post('/shifts').set(auth(manageToken)).send({ locationId, openingFloat: 200 });
+      const shiftId = shiftRes.body.id;
+      const orderRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set(auth(manageToken))
+        .send({ locationId, shiftId, channel: 'DINE_IN', lines: [{ menuItemId, quantity: 1 }] });
+      const res = await request(app.getHttpServer()).post(`/returns/void-paid-order/${orderRes.body.id}`).set(auth(voidPaidToken));
+      expect(res.status).toBe(400);
+      await request(app.getHttpServer()).post(`/orders/${orderRes.body.id}/void`).set(auth(manageToken));
+      await request(app.getHttpServer()).post(`/shifts/${shiftId}/close`).set(auth(manageToken)).send({ closingCounted: 200 });
+    });
+
+    it('rejects an order carrying a combo line, even one holding pos.void_paid_order', async () => {
+      const combo = await prisma.comboMeal.create({ data: { name: 'كمبو اختبار الإلغاء', basePrice: 15 } });
+      const { order, shiftId } = await placeAndPayFreshOrder(1);
+      // Simulate a combo line on this order directly (bypassing the full
+      // combo-selection order flow, which is out of scope for this test) --
+      // enough to exercise voidPaidOrder's own combo-line rejection.
+      await prisma.orderLine.update({ where: { id: order.lines[0].id }, data: { comboMealId: combo.id, menuItemId: null } });
+
+      const res = await request(app.getHttpServer()).post(`/returns/void-paid-order/${order.id}`).set(auth(voidPaidToken));
+      expect(res.status).toBe(400);
+
+      await prisma.orderLine.update({ where: { id: order.lines[0].id }, data: { comboMealId: null, menuItemId } });
+      await request(app.getHttpServer()).post(`/returns/void-paid-order/${order.id}`).set(auth(voidPaidToken));
+      await request(app.getHttpServer()).post(`/shifts/${shiftId}/close`).set(auth(manageToken)).send({ closingCounted: 200 });
+    });
+
+    it('voids a QUEUED line ignoring the kitchen-block, restocks it, refunds it, and logs VOIDED', async () => {
+      const { order, shiftId } = await placeAndPayFreshOrder(2);
+      expect(order.lines[0].kitchenStatus).toBe('QUEUED'); // never advanced
+      const balanceBefore = await prisma.inventoryBalance.findUnique({ where: { ingredientId_locationId: { ingredientId, locationId } } });
+
+      const res = await request(app.getHttpServer())
+        .post(`/returns/void-paid-order/${order.id}`)
+        .set(auth(voidPaidToken))
+        .send({ reason: 'طلب مكرر بالخطأ' });
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('VOIDED');
+
+      // unitPrice 20 * 2 * 1.15 VAT = 46, restocks 2*3g = 6g.
+      const balanceAfter = await prisma.inventoryBalance.findUnique({ where: { ingredientId_locationId: { ingredientId, locationId } } });
+      expect(Number(balanceAfter!.quantity) - Number(balanceBefore!.quantity)).toBe(6);
+
+      const fullOrder = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: { activityLog: true } });
+      expect(fullOrder.status).toBe('VOIDED');
+      const voidedEntry = fullOrder.activityLog.find((a) => a.action === 'VOIDED');
+      expect(voidedEntry?.note).toBe('طلب مكرر بالخطأ');
+
+      const returns = await request(app.getHttpServer()).get('/returns').set(auth(manageToken)).query({ locationId });
+      const ret = returns.body.find((r: { order: { id: string } }) => r.order.id === order.id);
+      expect(Number(ret.refundTotal)).toBe(46);
+
+      await request(app.getHttpServer()).post(`/shifts/${shiftId}/close`).set(auth(manageToken)).send({ closingCounted: 200 });
+    });
+
+    it('rejects re-voiding an already-VOIDED order (400)', async () => {
+      const { order, shiftId } = await placeAndPayFreshOrder(1);
+      await request(app.getHttpServer()).post(`/returns/void-paid-order/${order.id}`).set(auth(voidPaidToken));
+
+      const res = await request(app.getHttpServer()).post(`/returns/void-paid-order/${order.id}`).set(auth(voidPaidToken));
+      expect(res.status).toBe(400);
+
+      await request(app.getHttpServer()).post(`/shifts/${shiftId}/close`).set(auth(manageToken)).send({ closingCounted: 200 });
+    });
+
+    it('voiding an already-fully-returned order just flips status, without a second restock/refund', async () => {
+      const { order, shiftId } = await placeAndPayFreshOrder(1);
+      // Advance to READY then fully return it first via the normal path.
+      await request(app.getHttpServer()).post(`/kitchen/lines/${order.lines[0].id}/advance`).set(auth(manageToken));
+      await request(app.getHttpServer()).post(`/kitchen/lines/${order.lines[0].id}/advance`).set(auth(manageToken));
+      const returnRes = await request(app.getHttpServer())
+        .post('/returns')
+        .set(auth(manageToken))
+        .send({ orderId: order.id, lines: [{ orderLineId: order.lines[0].id, quantity: 1 }] });
+      expect(returnRes.status).toBe(201);
+
+      const balanceBefore = await prisma.inventoryBalance.findUnique({ where: { ingredientId_locationId: { ingredientId, locationId } } });
+      const res = await request(app.getHttpServer()).post(`/returns/void-paid-order/${order.id}`).set(auth(voidPaidToken));
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('VOIDED');
+      const balanceAfter = await prisma.inventoryBalance.findUnique({ where: { ingredientId_locationId: { ingredientId, locationId } } });
+      expect(Number(balanceAfter!.quantity)).toBe(Number(balanceBefore!.quantity)); // nothing left to restock
+
+      await request(app.getHttpServer()).post(`/shifts/${shiftId}/close`).set(auth(manageToken)).send({ closingCounted: 200 });
+    });
   });
 });
