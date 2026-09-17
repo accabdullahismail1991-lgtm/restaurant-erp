@@ -22,6 +22,14 @@ export class ReturnsController {
     return this.returns.returnableLines(orderId, user.userId);
   }
 
+  // Full detail for one return (credit-note popup) -- separate from the
+  // findAll() list above, same "list is summary, :id is full detail"
+  // pattern OrdersController already uses.
+  @Get(':id')
+  findOne(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
+    return this.returns.findOne(id, user.userId);
+  }
+
   @Post()
   @RequirePermission('pos.return_order')
   create(@Body() dto: CreateReturnDto, @CurrentUser() user: { userId: string }) {

@@ -23,58 +23,58 @@ enum LocationType {
 }
 
 model Location {
-  id        String       @id @default(cuid())
-  name      String
-  type      LocationType
-  address   String?
+  id                       String       @id @default(cuid())
+  name                     String
+  type                     LocationType
+  address                  String?
   // ZATCA (Phase 9): the seller's VAT registration number that goes into
   // every invoice issued from this location. Invoice generation is skipped
   // (not failed -- a sale should never be blocked by a missing setting)
   // when this isn't set; see ZatcaService.generateForOrder.
-  vatNumber String?
+  vatNumber                String?
   // ZATCA Invoice Counter Value (ICV): a simple, monotonically increasing
   // integer identifying this location's Nth reported invoice -- required
   // alongside the Previous Invoice Hash (PIH) chain on Order below so each
   // invoice's XML can reference "invoice N-1 at this location" per ZATCA's
   // chaining rule. Incremented atomically inside ZatcaService.generateForOrder.
-  zatcaInvoiceCounter Int          @default(0)
+  zatcaInvoiceCounter      Int          @default(0)
   // Configurable per branch (not a global switch) -- a delivery-only dark
   // kitchen branch that always needs a customer for handoff/loyalty is a
   // different case from a walk-in dine-in branch that mostly doesn't.
   // Enforced server-side in OrdersService.create(), not just in the UI.
-  requireCustomerForOrders Boolean @default(false)
+  requireCustomerForOrders Boolean      @default(false)
   // Percentage (e.g. 15.00 for 15%), replacing what used to be a single
   // hardcoded 0.15 constant duplicated across OrdersService/ZatcaService/
   // the admin panel's invoice renderer. One rate per branch (not per item)
   // per the simplest-viable design -- still lets each branch configure a
   // different rate if it operates under a different tax jurisdiction.
-  vatRate   Decimal      @default(15) @db.Decimal(5, 2)
+  vatRate                  Decimal      @default(15) @db.Decimal(5, 2)
   // When true, MenuItem.price / MenuItemChannelPrice.price are the FINAL
   // price the customer pays (VAT already baked in) -- OrdersService.create()
   // extracts the VAT portion out of that price for reporting/ZATCA instead
   // of adding it on top, and the invoice/cart never show a higher total
   // than the price on the menu. Default false preserves the original
   // tax-exclusive behavior (VAT added at checkout) for existing branches.
-  pricesIncludeVat Boolean @default(false)
+  pricesIncludeVat         Boolean      @default(false)
   // Lets this branch keep selling a menu item past zero stock instead of
   // OrdersService rejecting the order -- an explicit per-branch opt-in
   // (default off) since oversold stock is a real operational risk most
   // branches should NOT silently accept.
-  allowNegativeStock Boolean @default(false)
+  allowNegativeStock       Boolean      @default(false)
   // Per-branch invoice/receipt customization -- logo stored the same way
   // MenuItem.imageData is (bytea, no object storage configured here);
   // header/footer are free text printed above/below the line items on the
   // cashier invoice (e.g. a welcome line, a return policy, social handles).
   // All optional: an invoice prints fine with none of this set.
-  logoData         Bytes?
-  logoMimeType     String?
-  invoiceHeaderNote String?
-  invoiceFooterNote String?
+  logoData                 Bytes?
+  logoMimeType             String?
+  invoiceHeaderNote        String?
+  invoiceFooterNote        String?
   // Human-friendly "SH{n}" shift number, per location (1, 2, 3, ...) --
   // separate from Shift.id (a cuid, meaningless to a cashier) and never
   // reused across locations. Incremented atomically inside ShiftsService.open()
   // the same way zatcaInvoiceCounter/dailyInvoiceCounter already are.
-  lastShiftNumber Int @default(0)
+  lastShiftNumber          Int          @default(0)
   // A forgotten-open shift (cashier went home without closing) otherwise
   // blocks next-day reconciliation indefinitely -- when enabled, the
   // ShiftAutoCloseService cron force-closes any shift still open past
@@ -84,10 +84,10 @@ model Location {
   // manually either. Off by default -- a real operational change, not a
   // silent default, per the same "explicit per-branch opt-in" precedent as
   // allowNegativeStock above.
-  autoCloseEnabled    Boolean @default(false)
-  autoCloseCutoffHour Int     @default(4)
-  isActive  Boolean      @default(true)
-  createdAt DateTime     @default(now())
+  autoCloseEnabled         Boolean      @default(false)
+  autoCloseCutoffHour      Int          @default(4)
+  isActive                 Boolean      @default(true)
+  createdAt                DateTime     @default(now())
 
   inventoryBalances InventoryBalance[]
   inventoryBatches  InventoryBatch[]
@@ -107,19 +107,19 @@ model Location {
 // ShiftAutoCloseService عند تفعيل autoCloseEnabled. واحد فقط لكل (فرع، يوم)
 // -- إغلاق ثانٍ لنفس اليوم يُحدّث نفس السجل بدل تكرار الإحصائيات.
 model DayClose {
-  id           String    @id @default(cuid())
-  locationId   String
-  businessDate DateTime  @db.Date
-  closedAt     DateTime  @default(now())
-  closedById   String?
-  autoClosed   Boolean   @default(false)
-  shiftsCount  Int
-  totalRevenue Decimal   @db.Decimal(12, 2)
+  id            String   @id @default(cuid())
+  locationId    String
+  businessDate  DateTime @db.Date
+  closedAt      DateTime @default(now())
+  closedById    String?
+  autoClosed    Boolean  @default(false)
+  shiftsCount   Int
+  totalRevenue  Decimal  @db.Decimal(12, 2)
   totalVariance Decimal  @db.Decimal(12, 2)
-  createdAt    DateTime  @default(now())
+  createdAt     DateTime @default(now())
 
   location Location @relation(fields: [locationId], references: [id])
-  closedBy User?     @relation(fields: [closedById], references: [id])
+  closedBy User?    @relation(fields: [closedById], references: [id])
 
   @@unique([locationId, businessDate])
 }
@@ -140,16 +140,17 @@ model User {
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
 
-  roles                 UserRole[]
-  locationScopes        UserLocationScope[]
-  shiftsOpened          Shift[]             @relation("ShiftOpenedBy")
-  shiftsClosed          Shift[]             @relation("ShiftClosedBy")
-  ordersServed          Order[]             @relation("OrderServedBy")
-  approvals             Approval[]
-  returnsCreated        OrderReturn[]
-  purchaseReturnsCreated PurchaseReturn[]
-  orderActivityLogs      OrderActivityLog[]
-  dayClosesClosed        DayClose[]
+  roles                   UserRole[]
+  locationScopes          UserLocationScope[]
+  shiftsOpened            Shift[]                  @relation("ShiftOpenedBy")
+  shiftsClosed            Shift[]                  @relation("ShiftClosedBy")
+  ordersServed            Order[]                  @relation("OrderServedBy")
+  approvals               Approval[]
+  returnsCreated          OrderReturn[]
+  purchaseReturnsCreated  PurchaseReturn[]
+  orderActivityLogs       OrderActivityLog[]
+  orderReturnActivityLogs OrderReturnActivityLog[]
+  dayClosesClosed         DayClose[]
 }
 
 model Role {
@@ -328,11 +329,11 @@ model MenuItem {
   imageData     Bytes?
   imageMimeType String?
 
-  recipe            RecipeLine[]
-  orderLines        OrderLine[]
-  channelPrices     MenuItemChannelPrice[]
-  comboSlotOptions  ComboSlotOption[]
-  comboSelections   ComboSelection[]
+  recipe           RecipeLine[]
+  orderLines       OrderLine[]
+  channelPrices    MenuItemChannelPrice[]
+  comboSlotOptions ComboSlotOption[]
+  comboSelections  ComboSelection[]
 }
 
 // قناة بيع خارجية بسعرها الخاص -- مختلفة عن OrderType (التصنيف العام
@@ -454,14 +455,14 @@ enum POStatus {
 }
 
 model PurchaseOrder {
-  id          String   @id @default(cuid())
-  locationId  String // موقع الوجهة (فرع أو مطبخ مركزي)
-  supplierId  String
-  status      POStatus @default(DRAFT)
+  id               String   @id @default(cuid())
+  locationId       String // موقع الوجهة (فرع أو مطبخ مركزي)
+  supplierId       String
+  status           POStatus @default(DRAFT)
   // نفس منطق Location.pricesIncludeVat لكن لكل أمر شراء على حدة -- يعتمد
   // على شكل فاتورة هذا المورد بالذات (بعض الموردين يكتبون السعر شامل
   // الضريبة، وبعضهم قبلها)، فليست خاصية ثابتة للفرع كما هي في المبيعات.
-  pricesIncludeVat Boolean @default(false)
+  pricesIncludeVat Boolean  @default(false)
   // subtotal: مجموع (الكمية × سعر الوحدة) كما أُدخل تمامًا، بغض النظر عن
   // كونه شامل الضريبة أو لا. vatTotal: حصيلة الضريبة فقط (تُستخرج من
   // subtotal إن كانت الأسعار شاملة، أو تُضاف عليه إن لم تكن) -- بنفس صيغة
@@ -469,11 +470,11 @@ model PurchaseOrder {
   // الضريبة دائمًا) الذي تعتمد عليه مصفوفة الموافقات (ApprovalRulesService)
   // ولا داعي لتغيير اسمه لأنه ما زال يمثّل نفس الشيء الذي كان يمثّله قبل
   // إضافة الضريبة.
-  subtotal    Decimal  @db.Decimal(12, 2) @default(0)
-  vatTotal    Decimal  @db.Decimal(12, 2) @default(0)
-  totalAmount Decimal  @db.Decimal(12, 2)
-  createdById String
-  createdAt   DateTime @default(now())
+  subtotal         Decimal  @default(0) @db.Decimal(12, 2)
+  vatTotal         Decimal  @default(0) @db.Decimal(12, 2)
+  totalAmount      Decimal  @db.Decimal(12, 2)
+  createdById      String
+  createdAt        DateTime @default(now())
 
   location  Location            @relation(fields: [locationId], references: [id])
   supplier  Supplier            @relation(fields: [supplierId], references: [id])
@@ -494,8 +495,8 @@ model PurchaseOrderLine {
   // MenuItem.taxType، بلا تكرار.
   taxType         TaxType @default(STANDARD)
 
-  purchaseOrder PurchaseOrder       @relation(fields: [purchaseOrderId], references: [id])
-  ingredient    Ingredient          @relation(fields: [ingredientId], references: [id])
+  purchaseOrder PurchaseOrder        @relation(fields: [purchaseOrderId], references: [id])
+  ingredient    Ingredient           @relation(fields: [ingredientId], references: [id])
   returnLines   PurchaseReturnLine[]
 }
 
@@ -624,13 +625,13 @@ model StocktakeLine {
 // العملاء والولاء — القرار #15
 // ---------------------------------------------------------------------------
 model Customer {
-  id        String   @id @default(cuid())
-  name      String?
-  phone     String   @unique
+  id                    String        @id @default(cuid())
+  name                  String?
+  phone                 String        @unique
   // Derived running total, cached for fast reads -- LoyaltyTransaction
   // below is the actual source of truth (Phase 10c, CustomersService),
   // same "ledger + cached aggregate" split as StockMovement/InventoryBalance.
-  points    Int      @default(0)
+  points                Int           @default(0)
   // Ties this customer to a price list (SalesChannel) -- e.g. a delivery-
   // app aggregator's own account, a wholesale/company customer, etc.
   // OrdersService.create() applies it automatically once this customer is
@@ -640,7 +641,7 @@ model Customer {
   // walk-in customer today.
   defaultSalesChannelId String?
   defaultSalesChannel   SalesChannel? @relation(fields: [defaultSalesChannelId], references: [id])
-  createdAt DateTime @default(now())
+  createdAt             DateTime      @default(now())
 
   orders              Order[]
   loyaltyTransactions LoyaltyTransaction[]
@@ -675,30 +676,30 @@ model Table {
 // الورديات وتسوية النقدية — القرار #12
 // ---------------------------------------------------------------------------
 model Shift {
-  id             String    @id @default(cuid())
-  locationId     String
-  openedById     String
-  closedById     String?
-  openingFloat   Decimal   @db.Decimal(12, 2)
-  closingCounted Decimal?  @db.Decimal(12, 2) // ما تم عدّه فعليًا عند الإغلاق
-  expectedCash   Decimal?  @db.Decimal(12, 2) // ما يُفترض وجوده حسابيًا
-  variance       Decimal?  @db.Decimal(12, 2) // Over/Short
-  openedAt       DateTime  @default(now())
-  closedAt       DateTime?
+  id                String    @id @default(cuid())
+  locationId        String
+  openedById        String
+  closedById        String?
+  openingFloat      Decimal   @db.Decimal(12, 2)
+  closingCounted    Decimal?  @db.Decimal(12, 2) // ما تم عدّه فعليًا عند الإغلاق
+  expectedCash      Decimal?  @db.Decimal(12, 2) // ما يُفترض وجوده حسابيًا
+  variance          Decimal?  @db.Decimal(12, 2) // Over/Short
+  openedAt          DateTime  @default(now())
+  closedAt          DateTime?
   // آخر رقم فاتورة صادر لهذه الوردية -- يُزاد ذريًا (increment) عند كل طلب
   // جديد بدل عدّ الطلبات الموجودة، لتفادي تعارض رقمين متطابقين لو وصل
   // طلبان في نفس اللحظة (orders.service.ts create()).
-  lastOrderSequence Int    @default(0)
+  lastOrderSequence Int       @default(0)
   // Human-friendly "SH{n}" number for this shift, assigned atomically from
   // Location.lastShiftNumber when the shift is opened. Nullable rather than
   // backfilled for shifts that existed before this field -- same "old rows
   // just show '-'" approach shiftSequence/dailySequence already established.
-  shiftNumber Int?
+  shiftNumber       Int?
 
-  location Location @relation(fields: [locationId], references: [id])
-  openedBy User     @relation("ShiftOpenedBy", fields: [openedById], references: [id])
-  closedBy User?    @relation("ShiftClosedBy", fields: [closedById], references: [id])
-  orders   Order[]
+  location         Location          @relation(fields: [locationId], references: [id])
+  openedBy         User              @relation("ShiftOpenedBy", fields: [openedById], references: [id])
+  closedBy         User?             @relation("ShiftClosedBy", fields: [closedById], references: [id])
+  orders           Order[]
   productionOrders ProductionOrder[]
 }
 
@@ -737,57 +738,57 @@ enum InvoiceType {
 }
 
 model Order {
-  id               String       @id @default(cuid())
+  id                       String      @id @default(cuid())
   // A single global auto-increment across every order regardless of
   // branch/shift/day -- distinct from shiftSequence/dailySequence below
   // (each of which restarts at 1 per shift/day and is what prints on the
   // invoice), and from `id` itself (a cuid, meaningless to a human). This
   // is purely an internal, always-increasing reference for admin screens
   // (e.g. sorting/searching the Orders report by DB insertion order).
-  sequenceNumber   Int          @unique @default(autoincrement())
-  locationId       String
-  tableId          String?
-  customerId       String?
-  shiftId          String?
+  sequenceNumber           Int         @unique @default(autoincrement())
+  locationId               String
+  tableId                  String?
+  customerId               String?
+  shiftId                  String?
   // يخزّن OrderType.code (نص مستقر، وليس مفتاحًا أجنبيًا) -- نفس نمط
   // PaymentMethod.code في Payment، يبقى صالحًا حتى لو أُلغي تفعيل/حُذف
   // نوع الطلب لاحقًا. يُتحقق من وجوده وتفعيله عند الإنشاء في orders.service.ts.
-  channel          String
+  channel                  String
   // اختياري -- عند تحديده، سطور الطلب تُسعَّر بقائمة أسعار هذه القناة
   // (MenuItemChannelPrice) بدل السعر الأساسي، منفصل تمامًا عن OrderType
   // أعلاه (التصنيف العام لأغراض العروض/التحليلات).
-  salesChannelId   String?
-  invoiceType      InvoiceType  @default(CASH)
+  salesChannelId           String?
+  invoiceType              InvoiceType @default(CASH)
   // أرقام فاتورة قابلة للقراءة، منفصلة تمامًا عن zatcaInvoiceCounter (وهو
   // تسلسل ZATCA الرسمي على مستوى الفرع بأكمله ولا يجوز كسره). shiftSequence
   // يبدأ من 1 مع كل وردية جديدة (لا علاقة له بمعرّف/اسم الوردية نفسه)،
   // dailySequence يبدأ من 1 مع كل يوم تقويمي جديد لنفس الفرع، عبر كل
   // الورديات في ذلك اليوم. تُحسب ذريًا داخل معاملة create() في orders.service.ts.
-  shiftSequence    Int?
-  dailySequence    Int?
-  status           OrderStatus  @default(OPEN)
-  servedById       String?
-  subtotal         Decimal      @db.Decimal(12, 2)
-  discountTotal    Decimal      @default(0) @db.Decimal(12, 2)
+  shiftSequence            Int?
+  dailySequence            Int?
+  status                   OrderStatus @default(OPEN)
+  servedById               String?
+  subtotal                 Decimal     @db.Decimal(12, 2)
+  discountTotal            Decimal     @default(0) @db.Decimal(12, 2)
   // Phase 10b: set only when discountTotal came from the Promotions engine
   // auto-applying an active Promotion (not when a cashier passed a manual
   // discountTotal directly) -- an audit trail for which deal actually fired.
-  promotionId      String?
-  vatTotal         Decimal      @db.Decimal(12, 2)
-  grandTotal       Decimal      @db.Decimal(12, 2)
+  promotionId              String?
+  vatTotal                 Decimal     @db.Decimal(12, 2)
+  grandTotal               Decimal     @db.Decimal(12, 2)
   // ZATCA — القرار #3: تولَّد وتُوقَّع محليًا وقت البيع (Phase 9, ZatcaService).
   // zatcaSyncStatus: PENDING (لم تُولَّد بعد -- الوضع الافتراضي قبل الدفع، ويبقى
   // كذلك لو الموقع بلا vatNumber مُعدّ) | GENERATED (وُلّدت ووُقّعت محليًا فعليًا،
   // جاهزة للرفع) | SYNCED (رُفعت واعتُمدت فعليًا من فاتورة) | FAILED (رُفضت من فاتورة).
   // لا يوجد بيئة اعتماد ZATCA حقيقية متاحة هنا، فـ SYNCED لن يظهر عمليًا حتى تُوصَّل
   // بيانات اعتماد حقيقية عبر ZatcaService.submitToZatca.
-  zatcaUuid        String?
-  zatcaQrCode      String?      @db.Text
-  zatcaSignature   String?      @db.Text
-  zatcaInvoiceHash String?      @db.Text
-  zatcaXml         String?      @db.Text
-  zatcaPublicKey   String?      @db.Text
-  zatcaSyncStatus  String       @default("PENDING")
+  zatcaUuid                String?
+  zatcaQrCode              String?     @db.Text
+  zatcaSignature           String?     @db.Text
+  zatcaInvoiceHash         String?     @db.Text
+  zatcaXml                 String?     @db.Text
+  zatcaPublicKey           String?     @db.Text
+  zatcaSyncStatus          String      @default("PENDING")
   // Invoice Counter Value (ICV) and Previous Invoice Hash (PIH): ZATCA's
   // chaining requirement so every reported invoice references the one
   // immediately before it at the same location (tamper-evidence -- you
@@ -796,24 +797,24 @@ model Order {
   // bytes -- a documented ZATCA quirk, different from the QR's tag 6
   // which IS raw bytes); the very first invoice at a location uses
   // ZATCA's published genesis value for SHA-256("0") (see zatca.service.ts).
-  zatcaInvoiceCounter     Int?
-  zatcaPreviousInvoiceHash String?  @db.Text
-  createdAt        DateTime     @default(now())
-  paidAt           DateTime?
+  zatcaInvoiceCounter      Int?
+  zatcaPreviousInvoiceHash String?     @db.Text
+  createdAt                DateTime    @default(now())
+  paidAt                   DateTime?
   // Set the moment kitchen staff dismiss a cancelled order's ticket from
   // the KDS board (KitchenService.acknowledgeCancel) -- null means a
   // VOIDED order with a line the kitchen hadn't finished yet is still
   // owed an explicit "stop cooking this" notice, so KitchenService.queue()
   // keeps surfacing it. Irrelevant for an order that was never VOIDED.
-  kitchenCancelAckAt DateTime?
+  kitchenCancelAckAt       DateTime?
 
-  location     Location      @relation("OrderLocation", fields: [locationId], references: [id])
-  table        Table?        @relation(fields: [tableId], references: [id])
-  customer     Customer?     @relation(fields: [customerId], references: [id])
-  shift        Shift?        @relation(fields: [shiftId], references: [id])
-  servedBy     User?         @relation("OrderServedBy", fields: [servedById], references: [id])
-  promotion    Promotion?    @relation(fields: [promotionId], references: [id])
-  salesChannel SalesChannel? @relation(fields: [salesChannelId], references: [id])
+  location     Location           @relation("OrderLocation", fields: [locationId], references: [id])
+  table        Table?             @relation(fields: [tableId], references: [id])
+  customer     Customer?          @relation(fields: [customerId], references: [id])
+  shift        Shift?             @relation(fields: [shiftId], references: [id])
+  servedBy     User?              @relation("OrderServedBy", fields: [servedById], references: [id])
+  promotion    Promotion?         @relation(fields: [promotionId], references: [id])
+  salesChannel SalesChannel?      @relation(fields: [salesChannelId], references: [id])
   lines        OrderLine[]
   payments     Payment[]
   returns      OrderReturn[]
@@ -838,12 +839,12 @@ model DailyInvoiceCounter {
 // أثر صريح لمن علّقها ومتى ولماذا، بدل الاعتماد على مجرد "لم يُدفع بعد" التي
 // لا تُفرّق بين "لم يصل الكاشير له بعد" و"عُلّق عمدًا".
 model OrderActivityLog {
-  id        String   @id @default(cuid())
-  orderId   String
-  action    String // HELD / VOIDED / RETURNED / RETURN_KITCHEN_BLOCK_OVERRIDDEN
-  note      String?
+  id          String   @id @default(cuid())
+  orderId     String
+  action      String // HELD / VOIDED / RETURNED / RETURN_KITCHEN_BLOCK_OVERRIDDEN
+  note        String?
   createdById String
-  createdAt DateTime @default(now())
+  createdAt   DateTime @default(now())
 
   order     Order @relation(fields: [orderId], references: [id])
   createdBy User  @relation(fields: [createdById], references: [id])
@@ -908,12 +909,12 @@ model ComboMeal {
 }
 
 model ComboSlot {
-  id          String            @id @default(cuid())
+  id          String @id @default(cuid())
   comboMealId String
   label       String // مثال: "الطبق الرئيسي"، "المشروب"
-  minSelect   Int               @default(1)
-  maxSelect   Int               @default(1)
-  sortOrder   Int               @default(0)
+  minSelect   Int    @default(1)
+  maxSelect   Int    @default(1)
+  sortOrder   Int    @default(0)
 
   comboMeal  ComboMeal         @relation(fields: [comboMealId], references: [id], onDelete: Cascade)
   options    ComboSlotOption[]
@@ -921,10 +922,10 @@ model ComboSlot {
 }
 
 model ComboSlotOption {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   comboSlotId String
   menuItemId  String
-  extraPrice  Decimal  @default(0) @db.Decimal(10, 2)
+  extraPrice  Decimal @default(0) @db.Decimal(10, 2)
 
   comboSlot ComboSlot @relation(fields: [comboSlotId], references: [id], onDelete: Cascade)
   menuItem  MenuItem  @relation(fields: [menuItemId], references: [id])
@@ -937,11 +938,11 @@ model ComboSlotOption {
 // الطلب، فتغيير سعر خيار مستقبلًا لا يُغيّر فواتير سابقة، بنفس مبدأ
 // OrderLine.unitPrice الذي يُجمّد سعر البيع وقت الطلب لا وقت القراءة.
 model ComboSelection {
-  id          String @id @default(cuid())
+  id          String  @id @default(cuid())
   orderLineId String
   comboSlotId String
   menuItemId  String
-  quantity    Int    @default(1)
+  quantity    Int     @default(1)
   extraPrice  Decimal @db.Decimal(10, 2)
 
   orderLine OrderLine @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
@@ -954,16 +955,32 @@ model ComboSelection {
 // يسجّل مبلغ استرداد صريح + يعيد المخزون المستهلك لنفس الأصناف المُرجَعة، بدل
 // مجرد إلغاء الطلب بالكامل.
 model OrderReturn {
-  id          String   @id @default(cuid())
-  orderId     String
-  reason      String?
-  refundTotal Decimal  @db.Decimal(12, 2)
-  createdById String
-  createdAt   DateTime @default(now())
+  id                       String   @id @default(cuid())
+  orderId                  String
+  reason                   String?
+  refundTotal              Decimal  @db.Decimal(12, 2)
+  createdById              String
+  createdAt                DateTime @default(now())
+  // ZATCA credit note (نطاق موازٍ تمامًا لحقول Order.zatca* أعلاه، لكن
+  // لمستند ائتمان بدل فاتورة) -- تُولَّد وتُوقَّع محليًا داخل نفس معاملة
+  // ReturnsService.create()/voidPaidOrder()، بنفس منطق ZatcaService.
+  // ICV/PIH لهذا المستند يشتركان في نفس سلسلة الفرع (Location.zatcaInvoiceCounter)
+  // التي تستخدمها الفواتير العادية -- ZATCA تتوقع سلسلة واحدة موحّدة زمنيًا
+  // لكل مستندات الفرع (فواتير + إشعارات دائن)، وليست سلسلتين منفصلتين.
+  zatcaUuid                String?
+  zatcaQrCode              String?  @db.Text
+  zatcaSignature           String?  @db.Text
+  zatcaInvoiceHash         String?  @db.Text
+  zatcaXml                 String?  @db.Text
+  zatcaPublicKey           String?  @db.Text
+  zatcaSyncStatus          String   @default("PENDING")
+  zatcaInvoiceCounter      Int?
+  zatcaPreviousInvoiceHash String?  @db.Text
 
-  order     Order             @relation(fields: [orderId], references: [id])
-  createdBy User              @relation(fields: [createdById], references: [id])
-  lines     OrderReturnLine[]
+  order       Order                    @relation(fields: [orderId], references: [id])
+  createdBy   User                     @relation(fields: [createdById], references: [id])
+  lines       OrderReturnLine[]
+  activityLog OrderReturnActivityLog[]
 }
 
 model OrderReturnLine {
@@ -972,9 +989,30 @@ model OrderReturnLine {
   orderLineId  String
   quantity     Int
   refundAmount Decimal @db.Decimal(12, 2)
+  // لقطة (snapshot) من تفكيك refundAmount وقت الإرجاع -- net + vat = refundAmount
+  // دائمًا (net فقط لو الصنف ZERO_RATED/EXEMPT أو الفرع pricesIncludeVat)، محفوظة
+  // بدل إعادة حسابها لاحقًا حتى لا يختلف عرض المرتجع عن المبلغ المسجَّل فعليًا
+  // لو تغيّر لاحقًا سعر الضريبة/إعداد الفرع.
+  netAmount    Decimal @default(0) @db.Decimal(12, 2)
+  vatAmount    Decimal @default(0) @db.Decimal(12, 2)
 
   return    OrderReturn @relation(fields: [returnId], references: [id])
   orderLine OrderLine   @relation(fields: [orderLineId], references: [id])
+}
+
+// سجل تدقيق مستقل خاص بكل مرتجع على حدة (بخلاف OrderActivityLog الذي يسجّل
+// حركة الطلب ككل) -- مفيد عندما يكون لنفس الطلب أكثر من مرتجع، فيتيح تتبّع
+// تاريخ كل مرتجع بمعزل عن الآخر: إنشاؤه، ثم توليد إشعار الدائن الضريبي له.
+model OrderReturnActivityLog {
+  id          String   @id @default(cuid())
+  returnId    String
+  action      String // CREATED / ZATCA_CREDIT_NOTE_GENERATED
+  note        String?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  return    OrderReturn @relation(fields: [returnId], references: [id])
+  createdBy User        @relation(fields: [createdById], references: [id])
 }
 
 enum PaymentMode {
@@ -1069,14 +1107,14 @@ model GeneratedReport {
 // (e.g. a freshly-deployed empty environment) to an exact byte-for-byte
 // copy of another one, not just re-seed product/catalog data.
 model Backup {
-  id          String   @id @default(cuid())
+  id        String   @id @default(cuid())
   // Who/what triggered this backup -- a User.id for an on-demand backup
   // (POST /backups), or the literal string "SYSTEM_CRON" for the daily
   // scheduled one, which has no acting user.
-  createdBy   String
-  note        String?
-  fileName    String
-  sizeBytes   Int // حجم fileData بعد الضغط -- لعرض قائمة النسخ دون تحميل كل bytea
-  fileData    Bytes
-  createdAt   DateTime @default(now())
+  createdBy String
+  note      String?
+  fileName  String
+  sizeBytes Int // حجم fileData بعد الضغط -- لعرض قائمة النسخ دون تحميل كل bytea
+  fileData  Bytes
+  createdAt DateTime @default(now())
 }

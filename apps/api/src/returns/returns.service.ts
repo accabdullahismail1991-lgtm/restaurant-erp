@@ -4,6 +4,7 @@ import { scopedLocationIds } from '../common/location-scope.util';
 import { userHasPermission } from '../common/permission.util';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ZatcaService } from '../zatca/zatca.service';
 import { CreateReturnDto } from './dto/create-return.dto';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -13,6 +14,7 @@ export class ReturnsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly inventory: InventoryService,
+    private readonly zatca: ZatcaService,
   ) {}
 
   private async assertLocationInScope(userId: string, locationId: string) {
@@ -127,9 +129,9 @@ export class ReturnsService {
       if (already + l.quantity > orderLine.quantity) {
         throw new BadRequestException(`الكمية المطلوب إرجاعها أكبر من المتبقي القابل للإرجاع لهذا الصنف`);
       }
-      const refundAmount = this.computeLineRefund(orderLine, l.quantity, order, location);
+      const { net, vat, refundAmount } = this.computeLineRefund(orderLine, l.quantity, order, location);
       refundTotal += refundAmount;
-      return { orderLine, quantity: l.quantity, refundAmount };
+      return { orderLine, quantity: l.quantity, net, vat, refundAmount };
     });
     refundTotal = round2(refundTotal);
 
@@ -140,7 +142,7 @@ export class ReturnsService {
 
       for (const c of computed) {
         await tx.orderReturnLine.create({
-          data: { returnId: ret.id, orderLineId: c.orderLine.id, quantity: c.quantity, refundAmount: c.refundAmount },
+          data: { returnId: ret.id, orderLineId: c.orderLine.id, quantity: c.quantity, refundAmount: c.refundAmount, netAmount: c.net, vatAmount: c.vat },
         });
       }
       await this.restockComputedLines(tx, order.locationId, ret.id, computed);
@@ -158,9 +160,27 @@ export class ReturnsService {
           },
         });
       }
+      await this.logReturnCreated(tx, ret.id, userId, dto.reason);
 
       return tx.orderReturn.findUniqueOrThrow({ where: { id: ret.id }, include: { lines: true } });
     });
+  }
+
+  // Own-return audit trail (see OrderReturnActivityLog's schema comment) --
+  // shared by create() and voidPaidOrder(): logs CREATED, then generates
+  // the ZATCA credit note and logs a second entry ONLY if one was actually
+  // produced (never claims ZATCA generation that generateForReturn silently
+  // skipped for a location with no vatNumber configured).
+  private async logReturnCreated(tx: Prisma.TransactionClient, returnId: string, userId: string, reason?: string) {
+    await tx.orderReturnActivityLog.create({
+      data: { returnId, action: 'CREATED', note: reason, createdById: userId },
+    });
+    const generated = await this.zatca.generateForReturn(tx, returnId);
+    if (generated) {
+      await tx.orderReturnActivityLog.create({
+        data: { returnId, action: 'ZATCA_CREDIT_NOTE_GENERATED', createdById: userId },
+      });
+    }
   }
 
   // Refund for one returned line, built to agree exactly with what
@@ -178,13 +198,14 @@ export class ReturnsService {
     quantity: number,
     order: { subtotal: Prisma.Decimal | number; discountTotal: Prisma.Decimal | number },
     location: { vatRate: Prisma.Decimal | number; pricesIncludeVat: boolean },
-  ) {
+  ): { net: number; vat: number; refundAmount: number } {
     const lineGross = Number(orderLine.unitPrice) * quantity;
     const subtotal = Number(order.subtotal);
     const discountShare = subtotal > 0 ? Number(order.discountTotal) * (lineGross / subtotal) : 0;
-    const lineNet = round2(lineGross - discountShare);
+    const net = round2(lineGross - discountShare);
     const taxable = orderLine.menuItem?.taxType === TaxType.STANDARD && !location.pricesIncludeVat;
-    return taxable ? round2(lineNet * (1 + Number(location.vatRate) / 100)) : lineNet;
+    const vat = taxable ? round2(net * (Number(location.vatRate) / 100)) : 0;
+    return { net, vat, refundAmount: round2(net + vat) };
   }
 
   // Restocks the recipe of every computed return line into `tx`, tagged to
@@ -254,8 +275,8 @@ export class ReturnsService {
     const computed = menuItemLines
       .map((orderLine) => {
         const remaining = orderLine.quantity - (returnedByLine.get(orderLine.id) || 0);
-        const refundAmount = this.computeLineRefund(orderLine, remaining, order, location);
-        return { orderLine, quantity: remaining, refundAmount };
+        const { net, vat, refundAmount } = this.computeLineRefund(orderLine, remaining, order, location);
+        return { orderLine, quantity: remaining, net, vat, refundAmount };
       })
       .filter((c) => c.quantity > 0);
     refundTotal = round2(computed.reduce((s, c) => s + c.refundAmount, 0));
@@ -267,10 +288,11 @@ export class ReturnsService {
         });
         for (const c of computed) {
           await tx.orderReturnLine.create({
-            data: { returnId: ret.id, orderLineId: c.orderLine.id, quantity: c.quantity, refundAmount: c.refundAmount },
+            data: { returnId: ret.id, orderLineId: c.orderLine.id, quantity: c.quantity, refundAmount: c.refundAmount, netAmount: c.net, vatAmount: c.vat },
           });
         }
         await this.restockComputedLines(tx, order.locationId, ret.id, computed);
+        await this.logReturnCreated(tx, ret.id, userId, reason ?? 'إلغاء الفاتورة بالكامل');
       }
 
       await tx.orderActivityLog.create({
@@ -290,8 +312,29 @@ export class ReturnsService {
       where: {
         order: locationId ? { locationId } : allowedIds ? { locationId: { in: allowedIds } } : {},
       },
-      include: { lines: { include: { orderLine: { include: { menuItem: true } } } }, order: true },
+      include: {
+        lines: { include: { orderLine: { include: { menuItem: true } } } },
+        order: { include: { location: { select: { name: true } } } },
+        createdBy: { select: { name: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  // Full detail for one return -- backs the credit-note popup (QR code,
+  // per-line net/vat breakdown, ZATCA fields, and its own activity log).
+  async findOne(id: string, userId: string) {
+    const ret = await this.prisma.orderReturn.findUnique({
+      where: { id },
+      include: {
+        lines: { include: { orderLine: { include: { menuItem: true, comboMeal: true } } } },
+        order: { include: { location: true, customer: true } },
+        createdBy: { select: { name: true } },
+        activityLog: { orderBy: { createdAt: 'desc' }, include: { createdBy: { select: { name: true } } } },
+      },
+    });
+    if (!ret) throw new NotFoundException('المرتجع غير موجود');
+    await this.assertLocationInScope(userId, ret.order.locationId);
+    return ret;
   }
 }

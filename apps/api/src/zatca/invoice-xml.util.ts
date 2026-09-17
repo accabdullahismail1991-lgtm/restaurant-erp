@@ -35,6 +35,12 @@ export interface InvoiceXmlInput {
   // Optional -- a Simplified Tax Invoice (B2C) never requires it, but a
   // customer attached to the sale (Phase 10c loyalty) is worth recording.
   buyerName?: string;
+  // Credit note support: ZATCA's InvoiceTypeCode 381 (default 388 = Tax
+  // Invoice) plus a BillingReference pointing back at the original
+  // invoice's ID -- both required together, since a credit note is always
+  // issued against a specific prior invoice, never standalone.
+  invoiceTypeCode?: number;
+  billingReferenceId?: string;
 }
 
 function escapeXml(value: string): string {
@@ -84,6 +90,19 @@ export function buildInvoiceXml(input: InvoiceXmlInput): string {
   </cac:AccountingCustomerParty>`
     : '';
 
+  // A credit note references the invoice it corrects (ZATCA requires this
+  // -- a credit note is never issued standalone). Placed right after the
+  // buyer party per UBL's element ordering (BillingReference follows
+  // AccountingCustomerParty, before TaxTotal).
+  const billingReference = input.billingReferenceId
+    ? `
+  <cac:BillingReference>
+    <cac:InvoiceDocumentReference>
+      <cbc:ID>${escapeXml(input.billingReferenceId)}</cbc:ID>
+    </cac:InvoiceDocumentReference>
+  </cac:BillingReference>`
+    : '';
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
   <cbc:ProfileID>reporting:1.0</cbc:ProfileID>
@@ -91,7 +110,7 @@ export function buildInvoiceXml(input: InvoiceXmlInput): string {
   <cbc:UUID>${input.uuid}</cbc:UUID>
   <cbc:IssueDate>${issueDate}</cbc:IssueDate>
   <cbc:IssueTime>${issueTime}</cbc:IssueTime>
-  <cbc:InvoiceTypeCode name="0200000">388</cbc:InvoiceTypeCode>
+  <cbc:InvoiceTypeCode name="0200000">${input.invoiceTypeCode ?? 388}</cbc:InvoiceTypeCode>
   <cbc:DocumentCurrencyCode>SAR</cbc:DocumentCurrencyCode>
   <cbc:TaxCurrencyCode>SAR</cbc:TaxCurrencyCode>
   <cac:AdditionalDocumentReference>
@@ -116,7 +135,7 @@ export function buildInvoiceXml(input: InvoiceXmlInput): string {
         <cbc:RegistrationName>${escapeXml(input.sellerName)}</cbc:RegistrationName>
       </cac:PartyLegalEntity>
     </cac:Party>
-  </cac:AccountingSupplierParty>${buyerParty}
+  </cac:AccountingSupplierParty>${buyerParty}${billingReference}
   <cac:TaxTotal>
     <cbc:TaxAmount currencyID="SAR">${money(input.vatTotal)}</cbc:TaxAmount>
   </cac:TaxTotal>

@@ -16,7 +16,7 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 // then Buffer.from(thatHexString).toString('base64').
 const ZATCA_GENESIS_PIH = 'NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ==';
 
-type Db = Pick<PrismaService, 'order' | 'menuItem' | 'location'>;
+type Db = Pick<PrismaService, 'order' | 'orderReturn' | 'menuItem' | 'location'>;
 
 // Phase 9 (docs/DECISIONS.md #3): every paid order gets a ZATCA Simplified
 // Tax Invoice generated and digitally signed LOCALLY, at sale time -- that
@@ -68,6 +68,33 @@ export class ZatcaService {
     fs.writeFileSync(pubPath, publicKeyDer);
     this.keyPair = { privateKey, publicKeyDer };
     return this.keyPair;
+  }
+
+  // ZATCA expects ONE chronological chain per location covering every
+  // document it issues -- tax invoices AND credit notes together, not a
+  // separate chain per document type. So "the previous document" has to be
+  // whichever of Order/OrderReturn actually holds the higher
+  // zatcaInvoiceCounter at this location, not just the last Order.
+  private async getPreviousInvoiceHash(tx: Db, locationId: string): Promise<string> {
+    const [prevOrder, prevReturn] = await Promise.all([
+      tx.order.findFirst({
+        where: { locationId, zatcaInvoiceCounter: { not: null } },
+        orderBy: { zatcaInvoiceCounter: 'desc' },
+        select: { zatcaInvoiceCounter: true, zatcaInvoiceHash: true },
+      }),
+      tx.orderReturn.findFirst({
+        where: { order: { locationId }, zatcaInvoiceCounter: { not: null } },
+        orderBy: { zatcaInvoiceCounter: 'desc' },
+        select: { zatcaInvoiceCounter: true, zatcaInvoiceHash: true },
+      }),
+    ]);
+    const latest = [prevOrder, prevReturn]
+      .filter((r): r is { zatcaInvoiceCounter: number | null; zatcaInvoiceHash: string | null } => r !== null)
+      .sort((a, b) => (b.zatcaInvoiceCounter ?? 0) - (a.zatcaInvoiceCounter ?? 0))[0];
+    if (!latest?.zatcaInvoiceHash) return ZATCA_GENESIS_PIH;
+    // PIH is base64 of the HEX STRING of the previous document's hash (not
+    // raw bytes -- see the field comment on Order.zatcaPreviousInvoiceHash).
+    return Buffer.from(Buffer.from(latest.zatcaInvoiceHash, 'base64').toString('hex')).toString('base64');
   }
 
   // Called from inside OrdersService.pay()'s own transaction, right after
@@ -122,21 +149,16 @@ export class ZatcaService {
     const uuid = order.zatcaUuid ?? randomUUID();
     const issueDateTime = order.paidAt ?? new Date();
 
-    // ZATCA chaining: this location's Nth reported invoice (ICV), and the
+    // ZATCA chaining: this location's Nth reported document (ICV), and the
     // hash of its immediate predecessor at this SAME location (PIH) --
     // never across locations, since each location's vatNumber makes it its
-    // own reporting unit. The increment happens inside the same
+    // own reporting unit, and never invoices-only (a credit note issued
+    // after this order's last invoice is a real predecessor too -- see
+    // getPreviousInvoiceHash). The increment happens inside the same
     // transaction pay() already runs generateForOrder in, so two orders at
     // the same location paid concurrently still get distinct, gap-free
     // counters (Postgres serializes the row update).
-    const previousInvoice = await tx.order.findFirst({
-      where: { locationId: order.locationId, zatcaInvoiceCounter: { not: null } },
-      orderBy: { zatcaInvoiceCounter: 'desc' },
-      select: { zatcaInvoiceHash: true },
-    });
-    const previousInvoiceHash = previousInvoice?.zatcaInvoiceHash
-      ? Buffer.from(Buffer.from(previousInvoice.zatcaInvoiceHash, 'base64').toString('hex')).toString('base64')
-      : ZATCA_GENESIS_PIH;
+    const previousInvoiceHash = await this.getPreviousInvoiceHash(tx, order.locationId);
     const updatedLocation = await tx.location.update({
       where: { id: order.locationId },
       data: { zatcaInvoiceCounter: { increment: 1 } },
@@ -195,6 +217,106 @@ export class ZatcaService {
         zatcaPreviousInvoiceHash: previousInvoiceHash,
       },
     });
+  }
+
+  // Mirrors generateForOrder above, but for a customer return: ZATCA's
+  // Credit Note (InvoiceTypeCode 381) referencing the original invoice via
+  // BillingReference, signed the same way, chained into the SAME
+  // per-location ICV/PIH sequence as ordinary invoices (see
+  // getPreviousInvoiceHash). Called from inside ReturnsService's own
+  // transaction, right after the OrderReturn row is created. Same silent
+  // no-op as generateForOrder when the location has no vatNumber -- a
+  // missing invoicing setting must never block an actual refund. Returns
+  // whether a credit note was actually generated, so the caller can log an
+  // accurate OrderReturnActivityLog entry (never claim ZATCA generation
+  // that was silently skipped).
+  async generateForReturn(tx: Db, returnId: string): Promise<boolean> {
+    const ret = await tx.orderReturn.findUniqueOrThrow({
+      where: { id: returnId },
+      include: {
+        order: { include: { location: true, customer: true } },
+        lines: { include: { orderLine: { include: { menuItem: true, comboMeal: true } } } },
+      },
+    });
+    const location = ret.order.location;
+    if (!location.vatNumber) {
+      this.logger.warn(`تخطّي توليد إشعار دائن ZATCA للمرتجع ${returnId} -- الموقع "${location.name}" بلا رقم ضريبي مُعدّ`);
+      return false;
+    }
+
+    // net/vat per line are the exact snapshot ReturnsService.computeLineRefund
+    // persisted on OrderReturnLine -- never recomputed here, so the credit
+    // note always agrees with the refund actually recorded/paid out.
+    const invoiceLines = ret.lines.map((l) => ({
+      name: l.orderLine.menuItem?.name ?? l.orderLine.comboMeal?.name ?? 'صنف',
+      quantity: l.quantity,
+      unitPrice: Number(l.orderLine.unitPrice),
+      lineTotal: Number(l.netAmount),
+      lineVat: Number(l.vatAmount),
+    }));
+
+    const uuid = ret.zatcaUuid ?? randomUUID();
+    const issueDateTime = ret.createdAt;
+    const previousInvoiceHash = await this.getPreviousInvoiceHash(tx, ret.order.locationId);
+    const updatedLocation = await tx.location.update({
+      where: { id: ret.order.locationId },
+      data: { zatcaInvoiceCounter: { increment: 1 } },
+    });
+    const invoiceCounter = updatedLocation.zatcaInvoiceCounter;
+    const netSubtotal = round2(invoiceLines.reduce((sum, l) => sum + l.lineTotal, 0));
+    const vatTotal = round2(invoiceLines.reduce((sum, l) => sum + l.lineVat, 0));
+
+    const xml = buildInvoiceXml({
+      invoiceId: ret.id,
+      uuid,
+      issueDateTime,
+      sellerName: location.name,
+      vatNumber: location.vatNumber,
+      // Already net of any discount share (see computeLineRefund) -- no
+      // separate discountTotal to apply again on top.
+      subtotal: netSubtotal,
+      discountTotal: 0,
+      vatTotal,
+      grandTotal: Number(ret.refundTotal),
+      lines: invoiceLines,
+      invoiceCounter,
+      previousInvoiceHash,
+      buyerName: ret.order.customer?.name ?? undefined,
+      invoiceTypeCode: 381,
+      billingReferenceId: ret.order.id,
+    });
+
+    const { privateKey, publicKeyDer } = this.getKeyPair();
+    const xmlBuffer = Buffer.from(xml, 'utf8');
+    const hash = createHash('sha256').update(xmlBuffer).digest();
+    const signature = createSign('sha256').update(xmlBuffer).end().sign(privateKey);
+
+    const qrCode = buildQr({
+      sellerName: location.name,
+      vatNumber: location.vatNumber,
+      timestamp: issueDateTime.toISOString(),
+      invoiceTotal: Number(ret.refundTotal).toFixed(2),
+      vatTotal: vatTotal.toFixed(2),
+      invoiceHash: hash,
+      signature,
+      publicKey: publicKeyDer,
+    });
+
+    await tx.orderReturn.update({
+      where: { id: returnId },
+      data: {
+        zatcaUuid: uuid,
+        zatcaXml: xml,
+        zatcaInvoiceHash: hash.toString('base64'),
+        zatcaSignature: signature.toString('base64'),
+        zatcaPublicKey: publicKeyDer.toString('base64'),
+        zatcaQrCode: qrCode,
+        zatcaSyncStatus: 'GENERATED',
+        zatcaInvoiceCounter: invoiceCounter,
+        zatcaPreviousInvoiceHash: previousInvoiceHash,
+      },
+    });
+    return true;
   }
 
   // Would report the signed invoice to ZATCA's actual Fatoora platform

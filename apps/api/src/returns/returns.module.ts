@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { InventoryModule } from '../inventory/inventory.module';
+import { ZatcaModule } from '../zatca/zatca.module';
 import { ReturnsController } from './returns.controller';
 import { ReturnsService } from './returns.service';
 
 @Module({
-  imports: [AuthModule, InventoryModule],
+  imports: [AuthModule, InventoryModule, ZatcaModule],
   controllers: [ReturnsController],
   providers: [ReturnsService],
   exports: [ReturnsService],
