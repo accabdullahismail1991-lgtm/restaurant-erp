@@ -86,6 +86,19 @@ model Location {
   // allowNegativeStock above.
   autoCloseEnabled         Boolean      @default(false)
   autoCloseCutoffHour      Int          @default(4)
+  // Both set together (or both left null) -- this branch's fiscal
+  // year-end (e.g. month=12, day=31). computeBusinessDate() (common/
+  // business-date.util.ts) reuses autoCloseCutoffHour above as the "day
+  // boundary hour" for EVERY order/shift, not just the auto-close cron:
+  // a shift opened before the cutoff and still running past midnight
+  // keeps every order on the SAME business date it opened on. These two
+  // fields are the one deliberate exception to that rule -- when the
+  // rolled-back business date would land exactly on the fiscal year-end,
+  // the roll-back is suspended so the first hours of the new fiscal year
+  // are never folded into the old year's last business day. Null (the
+  // default) means the exception never applies.
+  fiscalYearEndMonth       Int?
+  fiscalYearEndDay         Int?
   isActive                 Boolean      @default(true)
   createdAt                DateTime     @default(now())
 
@@ -695,6 +708,15 @@ model Shift {
   // backfilled for shifts that existed before this field -- same "old rows
   // just show '-'" approach shiftSequence/dailySequence already established.
   shiftNumber       Int?
+  // Computed ONCE here at open time via computeBusinessDate() (common/
+  // business-date.util.ts) -- every order created on this shift copies it
+  // verbatim (Order.businessDate below), so a shift opened at 5am and
+  // still running past midnight keeps ALL its orders on the SAME business
+  // date instead of an order placed at 1am silently rolling onto
+  // tomorrow's ledger. Nullable and not backfilled for shifts that
+  // existed before this field, same precedent as shiftNumber above --
+  // code reading it falls back to startOfUtcDay(openedAt) for those.
+  businessDate      DateTime? @db.Date
 
   location         Location          @relation(fields: [locationId], references: [id])
   openedBy         User              @relation("ShiftOpenedBy", fields: [openedById], references: [id])
@@ -807,6 +829,12 @@ model Order {
   // owed an explicit "stop cooking this" notice, so KitchenService.queue()
   // keeps surfacing it. Irrelevant for an order that was never VOIDED.
   kitchenCancelAckAt       DateTime?
+  // Copied verbatim from the parent shift's own businessDate at creation
+  // time (OrdersService.create()) -- every order on the same shift shares
+  // one business date however late into the next calendar day the shift
+  // itself runs. Nullable, same "not backfilled for pre-existing rows"
+  // precedent as Shift.businessDate/shiftNumber.
+  businessDate             DateTime?   @db.Date
 
   location     Location           @relation("OrderLocation", fields: [locationId], references: [id])
   table        Table?             @relation(fields: [tableId], references: [id])

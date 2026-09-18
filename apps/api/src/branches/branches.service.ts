@@ -22,6 +22,8 @@ const LOCATION_SELECT = {
   allowNegativeStock: true,
   autoCloseEnabled: true,
   autoCloseCutoffHour: true,
+  fiscalYearEndMonth: true,
+  fiscalYearEndDay: true,
   logoMimeType: true,
   invoiceHeaderNote: true,
   invoiceFooterNote: true,
@@ -31,6 +33,12 @@ const LOCATION_SELECT = {
 
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2MB
 const ALLOWED_LOGO_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+// Index 0 = January. Feb allows 29 so a fiscal year-end configured on a
+// leap day is never rejected outright -- computeBusinessDate() only ever
+// compares against a REAL calendar date it just rolled back to, so Feb 29
+// simply never matches in a non-leap year (same as any real anniversary
+// date would behave).
+const DAYS_IN_MONTH = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 function withHasLogo<T extends { logoMimeType: string | null }>(location: T) {
   const { logoMimeType, ...rest } = location;
@@ -72,6 +80,19 @@ export class BranchesService {
   async update(id: string, dto: UpdateLocationDto) {
     const existing = await this.prisma.location.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('الموقع غير موجود');
+
+    // Both-or-neither: a lone month or day makes computeBusinessDate()'s
+    // exception check meaningless. Resolved against the existing row so a
+    // PATCH touching unrelated fields doesn't need to resend both.
+    const month = dto.fiscalYearEndMonth !== undefined ? dto.fiscalYearEndMonth : existing.fiscalYearEndMonth;
+    const day = dto.fiscalYearEndDay !== undefined ? dto.fiscalYearEndDay : existing.fiscalYearEndDay;
+    if ((month == null) !== (day == null)) {
+      throw new BadRequestException('يجب تحديد شهر ويوم نهاية السنة المالية معًا، أو تركهما فارغين كليهما');
+    }
+    if (month != null && day != null && day > DAYS_IN_MONTH[month - 1]) {
+      throw new BadRequestException('يوم غير صالح لهذا الشهر');
+    }
+
     return this.prisma.location.update({ where: { id }, data: dto, select: LOCATION_SELECT }).then(withHasLogo);
   }
 

@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InvoiceType, OrderStatus, TaxType } from '@prisma/client';
+import { computeBusinessDate } from '../common/business-date.util';
 import { scopedLocationIds } from '../common/location-scope.util';
 import { userHasPermission } from '../common/permission.util';
 import { CustomersService, EARN_CURRENCY_PER_POINT } from '../customers/customers.service';
@@ -247,11 +248,17 @@ export class OrdersService {
         where: { id: dto.shiftId },
         data: { lastOrderSequence: { increment: 1 } },
       });
-      const today = new Date();
-      today.setUTCHours(0, 0, 0, 0);
+      // The daily counter buckets by this order's BUSINESS date, not
+      // whatever calendar day `new Date()` happens to be -- a shift opened
+      // at 5am and still running at 1am the next calendar day keeps every
+      // order's invoice numbering on the SAME business date its shift
+      // opened on. Falls back to computing it fresh only for a shift that
+      // predates businessDate (nullable, not backfilled -- see schema).
+      const businessDate =
+        shift.businessDate ?? computeBusinessDate(new Date(), location.autoCloseCutoffHour, location.fiscalYearEndMonth, location.fiscalYearEndDay);
       const { counter: dailySequence } = await tx.dailyInvoiceCounter.upsert({
-        where: { locationId_date: { locationId: dto.locationId, date: today } },
-        create: { locationId: dto.locationId, date: today, counter: 1 },
+        where: { locationId_date: { locationId: dto.locationId, date: businessDate } },
+        create: { locationId: dto.locationId, date: businessDate, counter: 1 },
         update: { counter: { increment: 1 } },
       });
 
@@ -266,6 +273,7 @@ export class OrdersService {
           invoiceType,
           shiftSequence,
           dailySequence,
+          businessDate,
           status: OrderStatus.SENT_TO_KITCHEN,
           servedById: userId,
           subtotal,

@@ -1,4 +1,4 @@
-import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsString, Matches, Max, Min, ValidateIf } from 'class-validator';
 import { LocationType } from '@prisma/client';
 
 export class UpdateLocationDto {
@@ -49,6 +49,25 @@ export class UpdateLocationDto {
   @Min(0)
   @Max(23)
   autoCloseCutoffHour?: number;
+
+  // Both set together (or both explicitly null to clear) -- BranchesService.
+  // update() enforces the pairing and that the day is valid for the month;
+  // the null-vs-undefined distinction (ValidateIf) follows the same
+  // "explicit null clears it, undefined leaves it alone" pattern
+  // UpdateCustomerDto.defaultSalesChannelId already uses.
+  @IsOptional()
+  @ValidateIf((o) => o.fiscalYearEndMonth !== null)
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  fiscalYearEndMonth?: number | null;
+
+  @IsOptional()
+  @ValidateIf((o) => o.fiscalYearEndDay !== null)
+  @IsInt()
+  @Min(1)
+  @Max(31)
+  fiscalYearEndDay?: number | null;
 
   @IsOptional()
   @IsString()

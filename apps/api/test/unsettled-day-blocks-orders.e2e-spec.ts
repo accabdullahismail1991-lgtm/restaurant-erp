@@ -9,9 +9,11 @@ import { resetDatabase } from './reset-db';
 // A new sales invoice must not land on top of an unsettled prior day: (1) a
 // shift opened before today that's still open (till not reconciled), or (2)
 // a calendar day whose shifts are all closed but nobody hit "إنهاء اليوم"
-// for it. Both cases are simulated by backdating Shift.openedAt directly
-// via Prisma (no clock to travel, and OpenShiftDto has no way to set it),
-// same technique this suite needs regardless of how the shift got there.
+// for it. Both cases are simulated by backdating Shift.openedAt AND
+// businessDate directly via Prisma (no clock to travel, and OpenShiftDto
+// has no way to set either) -- businessDate is what ShiftsService actually
+// buckets by (fixed at real open() time), so a backdate that only touched
+// openedAt would no longer register as a prior-day shift at all.
 describe('Unsettled prior day/shift blocks new order creation (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -77,7 +79,7 @@ describe('Unsettled prior day/shift blocks new order creation (e2e)', () => {
     const shiftRes = await request(app.getHttpServer()).post('/shifts').set(auth(token)).send({ locationId, openingFloat: 100 });
     const staleShiftId = shiftRes.body.id;
     const yesterday = new Date(startOfUtcDay(new Date()).getTime() - 24 * 60 * 60 * 1000 + 3600_000);
-    await prisma.shift.update({ where: { id: staleShiftId }, data: { openedAt: yesterday } });
+    await prisma.shift.update({ where: { id: staleShiftId }, data: { openedAt: yesterday, businessDate: startOfUtcDay(yesterday) } });
 
     const status = await request(app.getHttpServer()).get(`/shifts/settlement-status?locationId=${locationId}`).set(auth(token));
     expect(status.body.openStaleShifts).toHaveLength(1);
@@ -126,7 +128,7 @@ describe('Unsettled prior day/shift blocks new order creation (e2e)', () => {
     const shiftRes = await request(app.getHttpServer()).post('/shifts').set(auth(token)).send({ locationId, openingFloat: 100 });
     const priorShiftId = shiftRes.body.id;
     const yesterday = new Date(startOfUtcDay(new Date()).getTime() - 24 * 60 * 60 * 1000 + 3600_000);
-    await prisma.shift.update({ where: { id: priorShiftId }, data: { openedAt: yesterday } });
+    await prisma.shift.update({ where: { id: priorShiftId }, data: { openedAt: yesterday, businessDate: startOfUtcDay(yesterday) } });
     // Close it (reconciled), but do NOT run day-close -- this is exactly
     // the "yesterday's till is fine, but nobody ended the day" gap.
     await request(app.getHttpServer()).post(`/shifts/${priorShiftId}/close`).set(auth(token)).send({ closingCounted: 100 });
@@ -163,7 +165,7 @@ describe('Unsettled prior day/shift blocks new order creation (e2e)', () => {
 
     const dirtyShiftRes = await request(app.getHttpServer()).post('/shifts').set(auth(token)).send({ locationId: dirtyLocationId, openingFloat: 100 });
     const yesterday = new Date(startOfUtcDay(new Date()).getTime() - 24 * 60 * 60 * 1000 + 3600_000);
-    await prisma.shift.update({ where: { id: dirtyShiftRes.body.id }, data: { openedAt: yesterday } });
+    await prisma.shift.update({ where: { id: dirtyShiftRes.body.id }, data: { openedAt: yesterday, businessDate: startOfUtcDay(yesterday) } });
 
     const cleanShiftRes = await request(app.getHttpServer()).post('/shifts').set(auth(token)).send({ locationId: cleanLocationId, openingFloat: 100 });
     const order = await request(app.getHttpServer())

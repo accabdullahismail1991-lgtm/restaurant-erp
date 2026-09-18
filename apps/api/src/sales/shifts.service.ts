@@ -1,12 +1,17 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InvoiceType, OrderStatus } from '@prisma/client';
+import { computeBusinessDate } from '../common/business-date.util';
 import { scopedLocationIds } from '../common/location-scope.util';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CloseShiftDto, OpenShiftDto } from './dto/shift.dto';
 
 const startOfUtcDay = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+// A shift/order predating businessDate (nullable, not backfilled -- see
+// schema comment) falls back to its own openedAt/createdAt's calendar
+// day, exactly the old (pre-this-feature) behavior.
+const shiftBusinessDate = (s: { businessDate: Date | null; openedAt: Date }) => s.businessDate ?? startOfUtcDay(s.openedAt);
 
 @Injectable()
 export class ShiftsService {
@@ -37,12 +42,19 @@ export class ShiftsService {
     // counter -- two "فتح وردية" clicks at the exact same instant still get
     // distinct, gap-free SH numbers (Postgres serializes the row update).
     return this.prisma.$transaction(async (tx) => {
-      const { lastShiftNumber } = await tx.location.update({
+      const location = await tx.location.update({
         where: { id: dto.locationId },
         data: { lastShiftNumber: { increment: 1 } },
       });
+      const businessDate = computeBusinessDate(new Date(), location.autoCloseCutoffHour, location.fiscalYearEndMonth, location.fiscalYearEndDay);
       return tx.shift.create({
-        data: { locationId: dto.locationId, openedById: userId, openingFloat: dto.openingFloat, shiftNumber: lastShiftNumber },
+        data: {
+          locationId: dto.locationId,
+          openedById: userId,
+          openingFloat: dto.openingFloat,
+          shiftNumber: location.lastShiftNumber,
+          businessDate,
+        },
       });
     });
   }
@@ -294,8 +306,14 @@ export class ShiftsService {
     const day = startOfUtcDay(date);
     const nextDay = new Date(day.getTime() + 24 * 60 * 60 * 1000);
 
+    // A shift's OWN businessDate (fixed at open() time) is the authoritative
+    // grouping -- not a plain openedAt range -- so a shift opened at 5am
+    // and still running past midnight is grouped with the day it opened
+    // on, not split onto whatever calendar day its individual orders land.
+    // Falls back to an openedAt-range match for legacy shifts predating
+    // businessDate (nullable, not backfilled).
     const shifts = await this.prisma.shift.findMany({
-      where: { locationId, openedAt: { gte: day, lt: nextDay } },
+      where: { locationId, OR: [{ businessDate: day }, { businessDate: null, openedAt: { gte: day, lt: nextDay } }] },
       select: { id: true, closedAt: true, variance: true, orders: { where: { status: OrderStatus.PAID }, select: { grandTotal: true } } },
     });
     if (!shifts.length) throw new BadRequestException('لا توجد ورديات في هذا التاريخ لهذا الفرع');
@@ -350,22 +368,28 @@ export class ShiftsService {
   // "إنهاء اليوم"). A day with an open stale shift only shows up in (1) --
   // once that shift is closed it falls into (2) until closeDay() runs.
   private async buildSettlementStatus(locationId: string, lookbackDays = 31) {
-    const today = startOfUtcDay(new Date());
+    const location = await this.prisma.location.findUniqueOrThrow({ where: { id: locationId } });
+    const today = computeBusinessDate(new Date(), location.autoCloseCutoffHour, location.fiscalYearEndMonth, location.fiscalYearEndDay);
     const lookbackStart = new Date(today.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
 
-    const openShifts = await this.prisma.shift.findMany({
-      where: { locationId, closedAt: null, openedAt: { lt: today } },
-      select: { id: true, shiftNumber: true, openedAt: true, openedBy: { select: { name: true } } },
+    // "Open, from a business date before today" -- a shift's OWN
+    // businessDate (fixed at open time) is what makes it stale, not
+    // openedAt directly: a shift opened at 5am today and still running
+    // past midnight is still TODAY's shift, not a stale prior-day one.
+    const openShiftsRaw = await this.prisma.shift.findMany({
+      where: { locationId, closedAt: null },
+      select: { id: true, shiftNumber: true, openedAt: true, businessDate: true, openedBy: { select: { name: true } } },
       orderBy: { openedAt: 'asc' },
     });
+    const openShifts = openShiftsRaw.filter((s) => shiftBusinessDate(s).getTime() < today.getTime());
 
     const shiftsInWindow = await this.prisma.shift.findMany({
       where: { locationId, openedAt: { gte: lookbackStart, lt: today } },
-      select: { openedAt: true, closedAt: true },
+      select: { openedAt: true, closedAt: true, businessDate: true },
     });
     const dayMap = new Map<number, boolean>(); // day (ms) -> has an open shift that day
     for (const s of shiftsInWindow) {
-      const dayMs = startOfUtcDay(s.openedAt).getTime();
+      const dayMs = shiftBusinessDate(s).getTime();
       dayMap.set(dayMs, (dayMap.get(dayMs) ?? false) || !s.closedAt);
     }
     const fullyClosedDays = [...dayMap.entries()].filter(([, hasOpen]) => !hasOpen).map(([ms]) => new Date(ms));
@@ -432,9 +456,10 @@ export class ShiftsService {
   // tests can exercise the exact same logic without waiting for the clock,
   // same pattern ReportsService.generateForAllLocations already uses.
   async autoCloseLocationShifts(locationId: string, now: Date) {
-    const today = startOfUtcDay(now);
+    const location = await this.prisma.location.findUniqueOrThrow({ where: { id: locationId } });
+    const today = computeBusinessDate(now, location.autoCloseCutoffHour, location.fiscalYearEndMonth, location.fiscalYearEndDay);
     const openShifts = await this.prisma.shift.findMany({ where: { locationId, closedAt: null } });
-    const staleShifts = openShifts.filter((s) => startOfUtcDay(s.openedAt).getTime() < today.getTime());
+    const staleShifts = openShifts.filter((s) => shiftBusinessDate(s).getTime() < today.getTime());
     if (!staleShifts.length) return { closedCount: 0, skippedCount: 0 };
 
     const cashMethodCodes = await this.paymentMethods.cashMethodCodes();
@@ -459,7 +484,7 @@ export class ShiftsService {
         data: { closingCounted: expectedCash, expectedCash, variance: 0, closedAt: now, closedById: null },
       });
       closedCount += 1;
-      touchedDays.add(startOfUtcDay(shift.openedAt).getTime());
+      touchedDays.add(shiftBusinessDate(shift).getTime());
     }
 
     // Every calendar day that just got its last open shift closed, and
@@ -471,7 +496,7 @@ export class ShiftsService {
       const day = new Date(dayMs);
       const nextDay = new Date(dayMs + 24 * 60 * 60 * 1000);
       const dayShifts = await this.prisma.shift.findMany({
-        where: { locationId, openedAt: { gte: day, lt: nextDay } },
+        where: { locationId, OR: [{ businessDate: day }, { businessDate: null, openedAt: { gte: day, lt: nextDay } }] },
         select: { closedAt: true, variance: true, orders: { where: { status: OrderStatus.PAID }, select: { grandTotal: true } } },
       });
       if (dayShifts.some((s) => !s.closedAt)) continue;
