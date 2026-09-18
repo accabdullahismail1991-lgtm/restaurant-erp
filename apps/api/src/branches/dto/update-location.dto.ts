@@ -38,6 +38,10 @@ export class UpdateLocationDto {
 
   @IsOptional()
   @IsBoolean()
+  autoGenerateProductionOrders?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   pricesIncludeVat?: boolean;
 
   @IsOptional()

@@ -287,9 +287,13 @@ export class OrdersService {
       // Shared by both regular and combo lines: consume `unitQty * lineQty`
       // of one ingredient's recipe requirement, raising an auto-production
       // order for any shortfall exactly like a plain menu-item sale
-      // already does. Non-recursive for the same reason the original
-      // comment below explains -- a SEMI_FINISHED component is deducted
-      // from ITS OWN produced balance, not exploded into its own BOM.
+      // already does -- but only for branches that opted into
+      // Location.autoGenerateProductionOrders; a branch that just allows
+      // negative stock without that flag keeps selling into deficit with
+      // no production order raised (see the field's own schema comment).
+      // Non-recursive for the same reason the original comment below
+      // explains -- a SEMI_FINISHED component is deducted from ITS OWN
+      // produced balance, not exploded into its own BOM.
       const consumeRecipeFor = async (menuItemId: string, lineQty: number) => {
         const recipeLines = await tx.recipeLine.findMany({ where: { menuItemId } });
         for (const recipeLine of recipeLines) {
@@ -301,7 +305,7 @@ export class OrdersService {
             refId: order.id,
             allowNegative: location.allowNegativeStock,
           });
-          if (shortfall > 0) {
+          if (shortfall > 0 && location.autoGenerateProductionOrders) {
             await this.production.applyShortfall(tx, {
               locationId: dto.locationId,
               shiftId: dto.shiftId,

@@ -20,6 +20,7 @@ const LOCATION_SELECT = {
   vatRate: true,
   pricesIncludeVat: true,
   allowNegativeStock: true,
+  autoGenerateProductionOrders: true,
   autoCloseEnabled: true,
   autoCloseCutoffHour: true,
   fiscalYearEndMonth: true,

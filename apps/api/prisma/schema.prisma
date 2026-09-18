@@ -61,6 +61,14 @@ model Location {
   // (default off) since oversold stock is a real operational risk most
   // branches should NOT silently accept.
   allowNegativeStock       Boolean      @default(false)
+  // A negative-stock sale of a SEMI_FINISHED ingredient can optionally roll
+  // its shortfall into an auto-generated PLANNED production order (see
+  // ProductionOrdersService.applyShortfall) -- but for a branch that
+  // routinely runs on negative stock by design (allowNegativeStock on,
+  // loose day-to-day production tracking), that fires on nearly every sale
+  // and just clutters the Production Orders screen. Off by default, same
+  // "explicit per-branch opt-in" precedent as allowNegativeStock above.
+  autoGenerateProductionOrders Boolean  @default(false)
   // Per-branch invoice/receipt customization -- logo stored the same way
   // MenuItem.imageData is (bytea, no object storage configured here);
   // header/footer are free text printed above/below the line items on the

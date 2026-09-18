@@ -33,4 +33,8 @@ export class CreateLocationDto {
   @IsOptional()
   @IsBoolean()
   allowNegativeStock?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  autoGenerateProductionOrders?: boolean;
 }

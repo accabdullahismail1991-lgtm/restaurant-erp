@@ -74,7 +74,7 @@ describe('Combo meals (e2e)', () => {
   const newLocation = async () => {
     comboLocationCounter += 1;
     const location = await prisma.location.create({
-      data: { name: `فرع اختبار الكمبو -- طلب ${comboLocationCounter}`, type: 'BRANCH', allowNegativeStock: true },
+      data: { name: `فرع اختبار الكمبو -- طلب ${comboLocationCounter}`, type: 'BRANCH', allowNegativeStock: true, autoGenerateProductionOrders: true },
     });
     return location.id;
   };
