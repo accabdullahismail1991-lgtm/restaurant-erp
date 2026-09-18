@@ -82,6 +82,7 @@ export class KitchenService {
               menuItemName: line.menuItem.name,
               quantity: line.quantity,
               kitchenStatus: line.kitchenStatus,
+              note: line.note,
             }
           : {
               lineId: line.id,
@@ -92,6 +93,7 @@ export class KitchenService {
                 .join('، ')}`,
               quantity: line.quantity,
               kitchenStatus: line.kitchenStatus,
+              note: line.note,
             },
       ),
     }));

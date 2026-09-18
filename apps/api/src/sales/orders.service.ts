@@ -315,7 +315,7 @@ export class OrdersService {
       for (const line of regularLines) {
         const menuItem = byId.get(line.menuItemId!)!;
         await tx.orderLine.create({
-          data: { orderId: order.id, menuItemId: menuItem.id, quantity: line.quantity, unitPrice: effectivePrice(menuItem.id) },
+          data: { orderId: order.id, menuItemId: menuItem.id, quantity: line.quantity, unitPrice: effectivePrice(menuItem.id), note: line.note },
         });
         // Non-recursive: a menu item's recipe only lists its DIRECT
         // components. If one of those is itself SEMI_FINISHED, we deduct
@@ -327,7 +327,7 @@ export class OrdersService {
 
       for (const line of comboLines) {
         const orderLine = await tx.orderLine.create({
-          data: { orderId: order.id, comboMealId: line.comboMealId, quantity: line.quantity, unitPrice: comboLinePrice.get(line)! },
+          data: { orderId: order.id, comboMealId: line.comboMealId, quantity: line.quantity, unitPrice: comboLinePrice.get(line)!, note: line.note },
         });
         const combo = comboById.get(line.comboMealId!)!;
         for (const sel of line.comboSelections ?? []) {

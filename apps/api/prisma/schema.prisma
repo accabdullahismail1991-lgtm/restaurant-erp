@@ -899,6 +899,11 @@ model OrderLine {
   comboMealId   String?
   quantity      Int
   unitPrice     Decimal           @db.Decimal(10, 2)
+  // Free-text instruction from the cashier for the kitchen (e.g. "بدون
+  // بصل" / "extra spicy") -- shown under this line on the invoice, the
+  // KDS ticket, and the printable kitchen ticket. Never affects pricing
+  // or inventory, purely informational.
+  note          String?
   kitchenStatus KitchenLineStatus @default(QUEUED)
   // Stamped by KitchenService.advanceStatus() the moment kitchenStatus
   // transitions to READY -- lets a kitchen-performance report measure

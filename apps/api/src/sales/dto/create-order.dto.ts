@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsIn, IsInt, IsNumber, IsOptional, IsPositive, IsString, Min, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsIn, IsInt, IsNumber, IsOptional, IsPositive, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
 import { InvoiceType } from '@prisma/client';
 
 // Which specific item the cashier picked for one combo slot -- quantity
@@ -41,6 +41,16 @@ export class CreateOrderLineDto {
   @IsInt()
   @IsPositive()
   quantity!: number;
+
+  // Free-text kitchen instruction for this specific line (e.g. "بدون
+  // بصل") -- persisted verbatim on OrderLine.note, shown under this line
+  // on the invoice, the KDS ticket, and the printable kitchen ticket.
+  // Never parsed/validated beyond length, and never affects pricing or
+  // inventory.
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  note?: string;
 }
 
 export class CreateOrderDto {
