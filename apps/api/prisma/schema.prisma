@@ -61,19 +61,19 @@ model Location {
   // (default off) since oversold stock is a real operational risk most
   // branches should NOT silently accept.
   allowNegativeStock       Boolean      @default(false)
-  // A negative-stock sale of a SEMI_FINISHED ingredient can optionally roll
-  // its shortfall into an auto-generated PLANNED production order (see
-  // ProductionOrdersService.applyShortfall) -- rolling every negative sale
-  // of the same ingredient within one shift into ONE open order instead of
-  // one per invoice. When this is on, OrdersService.create() also lets a
-  // SEMI_FINISHED ingredient with its own registered recipe sell past zero
-  // EVEN IF allowNegativeStock above is off -- its shortage is a fixable
-  // production need, not lost inventory, so rejecting the sale outright
-  // would only block something this setting exists to handle. A
-  // RAW_MATERIAL (or a SEMI_FINISHED item with no recipe of its own) is
-  // unaffected either way -- there's no automatic way to "produce" more of
-  // it, so it still needs allowNegativeStock to sell past zero. Off by
-  // default, same "explicit per-branch opt-in" precedent as
+  // A negative-stock sale of ANY ingredient a menu item's recipe needs can
+  // optionally roll its shortfall into an auto-generated PLANNED
+  // production order (see ProductionOrdersService.applyShortfall) --
+  // rolling every negative sale of the same ingredient within one shift
+  // into ONE open order instead of one per invoice. When this is on,
+  // OrdersService.create() also lets that ingredient sell past zero EVEN
+  // IF allowNegativeStock above is off -- covers every menu item, not
+  // just ones built on a SEMI_FINISHED component: a SEMI_FINISHED
+  // ingredient with its own registered recipe gets a real BOM on the
+  // order, while a RAW_MATERIAL (or a SEMI_FINISHED item with no recipe
+  // of its own) gets one with no inputs -- a plain "go restock/buy N
+  // more" alert, since there's nothing to "produce" it from automatically.
+  // Off by default, same "explicit per-branch opt-in" precedent as
   // allowNegativeStock above.
   autoGenerateProductionOrders Boolean  @default(false)
   // Per-branch invoice/receipt customization -- logo stored the same way
