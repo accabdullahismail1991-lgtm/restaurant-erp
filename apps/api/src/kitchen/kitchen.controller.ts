@@ -1,7 +1,8 @@
-import { Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
+import { AdvanceCategoryDto } from './dto/advance-category.dto';
 import { KitchenService } from './kitchen.service';
 
 // Viewing the queue and bumping a line are base kitchen-staff operations --
@@ -21,6 +22,14 @@ export class KitchenController {
   @HttpCode(200)
   advance(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
     return this.kitchen.advance(id, user.userId);
+  }
+
+  // Bulk "finish this category" button on the KDS screen -- see
+  // KitchenService.advanceCategory()'s own comment.
+  @Post('advance-category')
+  @HttpCode(200)
+  advanceCategory(@Body() dto: AdvanceCategoryDto, @CurrentUser() user: { userId: string }) {
+    return this.kitchen.advanceCategory(user.userId, dto.locationId, dto.category);
   }
 
   @Post('orders/:orderId/acknowledge-cancel')

@@ -307,4 +307,176 @@ describe('Phase 10a: kitchen / KDS (e2e)', () => {
       .set(auth(adminToken))
       .send({ payments: [{ method: 'CASH', mode: 'MANUAL', amount: Number(orderRes.body.grandTotal) }] });
   });
+
+  // A cashier can take payment before the kitchen finishes preparing an
+  // order (a pay-first quick-service counter) -- paying it must NOT make
+  // it vanish from the KDS board while food is still owed. This was a
+  // real bug: queue() used to only look at Order.status === SENT_TO_KITCHEN,
+  // and pay() unconditionally overwrites status to PAID regardless of
+  // kitchenStatus, so the ticket disappeared the instant it was paid.
+  //
+  // Fresh location/shift/menu item here (not the shared ones above) --
+  // this test and the advance-category block below both filter the queue
+  // by menu-item category, and the shared fixtures above leave several
+  // 'رئيسي' lines sitting at various non-SERVED statuses from earlier
+  // tests, which would silently inflate these counts.
+  it('keeps a PAID order on the queue -- still tagged paid -- while the kitchen has not finished preparing it', async () => {
+    const loc = await prisma.location.create({ data: { name: 'فرع اختبار دفع قبل التحضير', type: 'BRANCH' } });
+    const item = await prisma.menuItem.create({ data: { name: 'صنف اختبار دفع قبل التحضير', category: 'اختبار دفع مبكر', price: 15 } });
+    const shiftRes = await request(app.getHttpServer()).post('/shifts').set(auth(adminToken)).send({ locationId: loc.id, openingFloat: 100 });
+
+    const orderRes = await request(app.getHttpServer())
+      .post('/orders')
+      .set(auth(adminToken))
+      .send({ locationId: loc.id, shiftId: shiftRes.body.id, channel: 'TAKEAWAY', lines: [{ menuItemId: item.id, quantity: 1 }] });
+    expect(orderRes.status).toBe(201);
+
+    const payRes = await request(app.getHttpServer())
+      .post(`/orders/${orderRes.body.id}/pay`)
+      .set(auth(adminToken))
+      .send({ payments: [{ method: 'CASH', mode: 'MANUAL', amount: Number(orderRes.body.grandTotal) }] });
+    expect(payRes.status).toBe(200);
+    expect(payRes.body.status).toBe('PAID');
+
+    const queueRes = await request(app.getHttpServer()).get(`/kitchen/queue?locationId=${loc.id}`).set(auth(adminToken));
+    const ticket = queueRes.body.find((t: any) => t.orderId === orderRes.body.id);
+    expect(ticket).toBeDefined(); // still on the board -- payment alone did not finish it
+    expect(ticket.paid).toBe(true);
+    expect(ticket.lines[0].kitchenStatus).toBe('QUEUED');
+
+    // Kitchen staff must still explicitly bump it -- it stays on the
+    // board through PREPARING, and once every line reaches READY it
+    // drops off (same "already ready for pickup" rule the board applies
+    // regardless of payment status).
+    const lineId = orderRes.body.lines[0].id;
+    await request(app.getHttpServer()).post(`/kitchen/lines/${lineId}/advance`).set(auth(adminToken));
+    const stillPreparing = await request(app.getHttpServer()).get(`/kitchen/queue?locationId=${loc.id}`).set(auth(adminToken));
+    expect(stillPreparing.body.some((t: any) => t.orderId === orderRes.body.id)).toBe(true); // PREPARING, not READY yet
+
+    await request(app.getHttpServer()).post(`/kitchen/lines/${lineId}/advance`).set(auth(adminToken)); // now READY
+    const goneNow = await request(app.getHttpServer()).get(`/kitchen/queue?locationId=${loc.id}`).set(auth(adminToken));
+    expect(goneNow.body.some((t: any) => t.orderId === orderRes.body.id)).toBe(false);
+
+    // The order's own status field must still read PAID -- it must never
+    // get silently overwritten to READY once the kitchen catches up,
+    // since READY and PAID share the same Order.status field.
+    const orderAfter = await request(app.getHttpServer()).get(`/orders/${orderRes.body.id}`).set(auth(adminToken));
+    expect(orderAfter.body.status).toBe('PAID');
+  });
+
+  describe('advance-category (bulk "finish this section" button)', () => {
+    // Each test below gets its own fresh location + menu items/categories
+    // (never the shared 'رئيسي'/'جانبي' fixtures from earlier tests in this
+    // file), so filtering the queue by category can't pick up unrelated
+    // leftover lines from tests that ran before it.
+    const freshFixtures = async (mainCategory: string) => {
+      const loc = await prisma.location.create({ data: { name: `فرع اختبار تجميع ${mainCategory}`, type: 'BRANCH' } });
+      const mainItem = await prisma.menuItem.create({ data: { name: `صنف رئيسي -- ${mainCategory}`, category: mainCategory, price: 12 } });
+      const sideItem = await prisma.menuItem.create({ data: { name: `صنف جانبي -- ${mainCategory}`, category: `${mainCategory} جانبي`, price: 6 } });
+      const shiftRes = await request(app.getHttpServer()).post('/shifts').set(auth(adminToken)).send({ locationId: loc.id, openingFloat: 100 });
+      return { locationId: loc.id, shiftId: shiftRes.body.id, mainItemId: mainItem.id, sideItemId: sideItem.id, mainCategory };
+    };
+
+    it('bumps every not-yet-served line of the given category by one step, across multiple orders in the same shift', async () => {
+      const f = await freshFixtures('اختبار تجميع 1');
+      const order1 = await request(app.getHttpServer())
+        .post('/orders')
+        .set(auth(adminToken))
+        .send({
+          locationId: f.locationId,
+          shiftId: f.shiftId,
+          channel: 'DINE_IN',
+          lines: [
+            { menuItemId: f.mainItemId, quantity: 1 },
+            { menuItemId: f.sideItemId, quantity: 1 },
+          ],
+        });
+      const order2 = await request(app.getHttpServer())
+        .post('/orders')
+        .set(auth(adminToken))
+        .send({ locationId: f.locationId, shiftId: f.shiftId, channel: 'DINE_IN', lines: [{ menuItemId: f.mainItemId, quantity: 2 }] });
+
+      const res = await request(app.getHttpServer())
+        .post('/kitchen/advance-category')
+        .set(auth(adminToken))
+        .send({ locationId: f.locationId, category: f.mainCategory });
+      expect(res.status).toBe(200);
+      expect(res.body.advancedCount).toBe(2); // order1's main-category line + order2's
+
+      const queueRes = await request(app.getHttpServer()).get(`/kitchen/queue?locationId=${f.locationId}`).set(auth(adminToken));
+      const t1 = queueRes.body.find((t: any) => t.orderId === order1.body.id);
+      const t2 = queueRes.body.find((t: any) => t.orderId === order2.body.id);
+      expect(t1.lines.find((l: any) => l.category === f.mainCategory).kitchenStatus).toBe('PREPARING');
+      expect(t1.lines.find((l: any) => l.category !== f.mainCategory).kitchenStatus).toBe('QUEUED'); // untouched -- different category
+      expect(t2.lines[0].kitchenStatus).toBe('PREPARING');
+    });
+
+    it('moves a mixed batch each one step forward, not all to the same status, and skips lines already SERVED', async () => {
+      const f = await freshFixtures('اختبار تجميع 2');
+      const orderRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set(auth(adminToken))
+        .send({
+          locationId: f.locationId,
+          shiftId: f.shiftId,
+          channel: 'TAKEAWAY',
+          lines: [
+            { menuItemId: f.mainItemId, quantity: 1 },
+            { menuItemId: f.mainItemId, quantity: 1 }, // second line, same category, same order
+          ],
+        });
+      const [lineA1, lineA2] = orderRes.body.lines;
+
+      // Advance only the first line to PREPARING by hand -- the second
+      // stays QUEUED, so the category now has a mixed batch.
+      await request(app.getHttpServer()).post(`/kitchen/lines/${lineA1.id}/advance`).set(auth(adminToken));
+
+      const res = await request(app.getHttpServer())
+        .post('/kitchen/advance-category')
+        .set(auth(adminToken))
+        .send({ locationId: f.locationId, category: f.mainCategory });
+      expect(res.status).toBe(200);
+      expect(res.body.advancedCount).toBe(2);
+
+      const queueRes = await request(app.getHttpServer()).get(`/kitchen/queue?locationId=${f.locationId}`).set(auth(adminToken));
+      const ticket = queueRes.body.find((t: any) => t.orderId === orderRes.body.id);
+      const l1 = ticket.lines.find((l: any) => l.lineId === lineA1.id);
+      const l2 = ticket.lines.find((l: any) => l.lineId === lineA2.id);
+      expect(l1.kitchenStatus).toBe('READY'); // was PREPARING -> one step -> READY
+      expect(l2.kitchenStatus).toBe('PREPARING'); // was QUEUED -> one step -> PREPARING
+
+      // Bump both to SERVED, then run the bulk action again -- it must
+      // report 0 advanced (nothing left to move) instead of erroring.
+      await request(app.getHttpServer()).post(`/kitchen/lines/${lineA1.id}/advance`).set(auth(adminToken));
+      await request(app.getHttpServer()).post(`/kitchen/lines/${lineA2.id}/advance`).set(auth(adminToken));
+      await request(app.getHttpServer()).post(`/kitchen/lines/${lineA2.id}/advance`).set(auth(adminToken));
+      const noopRes = await request(app.getHttpServer())
+        .post('/kitchen/advance-category')
+        .set(auth(adminToken))
+        .send({ locationId: f.locationId, category: f.mainCategory });
+      expect(noopRes.status).toBe(200);
+      expect(noopRes.body.advancedCount).toBe(0);
+    });
+
+    it('never advances a line belonging to a VOIDED order', async () => {
+      const f = await freshFixtures('اختبار تجميع 3');
+      const orderRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set(auth(adminToken))
+        .send({ locationId: f.locationId, shiftId: f.shiftId, channel: 'TAKEAWAY', lines: [{ menuItemId: f.mainItemId, quantity: 1 }] });
+      await request(app.getHttpServer()).post(`/orders/${orderRes.body.id}/void`).set(auth(adminToken));
+
+      const res = await request(app.getHttpServer())
+        .post('/kitchen/advance-category')
+        .set(auth(adminToken))
+        .send({ locationId: f.locationId, category: f.mainCategory });
+      expect(res.status).toBe(200);
+      expect(res.body.advancedCount).toBe(0);
+
+      const lineAfter = await prisma.orderLine.findUniqueOrThrow({ where: { id: orderRes.body.lines[0].id } });
+      expect(lineAfter.kitchenStatus).toBe('QUEUED'); // untouched
+
+      await request(app.getHttpServer()).post(`/kitchen/orders/${orderRes.body.id}/acknowledge-cancel`).set(auth(adminToken));
+    });
+  });
 });

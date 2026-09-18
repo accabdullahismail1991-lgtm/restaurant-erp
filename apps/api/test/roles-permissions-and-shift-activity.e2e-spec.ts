@@ -38,7 +38,7 @@ describe('Roles/Permissions + shift activity log (e2e)', () => {
     await resetDatabase(prisma);
     await prisma.userRole.deleteMany({});
     await prisma.rolePermission.deleteMany({});
-    await prisma.user.deleteMany({ where: { phone: { in: [ADMIN_PHONE, NOPERM_PHONE] } } });
+    await prisma.user.deleteMany({ where: { phone: { in: [ADMIN_PHONE, NOPERM_PHONE, '+966500000182', '+966500000183'] } } });
     await prisma.role.deleteMany({ where: { name: 'RolesTest-Admin' } });
     await prisma.permission.deleteMany({ where: { code: { in: ['users.manage', 'pos.void_order', 'pos.return_order', 'pos.manage_shift'] } } });
 
