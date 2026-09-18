@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { InvoiceType, OrderStatus, TaxType } from '@prisma/client';
+import { IngredientKind, InvoiceType, OrderStatus, TaxType } from '@prisma/client';
 import { computeBusinessDate } from '../common/business-date.util';
 import { scopedLocationIds } from '../common/location-scope.util';
 import { userHasPermission } from '../common/permission.util';
@@ -291,19 +291,38 @@ export class OrdersService {
       // Location.autoGenerateProductionOrders; a branch that just allows
       // negative stock without that flag keeps selling into deficit with
       // no production order raised (see the field's own schema comment).
+      //
+      // A SEMI_FINISHED ingredient with its own registered recipe is
+      // treated as sellable past zero EVEN WHEN allowNegativeStock is off,
+      // as long as autoGenerateProductionOrders is on -- its shortage is a
+      // real production need the shift can act on, not lost inventory, so
+      // rejecting the sale outright would only block a fixable situation.
+      // A RAW_MATERIAL (or a SEMI_FINISHED item with no recipe to base a
+      // production order on) still rejects the sale exactly as before
+      // unless allowNegativeStock is separately on -- there's no automatic
+      // way to "produce" more of it.
+      //
       // Non-recursive for the same reason the original comment below
       // explains -- a SEMI_FINISHED component is deducted from ITS OWN
       // produced balance, not exploded into its own BOM.
       const consumeRecipeFor = async (menuItemId: string, lineQty: number) => {
         const recipeLines = await tx.recipeLine.findMany({ where: { menuItemId } });
         for (const recipeLine of recipeLines) {
+          let allowNegative = location.allowNegativeStock;
+          if (!allowNegative && location.autoGenerateProductionOrders) {
+            const ingredient = await tx.ingredient.findUnique({ where: { id: recipeLine.ingredientId }, select: { kind: true } });
+            if (ingredient?.kind === IngredientKind.SEMI_FINISHED) {
+              const hasOwnRecipe = await tx.recipeLine.findFirst({ where: { parentIngredientId: recipeLine.ingredientId }, select: { id: true } });
+              if (hasOwnRecipe) allowNegative = true;
+            }
+          }
           const { shortfall } = await this.inventory.consume(tx, {
             locationId: dto.locationId,
             ingredientId: recipeLine.ingredientId,
             quantity: Number(recipeLine.quantity) * lineQty,
             reason: 'SALE',
             refId: order.id,
-            allowNegative: location.allowNegativeStock,
+            allowNegative,
           });
           if (shortfall > 0 && location.autoGenerateProductionOrders) {
             await this.production.applyShortfall(tx, {

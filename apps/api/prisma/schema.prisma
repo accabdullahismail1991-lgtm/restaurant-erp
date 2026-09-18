@@ -63,11 +63,18 @@ model Location {
   allowNegativeStock       Boolean      @default(false)
   // A negative-stock sale of a SEMI_FINISHED ingredient can optionally roll
   // its shortfall into an auto-generated PLANNED production order (see
-  // ProductionOrdersService.applyShortfall) -- but for a branch that
-  // routinely runs on negative stock by design (allowNegativeStock on,
-  // loose day-to-day production tracking), that fires on nearly every sale
-  // and just clutters the Production Orders screen. Off by default, same
-  // "explicit per-branch opt-in" precedent as allowNegativeStock above.
+  // ProductionOrdersService.applyShortfall) -- rolling every negative sale
+  // of the same ingredient within one shift into ONE open order instead of
+  // one per invoice. When this is on, OrdersService.create() also lets a
+  // SEMI_FINISHED ingredient with its own registered recipe sell past zero
+  // EVEN IF allowNegativeStock above is off -- its shortage is a fixable
+  // production need, not lost inventory, so rejecting the sale outright
+  // would only block something this setting exists to handle. A
+  // RAW_MATERIAL (or a SEMI_FINISHED item with no recipe of its own) is
+  // unaffected either way -- there's no automatic way to "produce" more of
+  // it, so it still needs allowNegativeStock to sell past zero. Off by
+  // default, same "explicit per-branch opt-in" precedent as
+  // allowNegativeStock above.
   autoGenerateProductionOrders Boolean  @default(false)
   // Per-branch invoice/receipt customization -- logo stored the same way
   // MenuItem.imageData is (bytea, no object storage configured here);
