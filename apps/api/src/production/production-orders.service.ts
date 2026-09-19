@@ -150,6 +150,57 @@ export class ProductionOrdersService {
     });
   }
 
+  // The bulk "some/all of the shortage is stocked now -- finish whatever
+  // can be finished" action: goes through every PLANNED order in scope,
+  // oldest first (so an ingredient that only covers PART of the queue
+  // goes to whichever order was waiting longest, not a first-come-random
+  // pick), and for each one just tries the normal start()+complete() pair
+  // -- no separate "is there enough stock" pre-check duplicating
+  // consume()'s own logic. start() is already all-or-nothing per order
+  // (a BadRequestException if ANY input line is short, nothing consumed),
+  // so an order whose components aren't fully in yet is left untouched
+  // and simply reported as still short; one that succeeds moves straight
+  // to complete() since its inputs are already consumed at that point and
+  // completing never fails. An order with NO inputs (a RAW_MATERIAL or a
+  // recipe-less SEMI_FINISHED output -- see create()'s empty-inputs
+  // fallback) has nothing to wait on and always finishes immediately,
+  // letting this same button also clear out plain "go restock this"
+  // alerts once the manager confirms it's back on the shelf.
+  async processReady(userId: string, locationId?: string) {
+    const allowedIds = await scopedLocationIds(this.prisma, userId);
+    if (locationId && allowedIds && !allowedIds.includes(locationId)) {
+      throw new ForbiddenException('الموقع خارج نطاق صلاحيتك');
+    }
+    const orders = await this.prisma.productionOrder.findMany({
+      where: {
+        status: ProductionStatus.PLANNED,
+        locationId: locationId ? locationId : allowedIds ? { in: allowedIds } : undefined,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const results: Array<{ id: string; outputIngredientId: string; completed: boolean; reason?: string }> = [];
+    for (const order of orders) {
+      try {
+        await this.start(order.id, userId);
+        await this.complete(order.id, userId);
+        results.push({ id: order.id, outputIngredientId: order.outputIngredientId, completed: true });
+      } catch (e) {
+        results.push({
+          id: order.id,
+          outputIngredientId: order.outputIngredientId,
+          completed: false,
+          reason: e instanceof Error ? e.message : 'خطأ غير متوقع',
+        });
+      }
+    }
+    return {
+      completedCount: results.filter((r) => r.completed).length,
+      stillShortCount: results.filter((r) => !r.completed).length,
+      results,
+    };
+  }
+
   // Consumes every input line atomically -- if the location is short on
   // any component, the whole start fails and nothing is consumed (same
   // atomicity guarantee Sales' order creation has). Captures the real

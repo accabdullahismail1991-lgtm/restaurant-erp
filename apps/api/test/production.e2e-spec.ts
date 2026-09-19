@@ -319,4 +319,145 @@ describe('Phase 6: production orders (e2e)', () => {
     expect(sauceRow.totalCost).toBeGreaterThanOrEqual(900);
     expect(sauceRow.avgUnitCost).toBeGreaterThan(0);
   });
+
+  // POST /production-orders/process-ready -- the bulk "some of the
+  // shortage is stocked now, finish whatever can be finished" action a
+  // manager reaches for after a delivery arrives, instead of clicking
+  // start+complete one PLANNED order at a time. A dedicated
+  // location/ingredients here, not locationId/tomatoId/sauceId above --
+  // this location already has two leftover PLANNED empty-inputs orders
+  // from earlier tests that were deliberately never advanced (to prove
+  // they aren't rejected), and process-ready would sweep those up too
+  // (they always succeed -- nothing to wait on), throwing off this
+  // block's own exact counts if it shared that location.
+  describe('POST /production-orders/process-ready', () => {
+    let readyLocationId: string;
+    let flourId: string;
+    let pastaId: string;
+    let poReadyA: string;
+    let poReadyB: string;
+
+    it('sets up a dedicated location + a SEMI_FINISHED output with a real BOM', async () => {
+      const location = await prisma.location.create({ data: { name: 'فرع اختبار تشغيل الجاهز', type: 'BRANCH' } });
+      readyLocationId = location.id;
+      const flour = await prisma.ingredient.create({ data: { name: 'دقيق اختبار الجاهز', unit: 'g', kind: 'RAW_MATERIAL', lowStockThreshold: 10 } });
+      flourId = flour.id;
+      const pasta = await prisma.ingredient.create({ data: { name: 'عجين اختبار الجاهز', unit: 'g', kind: 'SEMI_FINISHED', lowStockThreshold: 10 } });
+      pastaId = pasta.id;
+      // per-1g-of-pasta recipe: 5g flour.
+      await prisma.recipeLine.create({ data: { parentIngredientId: pastaId, ingredientId: flourId, quantity: 5 } });
+    });
+
+    it('blocks a user without production.manage from calling it (403)', async () => {
+      const res = await request(app.getHttpServer()).post('/production-orders/process-ready').set(auth(noPermToken));
+      expect(res.status).toBe(403);
+    });
+
+    it('creates two PLANNED orders (50g flour each) with no flour in stock yet', async () => {
+      const resA = await request(app.getHttpServer())
+        .post('/production-orders')
+        .set(auth(adminToken))
+        .send({ locationId: readyLocationId, outputIngredientId: pastaId, outputQuantity: 10 });
+      expect(resA.status).toBe(201);
+      poReadyA = resA.body.id;
+
+      const resB = await request(app.getHttpServer())
+        .post('/production-orders')
+        .set(auth(adminToken))
+        .send({ locationId: readyLocationId, outputIngredientId: pastaId, outputQuantity: 10 });
+      expect(resB.status).toBe(201);
+      poReadyB = resB.body.id;
+    });
+
+    it('with zero stock, leaves both orders PLANNED -- nothing consumed', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/production-orders/process-ready')
+        .set(auth(adminToken))
+        .query({ locationId: readyLocationId });
+      expect(res.status).toBe(200);
+      expect(res.body.completedCount).toBe(0);
+      expect(res.body.stillShortCount).toBe(2);
+
+      const getA = await request(app.getHttpServer()).get(`/production-orders/${poReadyA}`).set(auth(adminToken));
+      expect(getA.body.status).toBe('PLANNED');
+    });
+
+    it('with only enough flour for ONE order, finishes the older order first and leaves the other short', async () => {
+      const receiveRes = await request(app.getHttpServer())
+        .post('/inventory/adjustments')
+        .set(auth(adminToken))
+        .send({ locationId: readyLocationId, ingredientId: flourId, quantity: 50, unitCost: 2 });
+      expect(receiveRes.status).toBe(201);
+
+      const res = await request(app.getHttpServer())
+        .post('/production-orders/process-ready')
+        .set(auth(adminToken))
+        .query({ locationId: readyLocationId });
+      expect(res.status).toBe(200);
+      expect(res.body.completedCount).toBe(1);
+      expect(res.body.stillShortCount).toBe(1);
+      const resultA = res.body.results.find((r: any) => r.id === poReadyA);
+      const resultB = res.body.results.find((r: any) => r.id === poReadyB);
+      expect(resultA.completed).toBe(true);
+      expect(resultB.completed).toBe(false);
+      expect(typeof resultB.reason).toBe('string');
+
+      const getA = await request(app.getHttpServer()).get(`/production-orders/${poReadyA}`).set(auth(adminToken));
+      expect(getA.body.status).toBe('COMPLETED');
+      const getB = await request(app.getHttpServer()).get(`/production-orders/${poReadyB}`).set(auth(adminToken));
+      expect(getB.body.status).toBe('PLANNED');
+
+      const balances = await request(app.getHttpServer()).get(`/inventory/balances?locationId=${readyLocationId}`).set(auth(adminToken));
+      expect(Number(balances.body.find((b: any) => b.ingredientId === pastaId).quantity)).toBe(10); // only order A's output so far
+      expect(Number(balances.body.find((b: any) => b.ingredientId === flourId).quantity)).toBe(0); // fully consumed by order A
+    });
+
+    it('once the rest of the flour arrives, finishes the remaining order too', async () => {
+      await request(app.getHttpServer())
+        .post('/inventory/adjustments')
+        .set(auth(adminToken))
+        .send({ locationId: readyLocationId, ingredientId: flourId, quantity: 50, unitCost: 2 });
+
+      const res = await request(app.getHttpServer())
+        .post('/production-orders/process-ready')
+        .set(auth(adminToken))
+        .query({ locationId: readyLocationId });
+      expect(res.body.completedCount).toBe(1);
+      expect(res.body.stillShortCount).toBe(0);
+
+      const getB = await request(app.getHttpServer()).get(`/production-orders/${poReadyB}`).set(auth(adminToken));
+      expect(getB.body.status).toBe('COMPLETED');
+    });
+
+    it('also finishes an empty-inputs PLANNED order (RAW_MATERIAL "restock" alert) regardless of stock', async () => {
+      const rawNoInputs = await prisma.ingredient.create({
+        data: { name: 'صنف اختبار بلا مدخلات للجاهز', unit: 'قطعة', kind: 'RAW_MATERIAL', lowStockThreshold: 5 },
+      });
+      const createRes = await request(app.getHttpServer())
+        .post('/production-orders')
+        .set(auth(adminToken))
+        .send({ locationId: readyLocationId, outputIngredientId: rawNoInputs.id, outputQuantity: 4 });
+      expect(createRes.body.inputs).toHaveLength(0);
+
+      const res = await request(app.getHttpServer())
+        .post('/production-orders/process-ready')
+        .set(auth(adminToken))
+        .query({ locationId: readyLocationId });
+      expect(res.body.completedCount).toBe(1);
+      expect(res.body.stillShortCount).toBe(0);
+
+      const getRes = await request(app.getHttpServer()).get(`/production-orders/${createRes.body.id}`).set(auth(adminToken));
+      expect(getRes.body.status).toBe('COMPLETED');
+    });
+
+    it('with nothing left PLANNED, is a no-op', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/production-orders/process-ready')
+        .set(auth(adminToken))
+        .query({ locationId: readyLocationId });
+      expect(res.body.completedCount).toBe(0);
+      expect(res.body.stillShortCount).toBe(0);
+      expect(res.body.results).toHaveLength(0);
+    });
+  });
 });
