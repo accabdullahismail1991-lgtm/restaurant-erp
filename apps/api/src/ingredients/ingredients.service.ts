@@ -28,20 +28,22 @@ export class IngredientsService {
   // (sales, waste, production input...) draws down an existing batch --
   // zero batches means zero consumption too.
   async findAll() {
-    const ingredients = await this.prisma.ingredient.findMany({ orderBy: { name: 'asc' } });
-    const batchCounts = await this.prisma.inventoryBatch.groupBy({ by: ['ingredientId'], _count: { ingredientId: true } });
+    // Independent reads (none depends on another's result) -- run them
+    // together instead of paying for 3 sequential round-trips on every
+    // GET /ingredients, which nearly every admin-panel tab switch triggers
+    // via ensureIngredientsCache().
+    const [ingredients, batchCounts, saleRecipeCounts] = await Promise.all([
+      this.prisma.ingredient.findMany({ orderBy: { name: 'asc' } }),
+      this.prisma.inventoryBatch.groupBy({ by: ['ingredientId'], _count: { ingredientId: true } }),
+      // Lets the admin panel offer a RAW_MATERIAL for a manual production
+      // order too (not just SEMI_FINISHED) when it's actually consumed by
+      // some menu item's sale recipe -- a real, in-use ingredient, not just
+      // theoretically producible. See ProductionOrdersService.create(),
+      // which now allows any ingredient, with an empty (no-BOM) inputs list
+      // for one that isn't SEMI_FINISHED.
+      this.prisma.recipeLine.groupBy({ by: ['ingredientId'], where: { menuItemId: { not: null } }, _count: { ingredientId: true } }),
+    ]);
     const withMovement = new Set(batchCounts.map((b) => b.ingredientId));
-    // Lets the admin panel offer a RAW_MATERIAL for a manual production
-    // order too (not just SEMI_FINISHED) when it's actually consumed by
-    // some menu item's sale recipe -- a real, in-use ingredient, not just
-    // theoretically producible. See ProductionOrdersService.create(),
-    // which now allows any ingredient, with an empty (no-BOM) inputs list
-    // for one that isn't SEMI_FINISHED.
-    const saleRecipeCounts = await this.prisma.recipeLine.groupBy({
-      by: ['ingredientId'],
-      where: { menuItemId: { not: null } },
-      _count: { ingredientId: true },
-    });
     const usedInSaleRecipe = new Set(saleRecipeCounts.map((r) => r.ingredientId));
     return ingredients.map((i) => ({ ...i, hasMovement: withMovement.has(i.id), usedInSaleRecipe: usedInSaleRecipe.has(i.id) }));
   }
