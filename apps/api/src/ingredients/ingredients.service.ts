@@ -31,7 +31,19 @@ export class IngredientsService {
     const ingredients = await this.prisma.ingredient.findMany({ orderBy: { name: 'asc' } });
     const batchCounts = await this.prisma.inventoryBatch.groupBy({ by: ['ingredientId'], _count: { ingredientId: true } });
     const withMovement = new Set(batchCounts.map((b) => b.ingredientId));
-    return ingredients.map((i) => ({ ...i, hasMovement: withMovement.has(i.id) }));
+    // Lets the admin panel offer a RAW_MATERIAL for a manual production
+    // order too (not just SEMI_FINISHED) when it's actually consumed by
+    // some menu item's sale recipe -- a real, in-use ingredient, not just
+    // theoretically producible. See ProductionOrdersService.create(),
+    // which now allows any ingredient, with an empty (no-BOM) inputs list
+    // for one that isn't SEMI_FINISHED.
+    const saleRecipeCounts = await this.prisma.recipeLine.groupBy({
+      by: ['ingredientId'],
+      where: { menuItemId: { not: null } },
+      _count: { ingredientId: true },
+    });
+    const usedInSaleRecipe = new Set(saleRecipeCounts.map((r) => r.ingredientId));
+    return ingredients.map((i) => ({ ...i, hasMovement: withMovement.has(i.id), usedInSaleRecipe: usedInSaleRecipe.has(i.id) }));
   }
 
   async findOne(id: string) {

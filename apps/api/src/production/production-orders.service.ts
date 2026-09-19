@@ -29,9 +29,6 @@ export class ProductionOrdersService {
 
     const output = await this.prisma.ingredient.findUnique({ where: { id: dto.outputIngredientId } });
     if (!output) throw new BadRequestException('الصنف الناتج غير موجود');
-    if (output.kind !== IngredientKind.SEMI_FINISHED) {
-      throw new BadRequestException('لا يمكن إنشاء أمر إنتاج لصنف ليس "نصف مصنّع"');
-    }
 
     let lines: Array<{ ingredientId: string; quantity: number }>;
     if (dto.lines) {
@@ -39,16 +36,20 @@ export class ProductionOrdersService {
       const found = await this.prisma.ingredient.findMany({ where: { id: { in: ids } } });
       if (found.length !== ids.length) throw new BadRequestException('أحد المكوّنات المطلوبة غير موجود');
       lines = dto.lines;
-    } else {
+    } else if (output.kind === IngredientKind.SEMI_FINISHED) {
       // RecipeLine.quantity is defined per 1 unit of the parent -- the
       // same convention Sales already relies on for a menu item's recipe
       // (docs/ARCHITECTURE.md's "Sales <-> Items <-> Inventory") -- so
       // scaling by outputQuantity gives exactly what this run consumes.
       const recipe = await this.prisma.recipeLine.findMany({ where: { parentIngredientId: dto.outputIngredientId } });
-      if (!recipe.length) {
-        throw new BadRequestException('هذا الصنف ليس له وصفة مسجّلة -- حدد المكوّنات يدويًا (lines) أو سجّل وصفته أولًا');
-      }
       lines = recipe.map((r) => ({ ingredientId: r.ingredientId, quantity: Number(r.quantity) * dto.outputQuantity }));
+    } else {
+      // A RAW_MATERIAL (or a SEMI_FINISHED item with no BOM of its own)
+      // has nothing automatic to base inputs on -- same fallback
+      // applyShortfall() uses for the identical case: a plain "produce/
+      // restock N more" note with no consumption tracked, rather than
+      // rejecting the whole thing outright.
+      lines = [];
     }
 
     return this.prisma.productionOrder.create({

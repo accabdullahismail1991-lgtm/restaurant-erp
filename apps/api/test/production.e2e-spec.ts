@@ -121,20 +121,63 @@ describe('Phase 6: production orders (e2e)', () => {
     expect(res.status).toBe(403);
   });
 
-  it('rejects a production order for a RAW_MATERIAL output', async () => {
+  // Any ingredient can be the output now -- a RAW_MATERIAL (or a
+  // SEMI_FINISHED item with no recipe of its own, tested right below)
+  // just gets an empty inputs list, a plain "produce/restock N more"
+  // note with no consumption to track. See production-orders.service.ts's
+  // create()/applyShortfall() comments for why this isn't rejected --
+  // most real menus are built mostly on raw ingredients, not multi-step
+  // BOMs, and a manager should still be able to log "made N more of X"
+  // for one of those.
+  it('creates a production order for a RAW_MATERIAL output with an empty inputs list', async () => {
     const res = await request(app.getHttpServer())
       .post('/production-orders')
       .set(auth(adminToken))
       .send({ locationId, outputIngredientId: tomatoId, outputQuantity: 10 });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe('PLANNED');
+    expect(res.body.inputs).toHaveLength(0);
   });
 
-  it('rejects auto-deriving lines when the output ingredient has no recipe registered', async () => {
+  // An empty inputs list must still go through start()/complete() cleanly
+  // -- nothing to consume (0 cost captured), and the output batch still
+  // gets received at that 0 cost rather than crashing on a divide-by-zero
+  // or an empty consume loop. A dedicated ingredient here (not tomatoId)
+  // -- completing this PO adds stock of its OWN output ingredient, which
+  // would otherwise throw off the exact tomato-balance numbers the rest
+  // of this suite tracks below.
+  it('starts and completes a production order with an empty inputs list, producing a 0-cost batch', async () => {
+    const bread = await prisma.ingredient.create({
+      data: { name: 'خبز -- اختبار إنتاج بلا مدخلات', unit: 'قطعة', kind: 'RAW_MATERIAL', lowStockThreshold: 5 },
+    });
+    const createRes = await request(app.getHttpServer())
+      .post('/production-orders')
+      .set(auth(adminToken))
+      .send({ locationId, outputIngredientId: bread.id, outputQuantity: 3 });
+    const poId = createRes.body.id;
+
+    const startRes = await request(app.getHttpServer()).post(`/production-orders/${poId}/start`).set(auth(adminToken));
+    expect(startRes.status).toBe(200);
+    expect(startRes.body.status).toBe('IN_PROGRESS');
+    expect(Number(startRes.body.totalInputCost)).toBe(0);
+
+    const completeRes = await request(app.getHttpServer()).post(`/production-orders/${poId}/complete`).set(auth(adminToken));
+    expect(completeRes.status).toBe(200);
+    expect(completeRes.body.status).toBe('COMPLETED');
+
+    const batch = await prisma.inventoryBatch.findFirst({ where: { sourceType: 'PRODUCTION', sourceId: poId } });
+    expect(batch).not.toBeNull();
+    expect(Number(batch!.quantity)).toBe(3);
+    expect(Number(batch!.unitCost)).toBe(0);
+  });
+
+  it('creates a production order with an empty inputs list when the SEMI_FINISHED output has no recipe registered', async () => {
     const res = await request(app.getHttpServer())
       .post('/production-orders')
       .set(auth(adminToken))
       .send({ locationId, outputIngredientId: noRecipeSemiId, outputQuantity: 10 });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(201);
+    expect(res.body.inputs).toHaveLength(0);
   });
 
   let mainPoId: string;
