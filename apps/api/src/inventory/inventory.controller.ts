@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Query, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
@@ -35,5 +35,12 @@ export class InventoryController {
   @RequirePermission('inventory.adjust')
   adjustCost(@Body() dto: CostAdjustmentDto, @CurrentUser() user: { userId: string }) {
     return this.inventory.recordCostAdjustment(dto, user.userId);
+  }
+
+  @Post('settle-negative-stock')
+  @HttpCode(200)
+  @RequirePermission('inventory.adjust')
+  settleNegativeStock(@CurrentUser() user: { userId: string }, @Query('locationId') locationId?: string) {
+    return this.inventory.settleAllNegativeStock(user.userId, locationId);
   }
 }

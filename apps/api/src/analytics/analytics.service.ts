@@ -703,6 +703,48 @@ export class AnalyticsService {
       }));
   }
 
+  // A negative InventoryBalance means InventoryService.consume() sold/used
+  // past zero (Location.allowNegativeStock) -- real, unbacked debt against
+  // real stock. Surfaced separately from lowStockCore above (which compares
+  // against each ingredient's OWN threshold and treats 0 or a small
+  // positive balance as "low" too) because this report answers a narrower,
+  // more urgent question: which balances are actually wrong right now, and
+  // by how much, regardless of any threshold. See
+  // InventoryService.settleAllNegativeStock() for the matching one-click fix.
+  async negativeStock(userId: string, locationId?: string) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.negativeStockCore(ids);
+  }
+
+  negativeStockForLocation(locationId: string | undefined) {
+    return this.negativeStockCore(locationId ? [locationId] : undefined);
+  }
+
+  private async negativeStockCore(ids: string[] | undefined) {
+    const balances = await this.prisma.inventoryBalance.findMany({
+      where: { locationId: ids ? { in: ids } : undefined, quantity: { lt: 0 } },
+      select: { ingredientId: true, locationId: true, quantity: true, location: { select: { name: true } } },
+    });
+    if (!balances.length) return [];
+
+    const ingredients = await this.prisma.ingredient.findMany({
+      where: { id: { in: [...new Set(balances.map((b) => b.ingredientId))] } },
+      select: { id: true, name: true, unit: true },
+    });
+    const ingredientById = new Map(ingredients.map((i) => [i.id, i]));
+
+    return balances
+      .map((b) => ({
+        ingredientId: b.ingredientId,
+        name: ingredientById.get(b.ingredientId)?.name ?? b.ingredientId,
+        unit: ingredientById.get(b.ingredientId)?.unit ?? '',
+        locationId: b.locationId,
+        locationName: b.location.name,
+        quantity: round2(Number(b.quantity)),
+      }))
+      .sort((a, b) => a.quantity - b.quantity);
+  }
+
   // Per-item theoretical cost -- NOT the same thing as foodCostCore's COGS
   // (that's real consumption from actual sales in a period). This is a
   // live snapshot: "what would this item cost to make right now", from

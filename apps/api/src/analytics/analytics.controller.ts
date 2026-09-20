@@ -108,6 +108,11 @@ export class AnalyticsController {
     return this.analytics.lowStock(user.userId, locationId);
   }
 
+  @Get('negative-stock')
+  negativeStock(@CurrentUser() user: { userId: string }, @Query('locationId') locationId?: string) {
+    return this.analytics.negativeStock(user.userId, locationId);
+  }
+
   @Get('menu-item-costs')
   menuItemCosts(@CurrentUser() user: { userId: string }, @Query('locationId') locationId?: string) {
     return this.analytics.menuItemCosts(user.userId, locationId);

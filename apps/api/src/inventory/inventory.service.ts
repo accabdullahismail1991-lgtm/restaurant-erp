@@ -193,6 +193,79 @@ export class InventoryService {
   // this is "the recorded cost was wrong, here's the right one", not a
   // partial receipt at a different price (that's what a real PO/receive
   // does, which correctly keeps old and new batches side by side).
+  // One-click fix for the "sold/used past zero" debt consume() can leave
+  // behind (Location.allowNegativeStock): walks every InventoryBalance
+  // currently below zero and receive()s exactly enough to bring it to 0,
+  // at that ingredient's current average batch cost -- 0 when (as is
+  // normally the case once a balance has actually gone negative; see
+  // consume()'s own comment) there's no open batch left to price it from,
+  // same as the original shortfall itself carried no cost. Per-item
+  // try/catch so one failure doesn't block the rest, same shape as
+  // ProductionOrdersService.processReady().
+  async settleAllNegativeStock(userId: string, locationId?: string) {
+    const allowedIds = await scopedLocationIds(this.prisma, userId);
+    if (locationId && allowedIds && !allowedIds.includes(locationId)) {
+      throw new ForbiddenException('الموقع خارج نطاق صلاحيتك');
+    }
+    const balances = await this.prisma.inventoryBalance.findMany({
+      where: {
+        quantity: { lt: 0 },
+        locationId: locationId ? locationId : allowedIds ? { in: allowedIds } : undefined,
+      },
+      include: { location: { select: { name: true } } },
+    });
+    if (!balances.length) return { settledCount: 0, results: [] };
+
+    const ingredients = await this.prisma.ingredient.findMany({
+      where: { id: { in: [...new Set(balances.map((b) => b.ingredientId))] } },
+      select: { id: true, name: true, unit: true },
+    });
+    const ingredientById = new Map(ingredients.map((i) => [i.id, i]));
+
+    const results: Array<{
+      ingredientId: string;
+      name: string;
+      locationId: string;
+      locationName: string;
+      settled: boolean;
+      quantitySettled?: number;
+      reason?: string;
+    }> = [];
+    for (const balance of balances) {
+      const ingredient = ingredientById.get(balance.ingredientId);
+      const shortfall = -Number(balance.quantity); // positive amount needed to reach 0
+      try {
+        const unitCost = await this.averageUnitCost(balance.locationId, balance.ingredientId);
+        await this.receive(this.prisma, {
+          locationId: balance.locationId,
+          ingredientId: balance.ingredientId,
+          quantity: shortfall,
+          unitCost: Number(unitCost),
+          sourceType: 'ADJUSTMENT',
+          reason: 'NEGATIVE_STOCK_SETTLEMENT',
+        });
+        results.push({
+          ingredientId: balance.ingredientId,
+          name: ingredient?.name ?? balance.ingredientId,
+          locationId: balance.locationId,
+          locationName: balance.location.name,
+          settled: true,
+          quantitySettled: shortfall,
+        });
+      } catch (e) {
+        results.push({
+          ingredientId: balance.ingredientId,
+          name: ingredient?.name ?? balance.ingredientId,
+          locationId: balance.locationId,
+          locationName: balance.location.name,
+          settled: false,
+          reason: e instanceof Error ? e.message : 'خطأ غير متوقع',
+        });
+      }
+    }
+    return { settledCount: results.filter((r) => r.settled).length, results };
+  }
+
   async recordCostAdjustment(dto: CostAdjustmentDto, userId: string) {
     await this.assertLocationInScope(userId, dto.locationId);
     const batches = await this.prisma.inventoryBatch.findMany({
