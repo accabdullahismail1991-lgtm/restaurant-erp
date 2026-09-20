@@ -45,8 +45,11 @@ export class AnalyticsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('limit') limit?: string,
+    @Query('channel') channel?: string,
+    @Query('paymentMethod') paymentMethod?: string,
+    @Query('customerId') customerId?: string,
   ) {
-    return this.analytics.topItems(user.userId, locationId, from, to, limit ? parseInt(limit, 10) : undefined);
+    return this.analytics.topItems(user.userId, locationId, from, to, limit ? parseInt(limit, 10) : undefined, channel, paymentMethod, customerId);
   }
 
   @Get('sales-log')
@@ -69,8 +72,10 @@ export class AnalyticsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('limit') limit?: string,
+    @Query('channel') channel?: string,
+    @Query('paymentMethod') paymentMethod?: string,
   ) {
-    return this.analytics.topCustomers(user.userId, locationId, from, to, limit ? parseInt(limit, 10) : undefined);
+    return this.analytics.topCustomers(user.userId, locationId, from, to, limit ? parseInt(limit, 10) : undefined, channel, paymentMethod);
   }
 
   @Get('menu-engineering')
@@ -164,8 +169,11 @@ export class AnalyticsController {
     @Query('locationId') locationId?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('channel') channel?: string,
+    @Query('paymentMethod') paymentMethod?: string,
+    @Query('customerId') customerId?: string,
   ) {
-    return this.analytics.taxSummary(user.userId, locationId, from, to);
+    return this.analytics.taxSummary(user.userId, locationId, from, to, channel, paymentMethod, customerId);
   }
 
   @Get('production-summary')
@@ -184,8 +192,11 @@ export class AnalyticsController {
     @Query('locationId') locationId?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('channel') channel?: string,
+    @Query('paymentMethod') paymentMethod?: string,
+    @Query('customerId') customerId?: string,
   ) {
-    return this.analytics.peakHours(user.userId, locationId, from, to);
+    return this.analytics.peakHours(user.userId, locationId, from, to, channel, paymentMethod, customerId);
   }
 
   @Get('customer-experience')
@@ -194,8 +205,11 @@ export class AnalyticsController {
     @Query('locationId') locationId?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('channel') channel?: string,
+    @Query('paymentMethod') paymentMethod?: string,
+    @Query('customerId') customerId?: string,
   ) {
-    return this.analytics.customerExperience(user.userId, locationId, from, to);
+    return this.analytics.customerExperience(user.userId, locationId, from, to, channel, paymentMethod, customerId);
   }
 
   @Get('kitchen-performance')
@@ -204,8 +218,11 @@ export class AnalyticsController {
     @Query('locationId') locationId?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('channel') channel?: string,
+    @Query('paymentMethod') paymentMethod?: string,
+    @Query('customerId') customerId?: string,
   ) {
-    return this.analytics.kitchenPerformance(user.userId, locationId, from, to);
+    return this.analytics.kitchenPerformance(user.userId, locationId, from, to, channel, paymentMethod, customerId);
   }
 
   @Get('abc-analysis')

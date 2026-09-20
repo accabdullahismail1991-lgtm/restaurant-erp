@@ -249,9 +249,18 @@ export class AnalyticsService {
     };
   }
 
-  async topItems(userId: string, locationId?: string, from?: string, to?: string, limit = 10) {
+  async topItems(
+    userId: string,
+    locationId?: string,
+    from?: string,
+    to?: string,
+    limit = 10,
+    channel?: string,
+    paymentMethod?: string,
+    customerId?: string,
+  ) {
     const ids = await this.resolveLocationIds(userId, locationId);
-    return this.topItemsCore(ids, from, to, limit);
+    return this.topItemsCore(ids, from, to, limit, channel, paymentMethod, customerId);
   }
 
   topItemsForLocation(locationId: string | undefined, from?: string, to?: string, limit = 20) {
@@ -263,7 +272,15 @@ export class AnalyticsService {
   // composition of slot selections. Their revenue still counts in the
   // aggregate sales totals via salesSummaryCore, which reads Order-level
   // fields and doesn't depend on OrderLine at all.
-  private async topItemsCore(ids: string[] | undefined, from?: string, to?: string, limit = 10) {
+  private async topItemsCore(
+    ids: string[] | undefined,
+    from?: string,
+    to?: string,
+    limit = 10,
+    channel?: string,
+    paymentMethod?: string,
+    customerId?: string,
+  ) {
     const { gte, lte } = this.parseRange(from, to);
     const lines = await this.prisma.orderLine.findMany({
       where: {
@@ -272,6 +289,9 @@ export class AnalyticsService {
           status: OrderStatus.PAID,
           locationId: ids ? { in: ids } : undefined,
           paidAt: gte || lte ? { gte, lte } : undefined,
+          channel,
+          customerId,
+          payments: paymentMethod ? { some: { method: paymentMethod } } : undefined,
         },
       },
       select: { menuItemId: true, quantity: true, unitPrice: true, menuItem: { select: { name: true } } },
@@ -376,12 +396,27 @@ export class AnalyticsService {
   // rate -- never a per-customer money figure). Same "fetch paid orders,
   // reduce in JS" style as every other report here; walk-in orders
   // (customerId null) are excluded since there's no customer to rank.
-  async topCustomers(userId: string, locationId?: string, from?: string, to?: string, limit = 50) {
+  async topCustomers(
+    userId: string,
+    locationId?: string,
+    from?: string,
+    to?: string,
+    limit = 50,
+    channel?: string,
+    paymentMethod?: string,
+  ) {
     const ids = await this.resolveLocationIds(userId, locationId);
-    return this.topCustomersCore(ids, from, to, limit);
+    return this.topCustomersCore(ids, from, to, limit, channel, paymentMethod);
   }
 
-  private async topCustomersCore(ids: string[] | undefined, from?: string, to?: string, limit = 50) {
+  private async topCustomersCore(
+    ids: string[] | undefined,
+    from?: string,
+    to?: string,
+    limit = 50,
+    channel?: string,
+    paymentMethod?: string,
+  ) {
     const { gte, lte } = this.parseRange(from, to);
     const orders = await this.prisma.order.findMany({
       where: {
@@ -389,6 +424,8 @@ export class AnalyticsService {
         locationId: ids ? { in: ids } : undefined,
         paidAt: gte || lte ? { gte, lte } : undefined,
         customerId: { not: null },
+        channel,
+        payments: paymentMethod ? { some: { method: paymentMethod } } : undefined,
       },
       select: { customerId: true, grandTotal: true, paidAt: true },
     });
@@ -938,18 +975,36 @@ export class AnalyticsService {
   // historical snapshot -- same simplification menuItemCosts/foodCost
   // already make elsewhere in this file), so changing an item's tax type
   // reclassifies its past lines here too.
-  async taxSummary(userId: string, locationId?: string, from?: string, to?: string) {
+  async taxSummary(
+    userId: string,
+    locationId?: string,
+    from?: string,
+    to?: string,
+    channel?: string,
+    paymentMethod?: string,
+    customerId?: string,
+  ) {
     const ids = await this.resolveLocationIds(userId, locationId);
-    return this.taxSummaryCore(ids, from, to);
+    return this.taxSummaryCore(ids, from, to, channel, paymentMethod, customerId);
   }
 
-  private async taxSummaryCore(ids: string[] | undefined, from?: string, to?: string) {
+  private async taxSummaryCore(
+    ids: string[] | undefined,
+    from?: string,
+    to?: string,
+    channel?: string,
+    paymentMethod?: string,
+    customerId?: string,
+  ) {
     const { gte, lte } = this.parseRange(from, to);
     const orders = await this.prisma.order.findMany({
       where: {
         status: OrderStatus.PAID,
         locationId: ids ? { in: ids } : undefined,
         paidAt: gte || lte ? { gte, lte } : undefined,
+        channel,
+        customerId,
+        payments: paymentMethod ? { some: { method: paymentMethod } } : undefined,
       },
       select: {
         id: true,
@@ -1249,18 +1304,36 @@ export class AnalyticsService {
   // across the whole date range -- the one shape salesTrend (day buckets)
   // can't answer: WHEN during a typical day business actually happens, to
   // plan staffing/shifts around real peak hours rather than a guess.
-  async peakHours(userId: string, locationId?: string, from?: string, to?: string) {
+  async peakHours(
+    userId: string,
+    locationId?: string,
+    from?: string,
+    to?: string,
+    channel?: string,
+    paymentMethod?: string,
+    customerId?: string,
+  ) {
     const ids = await this.resolveLocationIds(userId, locationId);
-    return this.peakHoursCore(ids, from, to);
+    return this.peakHoursCore(ids, from, to, channel, paymentMethod, customerId);
   }
 
-  private async peakHoursCore(ids: string[] | undefined, from?: string, to?: string) {
+  private async peakHoursCore(
+    ids: string[] | undefined,
+    from?: string,
+    to?: string,
+    channel?: string,
+    paymentMethod?: string,
+    customerId?: string,
+  ) {
     const { gte, lte } = this.parseRange(from, to);
     const orders = await this.prisma.order.findMany({
       where: {
         status: OrderStatus.PAID,
         locationId: ids ? { in: ids } : undefined,
         paidAt: gte || lte ? { gte, lte } : undefined,
+        channel,
+        customerId,
+        payments: paymentMethod ? { some: { method: paymentMethod } } : undefined,
       },
       select: { paidAt: true, grandTotal: true },
     });
@@ -1282,23 +1355,39 @@ export class AnalyticsService {
   // reads signals that correlate with a good/bad experience instead:
   // how many customers come back (loyalty), how fast orders get served,
   // and how often something went wrong (voids/returns).
-  async customerExperience(userId: string, locationId?: string, from?: string, to?: string) {
+  async customerExperience(
+    userId: string,
+    locationId?: string,
+    from?: string,
+    to?: string,
+    channel?: string,
+    paymentMethod?: string,
+    customerId?: string,
+  ) {
     const ids = await this.resolveLocationIds(userId, locationId);
-    return this.customerExperienceCore(ids, from, to);
+    return this.customerExperienceCore(ids, from, to, channel, paymentMethod, customerId);
   }
 
-  private async customerExperienceCore(ids: string[] | undefined, from?: string, to?: string) {
+  private async customerExperienceCore(
+    ids: string[] | undefined,
+    from?: string,
+    to?: string,
+    channel?: string,
+    paymentMethod?: string,
+    customerId?: string,
+  ) {
     const { gte, lte } = this.parseRange(from, to);
     const locationFilter = ids ? { in: ids } : undefined;
     const dateFilter = gte || lte ? { gte, lte } : undefined;
+    const paymentFilter = paymentMethod ? { some: { method: paymentMethod } } : undefined;
 
     const [paidOrders, voidedCount, returnsCount] = await Promise.all([
       this.prisma.order.findMany({
-        where: { status: OrderStatus.PAID, locationId: locationFilter, paidAt: dateFilter },
+        where: { status: OrderStatus.PAID, locationId: locationFilter, paidAt: dateFilter, channel, customerId, payments: paymentFilter },
         select: { customerId: true, createdAt: true, paidAt: true },
       }),
-      this.prisma.order.count({ where: { status: OrderStatus.VOIDED, locationId: locationFilter, createdAt: dateFilter } }),
-      this.prisma.orderReturn.count({ where: { order: { locationId: locationFilter }, createdAt: dateFilter } }),
+      this.prisma.order.count({ where: { status: OrderStatus.VOIDED, locationId: locationFilter, createdAt: dateFilter, channel, customerId, payments: paymentFilter } }),
+      this.prisma.orderReturn.count({ where: { order: { locationId: locationFilter, channel, customerId }, createdAt: dateFilter } }),
     ]);
 
     const totalOrders = paidOrders.length + voidedCount;
@@ -1331,17 +1420,38 @@ export class AnalyticsService {
   // line, distinct from customerExperience's cruder "order to paid" proxy
   // above since a line's readyAt is stamped by KitchenService the moment
   // it's actually marked READY, regardless of when it gets paid.
-  async kitchenPerformance(userId: string, locationId?: string, from?: string, to?: string) {
+  async kitchenPerformance(
+    userId: string,
+    locationId?: string,
+    from?: string,
+    to?: string,
+    channel?: string,
+    paymentMethod?: string,
+    customerId?: string,
+  ) {
     const ids = await this.resolveLocationIds(userId, locationId);
-    return this.kitchenPerformanceCore(ids, from, to);
+    return this.kitchenPerformanceCore(ids, from, to, channel, paymentMethod, customerId);
   }
 
-  private async kitchenPerformanceCore(ids: string[] | undefined, from?: string, to?: string) {
+  private async kitchenPerformanceCore(
+    ids: string[] | undefined,
+    from?: string,
+    to?: string,
+    channel?: string,
+    paymentMethod?: string,
+    customerId?: string,
+  ) {
     const { gte, lte } = this.parseRange(from, to);
     const lines = await this.prisma.orderLine.findMany({
       where: {
         readyAt: { not: null },
-        order: { locationId: ids ? { in: ids } : undefined, createdAt: gte || lte ? { gte, lte } : undefined },
+        order: {
+          locationId: ids ? { in: ids } : undefined,
+          createdAt: gte || lte ? { gte, lte } : undefined,
+          channel,
+          customerId,
+          payments: paymentMethod ? { some: { method: paymentMethod } } : undefined,
+        },
       },
       select: {
         readyAt: true,
