@@ -1,10 +1,18 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { IngredientKind } from '@prisma/client';
+import { IngredientKind, POStatus, ProductionStatus, TransferStatus } from '@prisma/client';
 import { bulkImportRows } from '../common/bulk-import.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { ConvertUnitDto } from './dto/convert-unit.dto';
 import { CreateIngredientDto } from './dto/create-ingredient.dto';
 import { SetRecipeDto } from './dto/set-recipe.dto';
 import { UpdateIngredientDto } from './dto/update-ingredient.dto';
+
+// Free-text spelling variants seen in the wild for the two units this
+// conversion supports -- Ingredient.unit is a free string (see its schema
+// comment), so an import or a manual entry may have used any of these for
+// "gram" or "kilogram" rather than the exact UnitOfMeasure catalog name.
+const GRAM_UNITS = new Set(['جم', 'جرام', 'g', 'gram', 'grams']);
+const KG_UNITS = new Set(['كجم', 'كيلوجرام', 'كيلو', 'kg', 'kilo', 'kilogram']);
 
 @Injectable()
 export class IngredientsService {
@@ -65,6 +73,74 @@ export class IngredientsService {
       }
     }
     return this.prisma.ingredient.update({ where: { id }, data: dto });
+  }
+
+  // The other path to changing Ingredient.unit once there's real movement
+  // -- update() above just refuses that outright, because a bare unit
+  // swap would silently reinterpret every stored quantity/cost without
+  // touching their numbers. This does the numbers too: rescales the
+  // ingredient's own fields, every open batch (+ its movement history),
+  // its live balance, and every recipe line that mentions it -- in BOTH
+  // directions a component can appear in (as someone else's ingredient,
+  // or as this ingredient's own BOM) -- so the same physical quantities
+  // stay correct under the new unit. Currently only supports the gram<->kg
+  // pair (see GRAM_UNITS/KG_UNITS) -- the only case asked for; extending
+  // to ml<->l would just mean adding another pair with the same factor.
+  //
+  // Deliberately narrower than a "fix everything" migration: PLANNED/
+  // IN_PROGRESS production, non-terminal purchase orders, in-transit
+  // transfers and open stocktakes all carry their OWN snapshot quantities
+  // (copied off the recipe/balance at creation time, not a live
+  // reference), still expressed in the OLD unit and due to be acted on
+  // later (start()/complete(), receive, stocktake approval...). Rescaling
+  // those too would mean guessing at in-flight business state instead of
+  // just refusing until it's resolved -- so this blocks on any of them
+  // existing, the same "finish what's pending first" shape every other
+  // guard in this codebase already uses (e.g. shift-close vs unpaid
+  // orders). COMPLETED/CANCELLED/RECEIVED/REJECTED/terminal-status rows
+  // are historical fact by then and are deliberately left untouched, same
+  // as an invoice never gets rewritten after a currency redenomination.
+  async convertUnit(id: string, dto: ConvertUnitDto) {
+    const ingredient = await this.findOne(id);
+    const fromUnit = ingredient.unit;
+    const toUnit = dto.toUnit;
+
+    let factor: number; // multiplier applied to QUANTITY fields; cost fields get 1/factor
+    if (GRAM_UNITS.has(fromUnit) && KG_UNITS.has(toUnit)) factor = 1 / 1000;
+    else if (KG_UNITS.has(fromUnit) && GRAM_UNITS.has(toUnit)) factor = 1000;
+    else throw new BadRequestException('هذا التحويل غير مدعوم حاليًا -- التحويل متاح فقط بين الجرام والكيلوجرام');
+
+    const [pendingProductionInput, pendingProductionOutput, pendingPurchase, pendingTransfer, pendingStocktake] = await Promise.all([
+      this.prisma.productionOrderLine.count({ where: { ingredientId: id, productionOrder: { status: { in: [ProductionStatus.PLANNED, ProductionStatus.IN_PROGRESS] } } } }),
+      this.prisma.productionOrder.count({ where: { outputIngredientId: id, status: { in: [ProductionStatus.PLANNED, ProductionStatus.IN_PROGRESS] } } }),
+      this.prisma.purchaseOrderLine.count({ where: { ingredientId: id, purchaseOrder: { status: { in: [POStatus.DRAFT, POStatus.PENDING_APPROVAL, POStatus.APPROVED, POStatus.SENT_TO_SUPPLIER] } } } }),
+      this.prisma.transferLine.count({ where: { ingredientId: id, transfer: { status: TransferStatus.DISPATCHED } } }),
+      this.prisma.stocktakeLine.count({ where: { ingredientId: id, stocktake: { status: { in: ['IN_PROGRESS', 'PENDING_APPROVAL'] } } } }),
+    ]);
+    if (pendingProductionInput || pendingProductionOutput || pendingPurchase || pendingTransfer || pendingStocktake) {
+      throw new BadRequestException(
+        'لا يمكن تحويل وحدة هذا الصنف الآن -- له أوامر إنتاج أو شراء أو تحويلات أو جرد لم تُغلق بعد وتعتمد على الوحدة الحالية. أنهِ أو ألغِ هذه العمليات أولًا',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.inventoryBatch.updateMany({ where: { ingredientId: id }, data: { quantity: { multiply: factor }, unitCost: { divide: factor } } });
+      await tx.stockMovement.updateMany({ where: { batch: { ingredientId: id } }, data: { quantity: { multiply: factor } } });
+      await tx.inventoryBalance.updateMany({ where: { ingredientId: id }, data: { quantity: { multiply: factor } } });
+      // as a component in someone else's recipe -- same role as stock quantity
+      await tx.recipeLine.updateMany({ where: { ingredientId: id }, data: { quantity: { multiply: factor } } });
+      // this ingredient's OWN BOM -- inverse factor (see the method comment)
+      await tx.recipeLine.updateMany({ where: { parentIngredientId: id }, data: { quantity: { divide: factor } } });
+
+      return tx.ingredient.update({
+        where: { id },
+        data: {
+          unit: toUnit,
+          lowStockThreshold: { multiply: factor },
+          ...(ingredient.openingCost != null ? { openingCost: { divide: factor } } : {}),
+        },
+      });
+    });
   }
 
   async getRecipe(id: string) {

@@ -3,6 +3,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermission } from '../auth/require-permission.decorator';
 import { BulkImportBodyDto } from '../common/bulk-import.util';
+import { ConvertUnitDto } from './dto/convert-unit.dto';
 import { CreateIngredientDto } from './dto/create-ingredient.dto';
 import { SetRecipeDto } from './dto/set-recipe.dto';
 import { UpdateIngredientDto } from './dto/update-ingredient.dto';
@@ -41,6 +42,16 @@ export class IngredientsController {
   @RequirePermission('ingredients.manage')
   update(@Param('id') id: string, @Body() dto: UpdateIngredientDto) {
     return this.ingredients.update(id, dto);
+  }
+
+  // Unlike update() above (which just refuses a unit change once there's
+  // movement), this rescales every stored quantity/cost that depends on
+  // the unit -- see IngredientsService.convertUnit()'s comment for the
+  // exact math and what it deliberately won't touch.
+  @Patch(':id/convert-unit')
+  @RequirePermission('ingredients.manage')
+  convertUnit(@Param('id') id: string, @Body() dto: ConvertUnitDto) {
+    return this.ingredients.convertUnit(id, dto);
   }
 
   @Get(':id/recipe')
