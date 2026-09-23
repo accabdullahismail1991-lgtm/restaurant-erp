@@ -353,7 +353,7 @@ describe('Phase 2: ingredients + items + multi-level recipes (e2e)', () => {
       expect(Number(refreshedBatch?.unitCost)).toBeCloseTo(0.03, 6);
     });
 
-    it('rejects a conversion between units that are not the gram/kg pair', async () => {
+    it('rejects a conversion between units that are not in the same family (mass/volume/count)', async () => {
       const ingredient = await prisma.ingredient.create({
         data: { name: 'صنف بوحدة غير مدعومة', unit: 'لتر', kind: 'RAW_MATERIAL', lowStockThreshold: 1 },
       });
@@ -362,6 +362,67 @@ describe('Phase 2: ingredients + items + multi-level recipes (e2e)', () => {
         .set(auth())
         .send({ toUnit: 'كجم' });
       expect(res.status).toBe(400);
+    });
+
+    it('relabels a same-family, same-magnitude unit spelling with no math at all (factor 1)', async () => {
+      // "كجم" and "kg" are the exact same real unit, just spelled
+      // differently -- a pure rename an admin needs after standardizing
+      // free-text unit spellings, not an actual quantity change.
+      const ingredient = await prisma.ingredient.create({
+        data: { name: 'صنف بتسمية وحدة مختلفة لنفس الكيلوجرام', unit: 'كجم', kind: 'RAW_MATERIAL', lowStockThreshold: 3, openingCost: 12 },
+      });
+      const location = await prisma.location.create({ data: { name: 'فرع اختبار إعادة تسمية الوحدة', type: 'BRANCH' } });
+      const batch = await prisma.inventoryBatch.create({
+        data: { locationId: location.id, ingredientId: ingredient.id, batchNumber: 'B-RELABEL-1', quantity: 7, unitCost: 15, sourceType: 'PURCHASE' },
+      });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/ingredients/${ingredient.id}/convert-unit`)
+        .set(auth())
+        .send({ toUnit: 'kg' });
+      expect(res.status).toBe(200);
+      expect(res.body.unit).toBe('kg');
+      expect(Number(res.body.lowStockThreshold)).toBeCloseTo(3, 6);
+      expect(Number(res.body.openingCost)).toBeCloseTo(12, 6);
+
+      const refreshedBatch = await prisma.inventoryBatch.findUnique({ where: { id: batch.id } });
+      expect(Number(refreshedBatch?.quantity)).toBeCloseTo(7, 6);
+      expect(Number(refreshedBatch?.unitCost)).toBeCloseTo(15, 6);
+    });
+
+    it('relabels a same-family count unit spelling ("حبة" -> "pcs") with no math', async () => {
+      const ingredient = await prisma.ingredient.create({
+        data: { name: 'صنف بتسمية وحدة مختلفة لنفس القطعة', unit: 'حبة', kind: 'RAW_MATERIAL', lowStockThreshold: 10 },
+      });
+      const res = await request(app.getHttpServer())
+        .patch(`/ingredients/${ingredient.id}/convert-unit`)
+        .set(auth())
+        .send({ toUnit: 'pcs' });
+      expect(res.status).toBe(200);
+      expect(res.body.unit).toBe('pcs');
+      expect(Number(res.body.lowStockThreshold)).toBeCloseTo(10, 6);
+    });
+
+    it('rescales milliliter -> liter, the same mechanism as gram -> kg extended to the volume family', async () => {
+      const ingredient = await prisma.ingredient.create({
+        data: { name: 'صنف تحويل مليلتر للتر', unit: 'ml', kind: 'RAW_MATERIAL', lowStockThreshold: 500 },
+      });
+      const location = await prisma.location.create({ data: { name: 'فرع اختبار تحويل الحجم', type: 'BRANCH' } });
+      const batch = await prisma.inventoryBatch.create({
+        data: { locationId: location.id, ingredientId: ingredient.id, batchNumber: 'B-CONV-VOL-1', quantity: 2000, unitCost: 0.01, sourceType: 'PURCHASE' },
+      });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/ingredients/${ingredient.id}/convert-unit`)
+        .set(auth())
+        .send({ toUnit: 'l' });
+      expect(res.status).toBe(200);
+      expect(res.body.unit).toBe('l');
+      expect(Number(res.body.lowStockThreshold)).toBeCloseTo(0.5, 6);
+
+      const refreshedBatch = await prisma.inventoryBatch.findUnique({ where: { id: batch.id } });
+      expect(Number(refreshedBatch?.quantity)).toBeCloseTo(2, 6);
+      expect(Number(refreshedBatch?.unitCost)).toBeCloseTo(10, 6);
     });
 
     it('blocks conversion when a PLANNED production order consumes the ingredient as an input', async () => {

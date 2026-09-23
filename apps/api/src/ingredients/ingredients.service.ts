@@ -7,12 +7,31 @@ import { CreateIngredientDto } from './dto/create-ingredient.dto';
 import { SetRecipeDto } from './dto/set-recipe.dto';
 import { UpdateIngredientDto } from './dto/update-ingredient.dto';
 
-// Free-text spelling variants seen in the wild for the two units this
-// conversion supports -- Ingredient.unit is a free string (see its schema
-// comment), so an import or a manual entry may have used any of these for
-// "gram" or "kilogram" rather than the exact UnitOfMeasure catalog name.
-const GRAM_UNITS = new Set(['جم', 'جرام', 'g', 'gram', 'grams']);
-const KG_UNITS = new Set(['كجم', 'كيلوجرام', 'كيلو', 'kg', 'kilo', 'kilogram']);
+// Free-text spelling variants seen in the wild for each recognized unit --
+// Ingredient.unit is a free string (see its schema comment), so an import
+// or a manual entry may have used any of these instead of the exact
+// UnitOfMeasure catalog name (e.g. "كجم" and "kg" are the same real unit,
+// just spelled differently). Each map value is that variant's size relative
+// to the family's smallest member (gram, milliliter, or piece) -- the same
+// mass/volume/count families admin_panel.html's own UNIT_FAMILIES uses for
+// recipe/purchasing quantity entry, kept in sync by hand since one is
+// Prisma-side TypeScript and the other plain browser JS.
+const MASS_UNITS: Record<string, number> = { جم: 1, جرام: 1, g: 1, gram: 1, grams: 1, كجم: 1000, كيلوجرام: 1000, كيلو: 1000, kg: 1000, kilo: 1000, kilogram: 1000 };
+const VOLUME_UNITS: Record<string, number> = { مل: 1, مليلتر: 1, ml: 1, milliliter: 1, millilitre: 1, لتر: 1000, l: 1000, liter: 1000, litre: 1000 };
+const COUNT_UNITS: Record<string, number> = { حبة: 1, قطعة: 1, pcs: 1, piece: 1, pieces: 1 };
+const UNIT_FAMILIES = [MASS_UNITS, VOLUME_UNITS, COUNT_UNITS];
+
+// Multiplier applied to QUANTITY fields to go from `fromUnit` to `toUnit`
+// (cost fields get its inverse) -- 1 when both spell the exact same real
+// unit (a pure relabel, e.g. "كجم" -> "kg"), the real ratio when they're
+// different sizes within the same family (e.g. "g" -> "kg"), or null when
+// the two aren't in any family together at all (nothing safe to infer).
+function unitConversionFactor(fromUnit: string, toUnit: string): number | null {
+  for (const family of UNIT_FAMILIES) {
+    if (fromUnit in family && toUnit in family) return family[fromUnit] / family[toUnit];
+  }
+  return null;
+}
 
 @Injectable()
 export class IngredientsService {
@@ -83,9 +102,11 @@ export class IngredientsService {
   // its live balance, and every recipe line that mentions it -- in BOTH
   // directions a component can appear in (as someone else's ingredient,
   // or as this ingredient's own BOM) -- so the same physical quantities
-  // stay correct under the new unit. Currently only supports the gram<->kg
-  // pair (see GRAM_UNITS/KG_UNITS) -- the only case asked for; extending
-  // to ml<->l would just mean adding another pair with the same factor.
+  // stay correct under the new unit. Covers any pair unitConversionFactor()
+  // recognizes: a real magnitude change within a family (e.g. g -> kg), or
+  // a pure relabel of the exact same unit (e.g. "كجم" -> "kg", factor 1) --
+  // the latter matters because update() above can't do even that once
+  // there's movement, despite it needing no math at all.
   //
   // Deliberately narrower than a "fix everything" migration: PLANNED/
   // IN_PROGRESS production, non-terminal purchase orders, in-transit
@@ -105,10 +126,11 @@ export class IngredientsService {
     const fromUnit = ingredient.unit;
     const toUnit = dto.toUnit;
 
-    let factor: number; // multiplier applied to QUANTITY fields; cost fields get 1/factor
-    if (GRAM_UNITS.has(fromUnit) && KG_UNITS.has(toUnit)) factor = 1 / 1000;
-    else if (KG_UNITS.has(fromUnit) && GRAM_UNITS.has(toUnit)) factor = 1000;
-    else throw new BadRequestException('هذا التحويل غير مدعوم حاليًا -- التحويل متاح فقط بين الجرام والكيلوجرام');
+    // multiplier applied to QUANTITY fields; cost fields get 1/factor
+    const factor = unitConversionFactor(fromUnit, toUnit);
+    if (factor == null) {
+      throw new BadRequestException('هذا التحويل غير مدعوم حاليًا -- الوحدتان ليستا من نفس نوع القياس (وزن/حجم/عدد) المعروف للنظام');
+    }
 
     const [pendingProductionInput, pendingProductionOutput, pendingPurchase, pendingTransfer, pendingStocktake] = await Promise.all([
       this.prisma.productionOrderLine.count({ where: { ingredientId: id, productionOrder: { status: { in: [ProductionStatus.PLANNED, ProductionStatus.IN_PROGRESS] } } } }),
