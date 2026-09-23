@@ -90,8 +90,9 @@ const DEFAULT_ORDER_TYPES: Array<{ code: string; name: string; icon: string }> =
 // Overridable via env so a real deployment (Render, etc.) isn't stuck with
 // the well-known local dev credential -- falls back to it when unset so
 // nothing changes for local development.
+const explicitAdminPassword = process.env.ADMIN_PASSWORD;
 const ADMIN_PHONE = process.env.ADMIN_PHONE || '+966500000000';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'ChangeMe123!'; // dev-only seed credential -- see README
+const ADMIN_PASSWORD = explicitAdminPassword || 'ChangeMe123!'; // dev-only seed credential -- see README
 
 async function main() {
   for (const p of PERMISSIONS) {
@@ -141,7 +142,15 @@ async function main() {
   const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
   const admin = await prisma.user.upsert({
     where: { phone: ADMIN_PHONE },
-    update: {},
+    // Only overwrites an already-existing admin's password/active state
+    // when ADMIN_PASSWORD is EXPLICITLY set in the environment (e.g. in
+    // Render's dashboard) -- so setting it there and redeploying is a real
+    // way to force-reset a locked-out admin password, instead of the
+    // previous silent no-op (`update: {}` on every run) that left this
+    // seemingly-documented recovery path never actually working. Left
+    // unset, an ordinary restart/redeploy never touches a password an
+    // admin already changed from the Users screen.
+    update: explicitAdminPassword ? { passwordHash, isActive: true } : {},
     create: { name: 'مدير النظام', phone: ADMIN_PHONE, passwordHash, isActive: true },
   });
   await prisma.userRole.upsert({
