@@ -1,4 +1,4 @@
-import { ArrayUnique, IsArray, IsBoolean, IsOptional, IsString, MinLength } from 'class-validator';
+import { ArrayUnique, IsArray, IsBoolean, IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class UpdateUserDto {
   @IsOptional()
@@ -13,6 +13,12 @@ export class UpdateUserDto {
   @IsString()
   @MinLength(3, { message: 'اسم المستخدم يجب أن يكون 3 أحرف على الأقل' })
   username?: string;
+
+  // Not a login identifier, never used to send email (see User.email schema
+  // comment) -- purely a note for an admin generating a password-reset link.
+  @IsOptional()
+  @IsEmail({}, { message: 'صيغة البريد الإلكتروني غير صحيحة' })
+  email?: string;
 
   // Optional reset -- omit to leave the current password untouched. There is
   // deliberately no "confirm old password" step here: only a user holding

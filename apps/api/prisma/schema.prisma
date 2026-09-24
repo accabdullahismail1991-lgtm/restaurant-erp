@@ -164,6 +164,12 @@ model User {
   // login field (no wire/API shape change needed for existing clients).
   // Null for users who only ever log in with their phone number.
   username     String?  @unique
+  // Optional, purely informational for now -- not a login identifier and no
+  // email is ever actually sent by this system (no SMTP/email provider
+  // configured). Lets an admin note which address a generated password-
+  // reset link should be forwarded to manually. Nullable since existing
+  // users never had one.
+  email        String?  @unique
   passwordHash String
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
@@ -179,6 +185,29 @@ model User {
   orderActivityLogs       OrderActivityLog[]
   orderReturnActivityLogs OrderReturnActivityLog[]
   dayClosesClosed         DayClose[]
+  passwordResetTokens     PasswordResetToken[]
+}
+
+// A one-time, admin-generated password-reset link (see User.email comment --
+// this system doesn't send email itself). An admin holding users.manage
+// generates one for a specific user from the Users screen; the RAW token is
+// returned to them exactly once and never stored or retrievable again --
+// only its hash is persisted, the same pattern as a password itself. The
+// admin then forwards the resulting link to that user through whatever
+// channel they like (email, WhatsApp, in person). Single-use (usedAt) and
+// time-limited (expiresAt); UsersService.createPasswordResetLink() deletes
+// any other still-unused tokens for that user when issuing a new one, so
+// only the most recently generated link ever works.
+model PasswordResetToken {
+  id              String    @id @default(cuid())
+  userId          String
+  tokenHash       String    @unique
+  createdByUserId String
+  expiresAt       DateTime
+  usedAt          DateTime?
+  createdAt       DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
 }
 
 model Role {

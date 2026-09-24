@@ -1,7 +1,8 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtPayload } from './jwt-payload.type';
 
@@ -83,5 +84,26 @@ export class AuthService {
       new Set(user.roles.flatMap((r) => r.role.permissions.map((p) => p.permission.code))),
     );
     return { id: user.id, name: user.name, phone: user.phone, username: user.username, permissions };
+  }
+
+  // Public (no auth) -- consumes a one-time token an admin generated via
+  // UsersService.createPasswordResetLink() and forwarded to the user
+  // themselves. Looked up by the token's hash, never the raw value (same
+  // pattern as never storing a plaintext password). A generic message
+  // either way (expired vs. already-used vs. never-existed) since none of
+  // that distinction is this endpoint's business to reveal to whoever holds
+  // the link.
+  async resetPassword(token: string, newPassword: string) {
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const record = await this.prisma.passwordResetToken.findUnique({ where: { tokenHash } });
+    if (!record || record.usedAt || record.expiresAt < new Date()) {
+      throw new BadRequestException('رابط الاستعادة غير صالح أو منتهي الصلاحية -- اطلب رابطًا جديدًا من مدير النظام');
+    }
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: record.userId }, data: { passwordHash } }),
+      this.prisma.passwordResetToken.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
+    ]);
+    return { ok: true };
   }
 }

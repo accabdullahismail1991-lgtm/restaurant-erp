@@ -1,4 +1,4 @@
-import { ArrayUnique, IsArray, IsOptional, IsString, MinLength } from 'class-validator';
+import { ArrayUnique, IsArray, IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class CreateUserDto {
   @IsString()
@@ -15,6 +15,12 @@ export class CreateUserDto {
   @IsString()
   @MinLength(3, { message: 'اسم المستخدم يجب أن يكون 3 أحرف على الأقل' })
   username?: string;
+
+  // Not a login identifier, never used to send email (see User.email schema
+  // comment) -- purely a note for an admin generating a password-reset link.
+  @IsOptional()
+  @IsEmail({}, { message: 'صيغة البريد الإلكتروني غير صحيحة' })
+  email?: string;
 
   @IsString()
   @MinLength(8, { message: 'كلمة المرور يجب أن تكون 8 أحرف على الأقل' })

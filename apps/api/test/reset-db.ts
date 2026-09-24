@@ -12,6 +12,12 @@ import { PrismaService } from '../src/prisma/prisma.service';
 // whatever User/Role/Permission rows it needs for login.
 //
 export async function resetDatabase(prisma: PrismaService) {
+  // Must go before any suite's own targeted user.deleteMany() by phone --
+  // PasswordResetToken.userId has no cascade delete, so a leftover token
+  // from an EARLIER suite (or an earlier run of the same suite) that
+  // happens to reuse the same test phone number would otherwise block
+  // that user's deletion with an FK violation.
+  await prisma.passwordResetToken.deleteMany({});
   await prisma.backup.deleteMany({});
   await prisma.paymentMethod.deleteMany({});
   // Every existing suite that pays an order with method: 'CASH' and then
