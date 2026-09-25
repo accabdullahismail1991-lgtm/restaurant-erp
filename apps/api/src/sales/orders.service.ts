@@ -397,6 +397,73 @@ export class OrdersService {
     return order;
   }
 
+  // Public (no auth, no permission scope) -- the customer-facing order
+  // tracking page reads this by the order's own `id`, which doubles as the
+  // unguessable public "token" (a cuid, same as every other row's id in
+  // this system): no separate public-token field/migration needed, and
+  // nothing here that isn't already implied by holding that id. Returns
+  // ONLY what a customer following their own order should see -- no
+  // customer PII, no VAT/payment breakdown, no staff names, no other
+  // orders. `stage` collapses order status + per-line kitchen status into
+  // one friendly progression for a simple visual tracker.
+  async publicStatus(id: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        status: true,
+        channel: true,
+        shiftSequence: true,
+        dailySequence: true,
+        sequenceNumber: true,
+        createdAt: true,
+        grandTotal: true,
+        location: { select: { name: true } },
+        table: { select: { label: true } },
+        lines: {
+          select: {
+            id: true,
+            quantity: true,
+            kitchenStatus: true,
+            note: true,
+            menuItem: { select: { name: true } },
+            comboMeal: { select: { name: true } },
+          },
+        },
+      },
+    });
+    if (!order) throw new NotFoundException('الطلب غير موجود');
+
+    let stage: 'VOIDED' | 'PAID' | 'SERVED' | 'READY' | 'PREPARING' | 'RECEIVED';
+    if (order.status === 'VOIDED') stage = 'VOIDED';
+    else if (order.lines.length > 0 && order.lines.every((l) => l.kitchenStatus === 'SERVED')) stage = 'SERVED';
+    else if (order.lines.some((l) => l.kitchenStatus === 'PREPARING' || l.kitchenStatus === 'READY')) {
+      stage = order.lines.every((l) => l.kitchenStatus === 'READY' || l.kitchenStatus === 'SERVED') ? 'READY' : 'PREPARING';
+    } else stage = 'RECEIVED';
+    // PAID overrides a still-QUEUED kitchen stage (e.g. a takeaway/delivery
+    // order paid up front before the kitchen has touched it) but never
+    // overrides genuine kitchen progress already past RECEIVED.
+    if (order.status === 'PAID' && stage === 'RECEIVED') stage = 'PAID';
+
+    return {
+      id: order.id,
+      stage,
+      orderNumber: order.dailySequence ?? order.shiftSequence ?? order.sequenceNumber,
+      channel: order.channel,
+      locationName: order.location.name,
+      tableLabel: order.table?.label ?? null,
+      createdAt: order.createdAt,
+      grandTotal: order.grandTotal,
+      lines: order.lines.map((l) => ({
+        id: l.id,
+        name: l.menuItem?.name ?? l.comboMeal?.name ?? '—',
+        quantity: l.quantity,
+        kitchenStatus: l.kitchenStatus,
+        note: l.note,
+      })),
+    };
+  }
+
   async findAll(
     userId: string,
     locationId?: string,

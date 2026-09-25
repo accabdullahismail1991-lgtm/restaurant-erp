@@ -9,12 +9,13 @@ import { PromotionsModule } from '../promotions/promotions.module';
 import { ZatcaModule } from '../zatca/zatca.module';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
+import { PublicOrderStatusController } from './public-order-status.controller';
 import { ShiftsController } from './shifts.controller';
 import { ShiftsService } from './shifts.service';
 
 @Module({
   imports: [AuthModule, InventoryModule, ZatcaModule, PromotionsModule, CustomersModule, PaymentMethodsModule, ProductionModule, OrderTypesModule],
-  controllers: [ShiftsController, OrdersController],
+  controllers: [ShiftsController, OrdersController, PublicOrderStatusController],
   providers: [ShiftsService, OrdersService],
 })
 export class SalesModule {}
