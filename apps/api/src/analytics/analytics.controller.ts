@@ -289,4 +289,37 @@ export class AnalyticsController {
   costImpactSimulation(@CurrentUser() user: { userId: string }, @Body() dto: CostImpactSimulationDto) {
     return this.analytics.costImpactSimulation(user.userId, dto.ingredientChanges, dto.locationId, dto.from, dto.to);
   }
+
+  // Flat row-level data for the admin panel's client-side Pivot Table
+  // builder (drag fields into rows/columns/values) -- one route per data
+  // source, since each domain's rows have a different shape entirely.
+  @Get('pivot/sales')
+  pivotSales(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.analytics.pivotSales(user.userId, locationId, from, to);
+  }
+
+  @Get('pivot/inventory')
+  pivotInventory(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.analytics.pivotInventory(user.userId, locationId, from, to);
+  }
+
+  @Get('pivot/purchasing')
+  pivotPurchasing(
+    @CurrentUser() user: { userId: string },
+    @Query('locationId') locationId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.analytics.pivotPurchasing(user.userId, locationId, from, to);
+  }
 }

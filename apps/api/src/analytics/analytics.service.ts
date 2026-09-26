@@ -1622,4 +1622,153 @@ export class AnalyticsService {
 
     return { items, totals };
   }
+
+  // ---------------------------------------------------------------------
+  // Pivot Table report builder: flat, row-level data per domain for the
+  // admin panel's client-side pivot engine (drag fields into rows/columns/
+  // values). Unlike every report above -- each pre-aggregated server-side
+  // into ONE fixed shape -- a pivot table's grouping is chosen by the user
+  // at view time, not known in advance, so this hands back raw rows
+  // instead. Capped like salesLogCore, for the same reason (an unbounded
+  // export isn't a UI a cashier ever needs).
+  // ---------------------------------------------------------------------
+  private static readonly PIVOT_MAX_ROWS = 5000;
+
+  async pivotSales(userId: string, locationId?: string, from?: string, to?: string) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.pivotSalesCore(ids, from, to);
+  }
+
+  private async pivotSalesCore(ids: string[] | undefined, from?: string, to?: string) {
+    const { gte, lte } = this.parseRange(from, to);
+    const lines = await this.prisma.orderLine.findMany({
+      where: {
+        order: {
+          status: OrderStatus.PAID,
+          locationId: ids ? { in: ids } : undefined,
+          paidAt: gte || lte ? { gte, lte } : undefined,
+        },
+      },
+      select: {
+        quantity: true,
+        unitPrice: true,
+        order: {
+          select: {
+            paidAt: true,
+            channel: true,
+            invoiceType: true,
+            location: { select: { name: true } },
+            servedBy: { select: { name: true } },
+            customer: { select: { name: true } },
+            payments: { select: { method: true }, take: 1 },
+          },
+        },
+        menuItem: { select: { name: true, category: true } },
+        comboMeal: { select: { name: true, category: true } },
+      },
+      orderBy: { order: { paidAt: 'desc' } },
+      take: AnalyticsService.PIVOT_MAX_ROWS,
+    });
+
+    return lines.map((l) => ({
+      date: l.order.paidAt,
+      locationName: l.order.location.name,
+      orderType: l.order.channel,
+      invoiceType: l.order.invoiceType,
+      cashierName: l.order.servedBy?.name ?? '-',
+      customerName: l.order.customer?.name ?? 'بدون عميل',
+      itemName: l.menuItem?.name ?? l.comboMeal?.name ?? '-',
+      category: l.menuItem?.category ?? l.comboMeal?.category ?? 'كومبو',
+      paymentMethod: l.order.payments[0]?.method ?? '-',
+      quantity: l.quantity,
+      unitPrice: Number(l.unitPrice),
+      revenue: round2(l.quantity * Number(l.unitPrice)),
+    }));
+  }
+
+  async pivotInventory(userId: string, locationId?: string, from?: string, to?: string) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.pivotInventoryCore(ids, from, to);
+  }
+
+  private async pivotInventoryCore(ids: string[] | undefined, from?: string, to?: string) {
+    const { gte, lte } = this.parseRange(from, to);
+    const movements = await this.prisma.stockMovement.findMany({
+      where: {
+        createdAt: gte || lte ? { gte, lte } : undefined,
+        batch: { locationId: ids ? { in: ids } : undefined },
+      },
+      select: {
+        quantity: true,
+        reason: true,
+        createdAt: true,
+        batch: {
+          select: {
+            unitCost: true,
+            location: { select: { name: true } },
+            ingredient: { select: { name: true, category: true, unit: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: AnalyticsService.PIVOT_MAX_ROWS,
+    });
+
+    return movements.map((m) => ({
+      date: m.createdAt,
+      locationName: m.batch.location.name,
+      ingredientName: m.batch.ingredient.name,
+      category: m.batch.ingredient.category ?? 'بلا تصنيف',
+      unit: m.batch.ingredient.unit,
+      reason: m.reason,
+      quantity: Number(m.quantity),
+      unitCost: Number(m.batch.unitCost),
+      value: round2(Math.abs(Number(m.quantity)) * Number(m.batch.unitCost)),
+    }));
+  }
+
+  async pivotPurchasing(userId: string, locationId?: string, from?: string, to?: string) {
+    const ids = await this.resolveLocationIds(userId, locationId);
+    return this.pivotPurchasingCore(ids, from, to);
+  }
+
+  private async pivotPurchasingCore(ids: string[] | undefined, from?: string, to?: string) {
+    const { gte, lte } = this.parseRange(from, to);
+    const lines = await this.prisma.purchaseOrderLine.findMany({
+      where: {
+        purchaseOrder: {
+          locationId: ids ? { in: ids } : undefined,
+          createdAt: gte || lte ? { gte, lte } : undefined,
+        },
+      },
+      select: {
+        quantity: true,
+        unitCost: true,
+        ingredient: { select: { name: true, category: true, unit: true } },
+        purchaseOrder: {
+          select: {
+            createdAt: true,
+            status: true,
+            location: { select: { name: true } },
+            supplier: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: { purchaseOrder: { createdAt: 'desc' } },
+      take: AnalyticsService.PIVOT_MAX_ROWS,
+    });
+
+    return lines.map((l) => ({
+      date: l.purchaseOrder.createdAt,
+      locationName: l.purchaseOrder.location.name,
+      supplierName: l.purchaseOrder.supplier.name,
+      status: l.purchaseOrder.status,
+      ingredientName: l.ingredient.name,
+      category: l.ingredient.category ?? 'بلا تصنيف',
+      unit: l.ingredient.unit,
+      quantity: Number(l.quantity),
+      unitCost: Number(l.unitCost),
+      total: round2(Number(l.quantity) * Number(l.unitCost)),
+    }));
+  }
 }
