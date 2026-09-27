@@ -729,7 +729,7 @@ export class AnalyticsService {
 
     const ingredients = await this.prisma.ingredient.findMany({
       where: { id: { in: [...new Set(balances.map((b) => b.ingredientId))] } },
-      select: { id: true, name: true, unit: true },
+      select: { id: true, name: true, unit: true, kind: true },
     });
     const ingredientById = new Map(ingredients.map((i) => [i.id, i]));
 
@@ -738,6 +738,11 @@ export class AnalyticsService {
         ingredientId: b.ingredientId,
         name: ingredientById.get(b.ingredientId)?.name ?? b.ingredientId,
         unit: ingredientById.get(b.ingredientId)?.unit ?? '',
+        // Lets the admin panel's Production screen filter this same report
+        // down to just the SEMI_FINISHED rows -- those are the ones a
+        // production order can actually fix, unlike a raw material (which
+        // needs a purchase, not a production run).
+        kind: ingredientById.get(b.ingredientId)?.kind ?? 'RAW_MATERIAL',
         locationId: b.locationId,
         locationName: b.location.name,
         quantity: round2(Number(b.quantity)),

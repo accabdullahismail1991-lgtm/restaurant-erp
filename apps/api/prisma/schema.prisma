@@ -431,7 +431,10 @@ model RecipeLine {
   menuItemId         String?
   parentIngredientId String?
   ingredientId       String
-  quantity           Decimal @db.Decimal(12, 3)
+  // 5 decimal places, not the usual 3 -- a recipe line routinely carries a
+  // tiny per-portion quantity (e.g. 0.00003 kg of a spice), where 3 decimals
+  // silently rounds the cost/quantity display down to 0.
+  quantity           Decimal @db.Decimal(12, 5)
 
   menuItem         MenuItem?   @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
   parentIngredient Ingredient? @relation("IngredientOwnRecipe", fields: [parentIngredientId], references: [id], onDelete: Cascade)

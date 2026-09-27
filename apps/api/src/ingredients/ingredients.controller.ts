@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
+import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermission } from '../auth/require-permission.decorator';
@@ -64,5 +65,15 @@ export class IngredientsController {
   @RequirePermission('ingredients.manage')
   setRecipe(@Param('id') id: string, @Body() dto: SetRecipeDto) {
     return this.ingredients.setRecipe(id, dto);
+  }
+
+  // Same permission as /inventory/cost-adjustments -- this is exactly that
+  // action, just computed and applied across every ingredient at once
+  // instead of one at a time. See IngredientsService.recomputeCosts.
+  @Post('recompute-costs')
+  @HttpCode(200)
+  @RequirePermission('inventory.adjust')
+  recomputeCosts(@CurrentUser() user: { userId: string }) {
+    return this.ingredients.recomputeCosts(user.userId);
   }
 }
