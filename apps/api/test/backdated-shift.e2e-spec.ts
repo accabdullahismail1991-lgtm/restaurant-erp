@@ -1,6 +1,7 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
+import { XMLParser } from 'fast-xml-parser';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -138,5 +139,72 @@ describe('Backdated shift open (pos.backdate_shift) (e2e)', () => {
       .send({ closingCounted: 200 });
     expect(closeRes.status).toBe(200);
     expect(closeRes.body.closedAt).toBeTruthy();
+  });
+
+  // pay()'s optional paidAt: for sales genuinely migrated from another
+  // system that never had a ZATCA invoice issued for them, the real
+  // transaction date has to survive as the invoice's issue date -- unlike
+  // the routine backdated-shift case above, where paidAt intentionally stays
+  // "now" (confirmed with the user) since ZATCA already sees those as newly
+  // issued. Own location with a vatNumber so ZATCA actually generates here.
+  it('pay() accepts an explicit paidAt (pos.backdate_shift only) that becomes the ZATCA invoice issue date', async () => {
+    const vatLocationId = (
+      await prisma.location.create({ data: { name: 'فرع اختبار تاريخ الدفع الصريح', type: 'BRANCH', vatNumber: '399999999900011' } })
+    ).id;
+    const threeDaysAgo = startOfUtcDay(new Date(Date.now() - 3 * 24 * 60 * 60 * 1000));
+    const businessDate = threeDaysAgo.toISOString().slice(0, 10);
+    const explicitPaidAt = new Date(threeDaysAgo.getTime() + 14 * 60 * 60 * 1000).toISOString(); // same day, 14:00 UTC
+
+    const openRes = await request(app.getHttpServer())
+      .post('/shifts')
+      .set(auth(backdateToken))
+      .send({ locationId: vatLocationId, openingFloat: 100, businessDate });
+    const shiftId = openRes.body.id;
+    const orderRes = await request(app.getHttpServer())
+      .post('/orders')
+      .set(auth(backdateToken))
+      .send({ locationId: vatLocationId, shiftId, channel: 'DINE_IN', lines: [{ menuItemId, quantity: 1 }] });
+    const orderId = orderRes.body.id;
+
+    // Without pos.backdate_shift, an explicit paidAt is rejected outright.
+    const noPerm = await request(app.getHttpServer())
+      .post(`/orders/${orderId}/pay`)
+      .set(auth(plainToken))
+      .send({ payments: [{ method: 'CASH', mode: 'MANUAL', amount: Number(orderRes.body.grandTotal) }], paidAt: explicitPaidAt });
+    expect(noPerm.status).toBe(403);
+
+    // A future paidAt is rejected even with the permission.
+    const future = await request(app.getHttpServer())
+      .post(`/orders/${orderId}/pay`)
+      .set(auth(backdateToken))
+      .send({
+        payments: [{ method: 'CASH', mode: 'MANUAL', amount: Number(orderRes.body.grandTotal) }],
+        paidAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      });
+    expect(future.status).toBe(400);
+
+    // A paidAt that doesn't fall on the order's own businessDate is rejected too.
+    const mismatched = await request(app.getHttpServer())
+      .post(`/orders/${orderId}/pay`)
+      .set(auth(backdateToken))
+      .send({
+        payments: [{ method: 'CASH', mode: 'MANUAL', amount: Number(orderRes.body.grandTotal) }],
+        paidAt: new Date(threeDaysAgo.getTime() - 24 * 60 * 60 * 1000).toISOString(),
+      });
+    expect(mismatched.status).toBe(400);
+
+    // Matching the order's businessDate succeeds, and the stored paidAt is
+    // exactly the timestamp given -- not "now".
+    const paid = await request(app.getHttpServer())
+      .post(`/orders/${orderId}/pay`)
+      .set(auth(backdateToken))
+      .send({ payments: [{ method: 'CASH', mode: 'MANUAL', amount: Number(orderRes.body.grandTotal) }], paidAt: explicitPaidAt });
+    expect(paid.status).toBe(200);
+    expect(new Date(paid.body.paidAt).getTime()).toBe(new Date(explicitPaidAt).getTime());
+    expect(paid.body.zatcaSyncStatus).toBe('GENERATED');
+
+    const parser = new XMLParser();
+    const parsed = parser.parse(paid.body.zatcaXml);
+    expect(parsed.Invoice['cbc:IssueDate']).toBe(explicitPaidAt.slice(0, 10));
   });
 });

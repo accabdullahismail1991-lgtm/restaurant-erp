@@ -16,6 +16,7 @@ import { PayOrderDto } from './dto/pay-order.dto';
 import { ShiftsService } from './shifts.service';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+const startOfUtcDay = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 
 @Injectable()
 export class OrdersService {
@@ -533,11 +534,34 @@ export class OrdersService {
       throw new BadRequestException(`المبلغ المدفوع (${totalPaid}) لا يساوي إجمالي الفاتورة (${order.grandTotal})`);
     }
 
+    // An explicit paidAt exists for ONE case: a sale genuinely migrated from
+    // another system (never previously ZATCA-invoiced) whose real
+    // transaction date must survive as the invoice's issue date/hash-chain
+    // timestamp -- see ZatcaService.generateForOrder, which reads
+    // order.paidAt straight through with no other change needed. It's never
+    // a free-floating date: same permission as opening a backdated shift,
+    // never in the future, and pinned to the order's own businessDate so it
+    // can't drift from what the order already claims to be.
+    let explicitPaidAt: Date | undefined;
+    if (dto.paidAt) {
+      if (!(await userHasPermission(this.prisma, userId, 'pos.backdate_shift'))) {
+        throw new ForbiddenException('صلاحية "فتح وردية بتاريخ سابق" مطلوبة لتحديد تاريخ دفع صريح');
+      }
+      const parsed = new Date(dto.paidAt);
+      if (parsed.getTime() > Date.now()) {
+        throw new BadRequestException('لا يمكن أن يكون تاريخ الدفع في المستقبل');
+      }
+      if (order.businessDate && startOfUtcDay(parsed).getTime() !== startOfUtcDay(order.businessDate).getTime()) {
+        throw new BadRequestException('تاريخ الدفع يجب أن يطابق التاريخ التشغيلي المسجّل لهذا الطلب');
+      }
+      explicitPaidAt = parsed;
+    }
+
     return this.prisma.$transaction(async (tx) => {
       await tx.payment.createMany({
         data: dto.payments.map((p) => ({ orderId: id, method: p.method, mode: p.mode, amount: p.amount, terminalRef: p.terminalRef })),
       });
-      await tx.order.update({ where: { id }, data: { status: OrderStatus.PAID, paidAt: new Date() } });
+      await tx.order.update({ where: { id }, data: { status: OrderStatus.PAID, paidAt: explicitPaidAt ?? new Date() } });
       // Same transaction as the sale itself (docs/DECISIONS.md #3: generated
       // and signed LOCALLY at sale time) -- no-ops if the location has no
       // vatNumber configured, since a missing invoicing setting must never
