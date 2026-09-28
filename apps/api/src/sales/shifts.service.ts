@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { InvoiceType, OrderStatus } from '@prisma/client';
 import { computeBusinessDate } from '../common/business-date.util';
 import { scopedLocationIds } from '../common/location-scope.util';
+import { userHasPermission } from '../common/permission.util';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CloseShiftDto, OpenShiftDto } from './dto/shift.dto';
@@ -29,6 +30,27 @@ export class ShiftsService {
 
   async open(dto: OpenShiftDto, userId: string) {
     await this.assertLocationInScope(userId, dto.locationId);
+
+    // Backdating (dto.businessDate set) needs its own permission -- distinct
+    // from the everyday pos.manage_shift a plain cashier already has -- and
+    // can never land in the future or, once resolved, needs the SAME cutoff/
+    // fiscal-year-end rules `today` itself is computed with, so the location
+    // is read once up front for both checks before the atomic-increment
+    // transaction below (which re-reads it anyway for that increment).
+    let explicitBusinessDate: Date | undefined;
+    if (dto.businessDate) {
+      if (!(await userHasPermission(this.prisma, userId, 'pos.backdate_shift'))) {
+        throw new ForbiddenException('صلاحية "فتح وردية بتاريخ سابق" مطلوبة لتنفيذ هذا الإجراء');
+      }
+      const location = await this.prisma.location.findUniqueOrThrow({ where: { id: dto.locationId } });
+      const today = computeBusinessDate(new Date(), location.autoCloseCutoffHour, location.fiscalYearEndMonth, location.fiscalYearEndDay);
+      const parsed = startOfUtcDay(new Date(dto.businessDate));
+      if (parsed.getTime() > today.getTime()) {
+        throw new BadRequestException('لا يمكن فتح وردية بتاريخ مستقبلي');
+      }
+      explicitBusinessDate = parsed;
+    }
+
     // Multiple shifts CAN be open at once for the same location (e.g. more
     // than one till/register running concurrently) -- each Shift already
     // tracks its own opening/closing float, orders, and cash reconciliation
@@ -46,7 +68,9 @@ export class ShiftsService {
         where: { id: dto.locationId },
         data: { lastShiftNumber: { increment: 1 } },
       });
-      const businessDate = computeBusinessDate(new Date(), location.autoCloseCutoffHour, location.fiscalYearEndMonth, location.fiscalYearEndDay);
+      const businessDate =
+        explicitBusinessDate ??
+        computeBusinessDate(new Date(), location.autoCloseCutoffHour, location.fiscalYearEndMonth, location.fiscalYearEndDay);
       return tx.shift.create({
         data: {
           locationId: dto.locationId,
@@ -424,9 +448,19 @@ export class ShiftsService {
   // message rather than letting a new invoice silently land on top of an
   // unsettled yesterday. Location scope is already checked by the caller
   // (OrdersService.assertLocationInScope), so this skips it too.
-  async assertNoUnsettledPriorDays(locationId: string) {
+  //
+  // `excludeShiftId` is the shift the CALLER is actually posting this order
+  // to -- if that's the one and only stale shift found, this isn't a new
+  // invoice piling onto an unresolved backlog, it's the retroactive entry
+  // that backdated shift exists to receive (see ShiftsService.open's
+  // pos.backdate_shift path). Every OTHER stale shift/unclosed day at the
+  // location still blocks normal business as before.
+  async assertNoUnsettledPriorDays(locationId: string, excludeShiftId?: string) {
     const status = await this.buildSettlementStatus(locationId);
-    if (status.openStaleShifts.length > 0) {
+    const blockingStaleShifts = excludeShiftId
+      ? status.openStaleShifts.filter((s) => s.id !== excludeShiftId)
+      : status.openStaleShifts;
+    if (blockingStaleShifts.length > 0) {
       throw new BadRequestException(
         'يوجد ورديات مفتوحة من يوم سابق لم يتم إغلاقها -- يرجى إغلاق جميع الورديات المفتوحة قبل إنشاء فاتورة جديدة',
       );

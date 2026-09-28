@@ -68,8 +68,11 @@ export class OrdersService {
     // from before today, or a fully-closed day that never got its "إنهاء
     // اليوم" rollup, must be resolved first (see ShiftsService.
     // assertNoUnsettledPriorDays / GET /shifts/settlement-status for the UI
-    // popup listing exactly what's outstanding).
-    await this.shifts.assertNoUnsettledPriorDays(dto.locationId);
+    // popup listing exactly what's outstanding). Excludes THIS order's own
+    // shift: posting to a deliberately backdated shift (pos.backdate_shift)
+    // is itself how that shift's stale-ness gets resolved, not a new
+    // invoice piling onto an unresolved backlog.
+    await this.shifts.assertNoUnsettledPriorDays(dto.locationId, dto.shiftId);
 
     // dto.channel references OrderType.code (an admin-manageable table --
     // see order-types module -- replacing the old fixed OrderChannel enum).

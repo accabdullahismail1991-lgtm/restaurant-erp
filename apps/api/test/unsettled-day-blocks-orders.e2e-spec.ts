@@ -85,12 +85,20 @@ describe('Unsettled prior day/shift blocks new order creation (e2e)', () => {
     expect(status.body.openStaleShifts).toHaveLength(1);
     expect(status.body.openStaleShifts[0].id).toBe(staleShiftId);
 
-    const blocked = await request(app.getHttpServer())
+    // An order posted directly to the stale shift ITSELF now succeeds (see
+    // backdated-shift.e2e-spec.ts's pos.backdate_shift feature: that's the
+    // retroactive entry a deliberately backdated shift exists to receive,
+    // not a new invoice piling onto an unresolved backlog) -- paid off
+    // immediately since close() below refuses a shift with any unpaid order.
+    const onOwnStaleShift = await request(app.getHttpServer())
       .post('/orders')
       .set(auth(token))
       .send({ locationId, shiftId: staleShiftId, channel: 'DINE_IN', lines: [{ menuItemId, quantity: 1 }] });
-    expect(blocked.status).toBe(400);
-    expect(blocked.body.message).toContain('ورديات مفتوحة');
+    expect(onOwnStaleShift.status).toBe(201);
+    await request(app.getHttpServer())
+      .post(`/orders/${onOwnStaleShift.body.id}/pay`)
+      .set(auth(token))
+      .send({ payments: [{ method: 'CASH', mode: 'MANUAL', amount: Number(onOwnStaleShift.body.grandTotal) }] });
 
     // A fresh shift opened today, on the SAME location, is blocked too --
     // the gate is location-wide, not per-shift.
