@@ -59,33 +59,46 @@ export class PurchaseOrdersService {
       : round2(taxableSubtotal * vatRate);
     const totalAmount = pricesIncludeVat ? subtotal : round2(subtotal + vatTotal);
 
-    return this.prisma.purchaseOrder.create({
-      data: {
-        locationId: dto.locationId,
-        supplierId: dto.supplierId,
-        createdById: userId,
-        pricesIncludeVat,
-        subtotal,
-        vatTotal,
-        totalAmount,
-        lines: {
-          create: dto.lines.map((l) => ({
-            ingredientId: l.ingredientId,
-            quantity: l.quantity,
-            unitCost: l.unitCost,
-            taxType: l.taxType ?? TaxType.STANDARD,
-          })),
+    return this.prisma.$transaction(async (tx) => {
+      const po = await tx.purchaseOrder.create({
+        data: {
+          locationId: dto.locationId,
+          supplierId: dto.supplierId,
+          createdById: userId,
+          pricesIncludeVat,
+          subtotal,
+          vatTotal,
+          totalAmount,
+          lines: {
+            create: dto.lines.map((l) => ({
+              ingredientId: l.ingredientId,
+              quantity: l.quantity,
+              unitCost: l.unitCost,
+              taxType: l.taxType ?? TaxType.STANDARD,
+            })),
+          },
         },
-      },
-      include: { lines: true },
+        include: { lines: true },
+      });
+      await tx.purchaseOrderActivityLog.create({ data: { purchaseOrderId: po.id, action: 'CREATED', createdById: userId } });
+      return po;
     });
   }
 
   async findOne(id: string, userId: string) {
-    const po = await this.prisma.purchaseOrder.findUnique({ where: { id }, include: { lines: true, approvals: true } });
+    const po = await this.prisma.purchaseOrder.findUnique({ where: { id }, include: { lines: { include: { ingredient: { select: { name: true, unit: true } } } }, approvals: true } });
     if (!po) throw new NotFoundException('أمر الشراء غير موجود');
     await this.assertLocationInScope(userId, po.locationId);
     return po;
+  }
+
+  async activityLog(id: string, userId: string) {
+    await this.findOne(id, userId); // scope check + 404 if missing
+    return this.prisma.purchaseOrderActivityLog.findMany({
+      where: { purchaseOrderId: id },
+      include: { createdBy: { select: { id: true, name: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
   }
 
   async findAll(userId: string, locationId?: string, status?: POStatus) {
@@ -109,7 +122,11 @@ export class PurchaseOrdersService {
 
     const rule = await this.approvalRules.findApplicableRule('PURCHASE_ORDER', po.locationId, Number(po.totalAmount));
     const nextStatus = rule ? POStatus.PENDING_APPROVAL : POStatus.APPROVED;
-    return this.prisma.purchaseOrder.update({ where: { id }, data: { status: nextStatus } });
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.purchaseOrder.update({ where: { id }, data: { status: nextStatus } });
+      await tx.purchaseOrderActivityLog.create({ data: { purchaseOrderId: id, action: 'SUBMITTED', createdById: userId } });
+      return updated;
+    });
   }
 
   private async assertHasApprovalRole(po: { locationId: string; totalAmount: unknown }, userId: string) {
@@ -128,6 +145,7 @@ export class PurchaseOrdersService {
 
     return this.prisma.$transaction(async (tx) => {
       await tx.approval.create({ data: { purchaseOrderId: id, approvedById: userId, decision: 'APPROVED', note: dto.note } });
+      await tx.purchaseOrderActivityLog.create({ data: { purchaseOrderId: id, action: 'APPROVED', note: dto.note, createdById: userId } });
       return tx.purchaseOrder.update({ where: { id }, data: { status: POStatus.APPROVED } });
     });
   }
@@ -139,6 +157,7 @@ export class PurchaseOrdersService {
 
     return this.prisma.$transaction(async (tx) => {
       await tx.approval.create({ data: { purchaseOrderId: id, approvedById: userId, decision: 'REJECTED', note: dto.note } });
+      await tx.purchaseOrderActivityLog.create({ data: { purchaseOrderId: id, action: 'REJECTED', note: dto.note, createdById: userId } });
       return tx.purchaseOrder.update({ where: { id }, data: { status: POStatus.REJECTED } });
     });
   }
@@ -146,7 +165,11 @@ export class PurchaseOrdersService {
   async send(id: string, userId: string) {
     const po = await this.findOne(id, userId);
     if (po.status !== POStatus.APPROVED) throw new BadRequestException('أمر الشراء ليس معتمدًا بعد');
-    return this.prisma.purchaseOrder.update({ where: { id }, data: { status: POStatus.SENT_TO_SUPPLIER } });
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.purchaseOrder.update({ where: { id }, data: { status: POStatus.SENT_TO_SUPPLIER } });
+      await tx.purchaseOrderActivityLog.create({ data: { purchaseOrderId: id, action: 'SENT', createdById: userId } });
+      return updated;
+    });
   }
 
   // Receiving is the real inventory event: every line becomes its own
@@ -183,6 +206,7 @@ export class PurchaseOrdersService {
           reason: 'PURCHASE_RECEIPT',
         });
       }
+      await tx.purchaseOrderActivityLog.create({ data: { purchaseOrderId: id, action: 'RECEIVED', createdById: userId } });
       return tx.purchaseOrder.update({ where: { id }, data: { status: POStatus.RECEIVED }, include: { lines: true } });
     });
   }
@@ -192,6 +216,10 @@ export class PurchaseOrdersService {
     if (po.status === POStatus.RECEIVED || po.status === POStatus.CANCELLED) {
       throw new BadRequestException('لا يمكن إلغاء أمر شراء مستلم أو ملغى بالفعل');
     }
-    return this.prisma.purchaseOrder.update({ where: { id }, data: { status: POStatus.CANCELLED } });
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.purchaseOrder.update({ where: { id }, data: { status: POStatus.CANCELLED } });
+      await tx.purchaseOrderActivityLog.create({ data: { purchaseOrderId: id, action: 'CANCELLED', createdById: userId } });
+      return updated;
+    });
   }
 }

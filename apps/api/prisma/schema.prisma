@@ -184,6 +184,7 @@ model User {
   purchaseReturnsCreated  PurchaseReturn[]
   orderActivityLogs       OrderActivityLog[]
   orderReturnActivityLogs OrderReturnActivityLog[]
+  purchaseOrderActivityLogs PurchaseOrderActivityLog[]
   dayClosesClosed         DayClose[]
   passwordResetTokens     PasswordResetToken[]
 }
@@ -537,10 +538,31 @@ model PurchaseOrder {
   createdAt        DateTime @default(now())
 
   location  Location            @relation(fields: [locationId], references: [id])
-  supplier  Supplier            @relation(fields: [supplierId], references: [id])
-  lines     PurchaseOrderLine[]
-  approvals Approval[]
-  returns   PurchaseReturn[]
+  supplier    Supplier                    @relation(fields: [supplierId], references: [id])
+  lines       PurchaseOrderLine[]
+  approvals   Approval[]
+  returns     PurchaseReturn[]
+  activityLog PurchaseOrderActivityLog[]
+}
+
+// PurchaseOrder itself only ever holds ONE current status, with no
+// timestamp per transition (unlike Order, whose paidAt/lines give some of
+// that back implicitly) -- this is the only record of exactly when each
+// step (submit/approve/reject/send/receive/cancel) actually happened and
+// who did it. createdAt here is always the real moment the action was
+// taken in the system, deliberately never touched by any backdated
+// business/invoice date, so this log stays a trustworthy "what really
+// happened and when" trail independent of what a printed invoice shows.
+model PurchaseOrderActivityLog {
+  id              String   @id @default(cuid())
+  purchaseOrderId String
+  action          String // CREATED / SUBMITTED / APPROVED / REJECTED / SENT / RECEIVED / CANCELLED
+  note            String?
+  createdById     String
+  createdAt       DateTime @default(now())
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  createdBy     User          @relation(fields: [createdById], references: [id])
 }
 
 model PurchaseOrderLine {

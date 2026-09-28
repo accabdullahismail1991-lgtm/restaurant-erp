@@ -289,5 +289,27 @@ describe('Phase 5: purchasing + approval matrix (e2e)', () => {
     expect(getRes.status).toBe(200);
     expect(getRes.body.lines).toHaveLength(1);
     expect(getRes.body.approvals).toHaveLength(1);
+    // findOne now also carries each line's ingredient name/unit, so a
+    // detail view can render "5 g of خامة اختبار مشتريات" without a second
+    // round trip to /ingredients per line.
+    expect(getRes.body.lines[0].ingredient.name).toBe('خامة اختبار مشتريات');
+  });
+
+  it('the activity log records every real transition pendingPoId went through, in order, real-time -- and is permission-gated', async () => {
+    const blocked = await request(app.getHttpServer()).get(`/purchase-orders/${pendingPoId}/activity-log`).set(auth(noPermToken));
+    expect(blocked.status).toBe(403);
+
+    const res = await request(app.getHttpServer()).get(`/purchase-orders/${pendingPoId}/activity-log`).set(auth(adminToken));
+    expect(res.status).toBe(200);
+    // pendingPoId's real history above: created (admin) -> submitted (admin,
+    // over-threshold so PENDING_APPROVAL) -> approved (senior, with a note)
+    // -> sent -> received (admin).
+    expect(res.body.map((l: any) => l.action)).toEqual(['CREATED', 'SUBMITTED', 'APPROVED', 'SENT', 'RECEIVED']);
+    expect(res.body.find((l: any) => l.action === 'APPROVED').note).toBe('موافق -- ضمن الميزانية');
+    expect(res.body.every((l: any) => l.createdBy && l.createdBy.name)).toBe(true);
+    // Entries are chronological and land in the real present, never a
+    // backdated business date -- there's no such thing as a backdated PO.
+    const now = Date.now();
+    res.body.forEach((l: any) => expect(now - new Date(l.createdAt).getTime()).toBeLessThan(60_000));
   });
 });

@@ -35,6 +35,12 @@ export class PurchaseOrdersController {
     return this.purchaseOrders.findOne(id, user.userId);
   }
 
+  @Get(':id/activity-log')
+  @RequirePermission('purchasing.view')
+  activityLog(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
+    return this.purchaseOrders.activityLog(id, user.userId);
+  }
+
   @Post(':id/submit')
   @HttpCode(200)
   @RequirePermission('purchasing.create_po')
