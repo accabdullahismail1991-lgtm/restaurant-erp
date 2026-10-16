@@ -59,12 +59,19 @@ describe('Location.pricesIncludeVat: VAT-inclusive pricing (e2e)', () => {
       update: {},
       create: { code: 'pos.manage_shift', label: 'فتح/إغلاق وردية' },
     });
+    // Needed for the sales-summary/net-sales/tax-summary/food-cost checks below.
+    const analyticsPerm = await prisma.permission.upsert({
+      where: { code: 'analytics.view' },
+      update: {},
+      create: { code: 'analytics.view', label: 'عرض التقارير التحليلية' },
+    });
     const role = await prisma.role.create({ data: { name: 'VAT-Inclusive-Test-Admin' } });
     await prisma.rolePermission.createMany({
       data: [
         { roleId: role.id, permissionId: branchesPerm.id },
         { roleId: role.id, permissionId: inventoryPerm.id },
         { roleId: role.id, permissionId: shiftPerm.id },
+        { roleId: role.id, permissionId: analyticsPerm.id },
       ],
     });
 
@@ -223,5 +230,54 @@ describe('Location.pricesIncludeVat: VAT-inclusive pricing (e2e)', () => {
     const line = parsed.Invoice['cac:InvoiceLine'];
     expect(Number(line['cbc:LineExtensionAmount']['#text'])).toBeCloseTo(69.57, 2);
     expect(Number(line['cac:TaxTotal']['cbc:TaxAmount']['#text'])).toBeCloseTo(10.43, 2);
+  });
+
+  // AnalyticsService used to compute every "net of VAT" figure as
+  // subtotal - discountTotal, which is only actually net-of-VAT when VAT is
+  // added on top (pricesIncludeVat=false). For an inclusive-priced location,
+  // subtotal already HAS VAT baked in, so that formula silently counted the
+  // VAT portion as if it were real revenue -- inflating "net sales", food
+  // cost %'s denominator, and a VAT-filing report's "taxable" figure. The
+  // fix (grandTotal - vatTotal) is correct in both modes; this order's own
+  // numbers (grandTotal=80, vatTotal≈10.43) make the bug and the fix
+  // trivially distinguishable: the old code would have reported 80 here,
+  // not ~69.57.
+  it('reports net-of-VAT sales correctly for an inclusive-priced location across every consumer (sales-summary, net-sales, tax-summary, food-cost)', async () => {
+    const location = await prisma.location.create({ data: { name: 'فرع تقارير شاملة الضريبة', type: 'BRANCH', pricesIncludeVat: true } });
+    const ingredient = await prisma.ingredient.create({ data: { name: `خامة تقارير ${location.id}`, unit: 'g', kind: 'RAW_MATERIAL', lowStockThreshold: 0 } });
+    const menuItem = await prisma.menuItem.create({ data: { name: `صنف تقارير ${location.id}`, category: 'رئيسي', price: 40 } });
+    await prisma.recipeLine.create({ data: { menuItemId: menuItem.id, ingredientId: ingredient.id, quantity: 1 } });
+    await request(app.getHttpServer())
+      .post('/inventory/adjustments')
+      .set(auth(adminToken))
+      .send({ locationId: location.id, ingredientId: ingredient.id, quantity: 100, unitCost: 1 });
+    const shiftRes = await request(app.getHttpServer()).post('/shifts').set(auth(adminToken)).send({ locationId: location.id, openingFloat: 100 });
+
+    const orderRes = await request(app.getHttpServer())
+      .post('/orders')
+      .set(auth(adminToken))
+      .send({ locationId: location.id, shiftId: shiftRes.body.id, channel: 'DINE_IN', lines: [{ menuItemId: menuItem.id, quantity: 2 }] });
+    expect(Number(orderRes.body.grandTotal)).toBe(80);
+    await request(app.getHttpServer())
+      .post(`/orders/${orderRes.body.id}/pay`)
+      .set(auth(adminToken))
+      .send({ payments: [{ method: 'CASH', mode: 'MANUAL', amount: 80 }] });
+
+    const NET_OF_VAT = 69.57; // 80 - 10.43
+
+    const summary = await request(app.getHttpServer()).get(`/analytics/sales-summary?locationId=${location.id}`).set(auth(adminToken));
+    expect(summary.body.netSales).toBeCloseTo(NET_OF_VAT, 2);
+
+    const netSales = await request(app.getHttpServer()).get(`/analytics/net-sales?locationId=${location.id}`).set(auth(adminToken));
+    expect(netSales.body.netSalesExclVat).toBeCloseTo(NET_OF_VAT, 2);
+    expect(netSales.body.byDay[0].netSalesExclVat).toBeCloseTo(NET_OF_VAT, 2);
+
+    const taxSummary = await request(app.getHttpServer()).get(`/analytics/tax-summary?locationId=${location.id}`).set(auth(adminToken));
+    expect(taxSummary.body.sales.taxableSubtotal).toBeCloseTo(NET_OF_VAT, 2);
+    expect(taxSummary.body.sales.invoices[0].taxableSubtotal).toBeCloseTo(NET_OF_VAT, 2);
+    expect(taxSummary.body.sales.byDay[0].taxableSubtotal).toBeCloseTo(NET_OF_VAT, 2);
+
+    const foodCost = await request(app.getHttpServer()).get(`/analytics/food-cost?locationId=${location.id}`).set(auth(adminToken));
+    expect(foodCost.body.netSales).toBeCloseTo(NET_OF_VAT, 2);
   });
 });

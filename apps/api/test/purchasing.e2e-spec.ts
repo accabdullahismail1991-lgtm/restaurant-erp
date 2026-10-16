@@ -295,6 +295,34 @@ describe('Phase 5: purchasing + approval matrix (e2e)', () => {
     expect(getRes.body.lines[0].ingredient.name).toBe('خامة اختبار مشتريات');
   });
 
+  // PurchaseOrder.subtotal is "as entered, regardless of VAT mode" (same
+  // schema comment as Order.subtotal's own ambiguity) -- for a
+  // pricesIncludeVat PO, subtotal IS the final/inclusive figure, not the
+  // pre-tax one. The admin panel's PO list/detail views used to display
+  // subtotal itself under a "قبل الضريبة" (before tax) column/label, which
+  // only happens to be correct when pricesIncludeVat is false. This locks
+  // in the invariant the fixed frontend now relies on instead:
+  // totalAmount - vatTotal is the real net-of-VAT figure in BOTH modes.
+  it('totalAmount - vatTotal is the correct net-of-VAT figure for a pricesIncludeVat PO (not subtotal)', async () => {
+    const inclusiveLocation = await prisma.location.create({ data: { name: 'فرع مشتريات شاملة الضريبة', type: 'BRANCH', pricesIncludeVat: true } });
+    const res = await request(app.getHttpServer())
+      .post('/purchase-orders')
+      .set(auth(adminToken))
+      .send({ locationId: inclusiveLocation.id, supplierId, pricesIncludeVat: true, lines: [{ ingredientId, quantity: 10, unitCost: 2 }] });
+    expect(res.status).toBe(201);
+    // subtotal (20) IS the final figure here -- never the pre-tax one.
+    expect(Number(res.body.subtotal)).toBe(20);
+    expect(Number(res.body.totalAmount)).toBe(20);
+    // vatTotal extracted from 20 at 15%: 20 - 20/1.15 = 2.61
+    expect(Number(res.body.vatTotal)).toBeCloseTo(2.61, 2);
+    // The real net-of-VAT cost is totalAmount - vatTotal (17.39), NOT
+    // subtotal (20) -- subtotal would silently double-count the VAT portion
+    // as if it were real ingredient cost.
+    const netOfVat = Number(res.body.totalAmount) - Number(res.body.vatTotal);
+    expect(netOfVat).toBeCloseTo(17.39, 2);
+    expect(netOfVat).not.toBeCloseTo(Number(res.body.subtotal), 2);
+  });
+
   it('the activity log records every real transition pendingPoId went through, in order, real-time -- and is permission-gated', async () => {
     const blocked = await request(app.getHttpServer()).get(`/purchase-orders/${pendingPoId}/activity-log`).set(auth(noPermToken));
     expect(blocked.status).toBe(403);

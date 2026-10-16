@@ -86,7 +86,14 @@ export class AnalyticsService {
 
     const orderCount = orders.length;
     const revenue = orders.reduce((s, o) => s + Number(o.grandTotal), 0);
-    const netSales = orders.reduce((s, o) => s + Number(o.subtotal) - Number(o.discountTotal), 0);
+    // Net of VAT, mode-agnostic: subtotal - discountTotal only equals "net
+    // of VAT" when the location adds VAT on top (pricesIncludeVat=false).
+    // When it's true, subtotal is itself VAT-inclusive (MenuItem.price IS
+    // the final price -- see OrdersService.create()'s own comment on
+    // vatTotal/grandTotal), so that subtraction would silently double-count
+    // VAT into "net sales". grandTotal - vatTotal is the real net-of-VAT
+    // figure in BOTH modes -- see Order.grandTotal/vatTotal's own derivation.
+    const netSales = orders.reduce((s, o) => s + Number(o.grandTotal) - Number(o.vatTotal), 0);
     const vatCollected = orders.reduce((s, o) => s + Number(o.vatTotal), 0);
     const discountGiven = orders.reduce((s, o) => s + Number(o.discountTotal), 0);
 
@@ -209,7 +216,10 @@ export class AnalyticsService {
     const orderCount = orders.length;
     const grossSales = orders.reduce((s, o) => s + Number(o.subtotal), 0);
     const discountGiven = orders.reduce((s, o) => s + Number(o.discountTotal), 0);
-    const netSalesExclVat = grossSales - discountGiven;
+    // grossSales - discountGiven only equals "net of VAT" when VAT is added
+    // on top (pricesIncludeVat=false) -- see salesSummaryCore's netSales
+    // comment above for why. grandTotal - vatTotal is correct in both modes.
+    const netSalesExclVat = orders.reduce((s, o) => s + Number(o.grandTotal) - Number(o.vatTotal), 0);
     const vatTotal = orders.reduce((s, o) => s + Number(o.vatTotal), 0);
     const netSalesInclVat = orders.reduce((s, o) => s + Number(o.grandTotal), 0);
     const customerCount = new Set(orders.map((o) => o.customerId).filter((id): id is string => !!id)).size;
@@ -220,7 +230,7 @@ export class AnalyticsService {
       const date = o.paidAt!.toISOString().slice(0, 10);
       const cur = byDateMap.get(date) ?? { orderCount: 0, netSalesExclVat: 0, vatTotal: 0, netSalesInclVat: 0 };
       cur.orderCount += 1;
-      cur.netSalesExclVat += Number(o.subtotal) - Number(o.discountTotal);
+      cur.netSalesExclVat += Number(o.grandTotal) - Number(o.vatTotal);
       cur.vatTotal += Number(o.vatTotal);
       cur.netSalesInclVat += Number(o.grandTotal);
       byDateMap.set(date, cur);
@@ -615,9 +625,14 @@ export class AnalyticsService {
         locationId: ids ? { in: ids } : undefined,
         paidAt: gte || lte ? { gte, lte } : undefined,
       },
-      select: { id: true, subtotal: true, discountTotal: true },
+      select: { id: true, grandTotal: true, vatTotal: true },
     });
-    const netSales = orders.reduce((s, o) => s + Number(o.subtotal) - Number(o.discountTotal), 0);
+    // grandTotal - vatTotal, not subtotal - discountTotal -- see
+    // salesSummaryCore's netSales comment: Food Cost % = COGS / net sales
+    // is a real KPI a manager reads directly, and subtotal is VAT-inclusive
+    // for a pricesIncludeVat location, which would inflate net sales and
+    // understate food cost % there.
+    const netSales = orders.reduce((s, o) => s + Number(o.grandTotal) - Number(o.vatTotal), 0);
     const orderIds = orders.map((o) => o.id);
 
     const movements = orderIds.length
@@ -1068,7 +1083,12 @@ export class AnalyticsService {
       orderBy: { paidAt: 'desc' },
     });
 
-    const salesTaxableSubtotal = round2(orders.reduce((s, o) => s + Number(o.subtotal) - Number(o.discountTotal), 0));
+    // grandTotal - vatTotal, not subtotal - discountTotal -- see
+    // salesSummaryCore's netSales comment. A VAT filing built off a
+    // subtotal-based "taxable" figure would be wrong for any
+    // pricesIncludeVat location, since subtotal there already has VAT
+    // baked in rather than excluded.
+    const salesTaxableSubtotal = round2(orders.reduce((s, o) => s + Number(o.grandTotal) - Number(o.vatTotal), 0));
     const salesVatCollected = round2(orders.reduce((s, o) => s + Number(o.vatTotal), 0));
 
     // Per-invoice and per-day breakdowns -- the summary totals above answer
@@ -1082,7 +1102,7 @@ export class AnalyticsService {
       shiftSequence: o.shiftSequence,
       paidAt: o.paidAt,
       locationName: o.location.name,
-      taxableSubtotal: round2(Number(o.subtotal) - Number(o.discountTotal)),
+      taxableSubtotal: round2(Number(o.grandTotal) - Number(o.vatTotal)),
       vatTotal: Number(o.vatTotal),
       grandTotal: Number(o.grandTotal),
     }));
@@ -1091,7 +1111,7 @@ export class AnalyticsService {
       const day = o.paidAt!.toISOString().slice(0, 10);
       const cur = byDayMap.get(day) ?? { invoiceCount: 0, taxableSubtotal: 0, vatCollected: 0 };
       cur.invoiceCount += 1;
-      cur.taxableSubtotal += Number(o.subtotal) - Number(o.discountTotal);
+      cur.taxableSubtotal += Number(o.grandTotal) - Number(o.vatTotal);
       cur.vatCollected += Number(o.vatTotal);
       byDayMap.set(day, cur);
     }
