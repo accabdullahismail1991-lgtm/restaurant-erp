@@ -279,5 +279,10 @@ describe('Location.pricesIncludeVat: VAT-inclusive pricing (e2e)', () => {
 
     const foodCost = await request(app.getHttpServer()).get(`/analytics/food-cost?locationId=${location.id}`).set(auth(adminToken));
     expect(foodCost.body.netSales).toBeCloseTo(NET_OF_VAT, 2);
+
+    const topItems = await request(app.getHttpServer()).get(`/analytics/top-items?locationId=${location.id}`).set(auth(adminToken));
+    expect(topItems.body[0].netRevenue).toBeCloseTo(NET_OF_VAT, 2);
+    expect(topItems.body[0].vatAmount).toBeCloseTo(10.43, 2);
+    expect(topItems.body[0].revenue).toBe(80); // gross, unchanged by pricesIncludeVat -- matches order.grandTotal
   });
 });

@@ -164,13 +164,20 @@ describe('Phase 11: analytics / BI (e2e)', () => {
     expect(res.body.revenue).toBe(57.5); // 1x item = 50 + 15% VAT
   });
 
-  it('ranks top items by revenue with correct quantities', async () => {
+  // revenue is ALWAYS the gross/VAT-inclusive figure here, consistent with
+  // every other "revenue" field in this file (salesSummaryCore's own
+  // revenue === grandTotal, 115 above) -- netRevenue/vatAmount carry the
+  // pre-tax split instead of revenue meaning different things depending on
+  // the line items' own location's pricesIncludeVat setting.
+  it('ranks top items by revenue with correct quantities and a net/VAT/gross split', async () => {
     const res = await request(app.getHttpServer()).get(`/analytics/top-items?locationId=${locationId}`).set(auth(viewToken));
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(1);
     expect(res.body[0].menuItemId).toBe(menuItemId);
     expect(res.body[0].quantity).toBe(2);
-    expect(res.body[0].revenue).toBe(100);
+    expect(res.body[0].netRevenue).toBe(100);
+    expect(res.body[0].vatAmount).toBe(15);
+    expect(res.body[0].revenue).toBe(115);
   });
 
   it('computes real food cost from actual StockMovement costs, not an estimate', async () => {

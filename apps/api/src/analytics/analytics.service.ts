@@ -304,20 +304,54 @@ export class AnalyticsService {
           payments: paymentMethod ? { some: { method: paymentMethod } } : undefined,
         },
       },
-      select: { menuItemId: true, quantity: true, unitPrice: true, menuItem: { select: { name: true } } },
+      select: {
+        menuItemId: true,
+        quantity: true,
+        unitPrice: true,
+        menuItem: { select: { name: true, taxType: true } },
+        order: { select: { location: { select: { vatRate: true, pricesIncludeVat: true } } } },
+      },
     });
 
-    const byItem = new Map<string, { name: string; quantity: number; revenue: number }>();
+    const byItem = new Map<string, { name: string; quantity: number; netRevenue: number; vatAmount: number; grossRevenue: number }>();
     for (const line of lines) {
       const menuItemId = line.menuItemId!;
-      const cur = byItem.get(menuItemId) ?? { name: line.menuItem!.name, quantity: 0, revenue: 0 };
+      const cur = byItem.get(menuItemId) ?? { name: line.menuItem!.name, quantity: 0, netRevenue: 0, vatAmount: 0, grossRevenue: 0 };
+      const lineGross = Number(line.unitPrice) * line.quantity;
+      // unitPrice is VAT-inclusive or not purely by its OWN order's
+      // location.pricesIncludeVat (two lines of the same item at two
+      // locations with different settings are genuinely priced
+      // differently) -- same net/vat split OrdersService.create() and
+      // ZatcaService.generateForOrder() already use per order/line, just
+      // aggregated here across however many orders this item appears in.
+      let lineVat: number;
+      if (line.menuItem!.taxType !== 'STANDARD') {
+        lineVat = 0;
+      } else if (line.order.location.pricesIncludeVat) {
+        const vatRate = Number(line.order.location.vatRate) / 100;
+        lineVat = lineGross - lineGross / (1 + vatRate);
+      } else {
+        const vatRate = Number(line.order.location.vatRate) / 100;
+        lineVat = lineGross * vatRate;
+      }
+      const lineNet = line.order.location.pricesIncludeVat ? lineGross - lineVat : lineGross;
+      const lineFinalGross = line.order.location.pricesIncludeVat ? lineGross : lineGross + lineVat;
       cur.quantity += line.quantity;
-      cur.revenue += Number(line.unitPrice) * line.quantity;
+      cur.netRevenue += lineNet;
+      cur.vatAmount += lineVat;
+      cur.grossRevenue += lineFinalGross;
       byItem.set(menuItemId, cur);
     }
 
     return [...byItem.entries()]
-      .map(([menuItemId, v]) => ({ menuItemId, name: v.name, quantity: v.quantity, revenue: round2(v.revenue) }))
+      .map(([menuItemId, v]) => ({
+        menuItemId,
+        name: v.name,
+        quantity: v.quantity,
+        netRevenue: round2(v.netRevenue),
+        vatAmount: round2(v.vatAmount),
+        revenue: round2(v.grossRevenue),
+      }))
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, limit);
   }

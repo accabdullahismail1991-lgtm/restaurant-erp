@@ -173,7 +173,7 @@ describe('Reports: scheduled Excel/PDF export (e2e)', () => {
     const itemRows = (itemsSheet!.getSheetValues() as Array<Array<string | number> | undefined>).filter(Boolean);
     const itemRow = itemRows.find((r) => (r as Array<string | number>)[1] === 'صنف تقارير') as Array<string | number>;
     expect(itemRow[2]).toBe(2); // quantity sold
-    expect(itemRow[3]).toBe(100); // revenue
+    expect(itemRow[3]).toBe(115); // revenue -- gross/VAT-inclusive, same as topItemsCore's own revenue field
   });
 
   it('generates a real PDF file whose text matches the actual sales numbers', async () => {
@@ -306,7 +306,7 @@ describe('Reports: scheduled Excel/PDF export (e2e)', () => {
     const itemRows = (itemsSheet!.getSheetValues() as Array<Array<string | number> | undefined>).filter(Boolean);
     const itemRow = itemRows.find((r) => (r as Array<string | number>)[1] === 'صنف تقارير') as Array<string | number>;
     expect(itemRow[2]).toBe(2);
-    expect(itemRow[3]).toBe(100);
+    expect(itemRow[3]).toBe(115); // gross/VAT-inclusive, same as topItemsCore's own revenue field
   });
 
   it('exports the Sales dashboard as a real PDF with the actual numbers', async () => {

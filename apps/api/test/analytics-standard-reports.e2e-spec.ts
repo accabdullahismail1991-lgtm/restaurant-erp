@@ -78,7 +78,13 @@ describe('Standard analytical report suite: ABC, category mix, period comparison
 
     const res = await request(app.getHttpServer()).get(`/analytics/abc-analysis?locationId=${locationId}`).set(auth(token));
     expect(res.status).toBe(200);
-    expect(res.body.totalRevenue).toBe(1000);
+    // revenue (here and in summary/items below) is the gross/VAT-inclusive
+    // figure -- topItemsCore's own revenue field, now consistent with every
+    // other "revenue" in this file (see analytics.e2e-spec.ts) -- so 1000
+    // net at a uniform 15% VAT becomes 1150. The A/B/C classes and
+    // revenuePercent/cumulativePercent are pure ratios, unaffected by the
+    // uniform VAT scaling.
+    expect(res.body.totalRevenue).toBe(1150);
     const byName = (name: string) => res.body.items.find((i: { name: string }) => i.name === name);
     expect(byName('صنف A').class).toBe('A');
     expect(byName('صنف A').cumulativePercent).toBe(80);
@@ -87,9 +93,9 @@ describe('Standard analytical report suite: ABC, category mix, period comparison
     expect(byName('صنف C').class).toBe('C');
     expect(byName('صنف C').cumulativePercent).toBe(100);
     expect(res.body.summary).toEqual([
-      { class: 'A', itemCount: 1, revenue: 800, revenuePercent: 80 },
-      { class: 'B', itemCount: 1, revenue: 150, revenuePercent: 15 },
-      { class: 'C', itemCount: 1, revenue: 50, revenuePercent: 5 },
+      { class: 'A', itemCount: 1, revenue: 920, revenuePercent: 80 },
+      { class: 'B', itemCount: 1, revenue: 172.5, revenuePercent: 15 },
+      { class: 'C', itemCount: 1, revenue: 57.5, revenuePercent: 5 },
     ]);
 
     await request(app.getHttpServer()).post(`/shifts/${shiftId}/close`).set(auth(token)).send({ closingCounted: 100 });
