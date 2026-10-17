@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { scopedLocationIds } from '../common/location-scope.util';
 import { PrismaService } from '../prisma/prisma.service';
@@ -264,6 +264,82 @@ export class InventoryService {
       }
     }
     return { settledCount: results.filter((r) => r.settled).length, results };
+  }
+
+  // Item card (Phase 1 of the reporting catalog): one ingredient's full
+  // movement ledger at one location, with a running balance computed by
+  // walking every StockMovement from the start of its history -- never
+  // read off InventoryBalance directly, so this report can independently
+  // RECONCILE against it (the brief's own "detail rows must reconcile to
+  // the summary total" rule) instead of just re-displaying the same
+  // number a bug in bumpBalance() could have thrown off. `from`/`to`
+  // filter which rows are RETURNED, but the running balance is always
+  // computed over the complete history first -- filtering before summing
+  // would silently show the wrong balance for every row in the window.
+  async getItemCard(userId: string, ingredientId: string, locationId: string, from?: string, to?: string) {
+    await this.assertLocationInScope(userId, locationId);
+    const ingredient = await this.prisma.ingredient.findUnique({ where: { id: ingredientId } });
+    if (!ingredient) {
+      throw new NotFoundException('الصنف غير موجود');
+    }
+
+    const allMovements = await this.prisma.stockMovement.findMany({
+      where: { batch: { ingredientId, locationId } },
+      include: { batch: { select: { unitCost: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    let running = new Prisma.Decimal(0);
+    const withRunningBalance = allMovements.map((m) => {
+      running = running.add(m.quantity);
+      return { ...m, runningBalance: running };
+    });
+    const derivedBalance = running;
+
+    const fromDate = from ? new Date(from) : null;
+    const toDate = to ? new Date(to) : null;
+    const filtered = withRunningBalance.filter(
+      (m) => (!fromDate || m.createdAt >= fromDate) && (!toDate || m.createdAt <= toDate),
+    );
+
+    const storedBalance = await this.prisma.inventoryBalance.findUnique({
+      where: { ingredientId_locationId: { ingredientId, locationId } },
+    });
+    const avgCost = await this.averageUnitCost(locationId, ingredientId);
+
+    return {
+      ingredient: {
+        id: ingredient.id,
+        name: ingredient.name,
+        unit: ingredient.unit,
+        valuationMethod: ingredient.valuationMethod,
+        lowStockThreshold: Number(ingredient.lowStockThreshold),
+        shelfLifeDays: ingredient.shelfLifeDays,
+      },
+      locationId,
+      currentBalance: derivedBalance.toNumber(),
+      // Reconciliation check, not a display figure: InventoryBalance is
+      // maintained incrementally by bumpBalance() on every write, so it
+      // should always equal this report's own independent sum -- a
+      // mismatch here means a real bug upstream, not a rounding quirk.
+      storedBalance: storedBalance ? Number(storedBalance.quantity) : 0,
+      reconciled: derivedBalance.sub(storedBalance ? storedBalance.quantity : 0).abs().lte(0.0005),
+      averageUnitCost: avgCost.toNumber(),
+      valuation: derivedBalance.mul(avgCost).toNumber(),
+      lastMovementAt: allMovements.length ? allMovements[allMovements.length - 1].createdAt : null,
+      movements: filtered
+        .slice()
+        .reverse()
+        .map((m) => ({
+          id: m.id,
+          createdAt: m.createdAt,
+          reason: m.reason,
+          refId: m.refId,
+          quantity: Number(m.quantity),
+          unitCost: Number(m.batch.unitCost),
+          runningBalance: Number(m.runningBalance),
+        })),
+    };
   }
 
   async recordCostAdjustment(dto: CostAdjustmentDto, userId: string) {

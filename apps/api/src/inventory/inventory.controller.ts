@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
@@ -17,6 +17,20 @@ export class InventoryController {
   @RequirePermission('inventory.view')
   getBalances(@CurrentUser() user: { userId: string }, @Query('locationId') locationId?: string) {
     return this.inventory.getBalances(user.userId, locationId);
+  }
+
+  // Item card (Phase 1 report): one ingredient's full movement ledger at
+  // one location, with a running balance -- see InventoryService.getItemCard.
+  @Get('ingredients/:ingredientId/movements')
+  @RequirePermission('inventory.view')
+  getItemCard(
+    @CurrentUser() user: { userId: string },
+    @Param('ingredientId') ingredientId: string,
+    @Query('locationId') locationId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.inventory.getItemCard(user.userId, ingredientId, locationId, from, to);
   }
 
   @Post('adjustments')
