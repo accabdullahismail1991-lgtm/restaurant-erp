@@ -1220,3 +1220,82 @@ model Backup {
   fileData  Bytes
   createdAt DateTime @default(now())
 }
+
+// ---------------------------------------------------------------------------
+// المحاسبة (دفتر الأستاذ العام) — Phase 0 من وثيقة بنية التقارير: دليل حسابات
+// واحد على مستوى الشركة بأكملها (الفرع بُعد تقريري على كل سطر، وليس دفترًا
+// منفصلًا لكل فرع، تمامًا كما Order.locationId اليوم) + قيود موزونة دائمًا.
+// هذا تصميم المخطط فقط (migration) — لا يوجد بعد أي كود يُنشئ قيودًا فعلية؛
+// هذا يأتي في مرحلة الترحيل الصامت (shadow posting) التالية بحسب خطة الطرح
+// في الوثيقة.
+// ---------------------------------------------------------------------------
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+model Account {
+  id       String      @id @default(cuid())
+  code     String      @unique // "1000", "4000"...
+  name     String
+  type     AccountType
+  parentId String?
+  isActive Boolean     @default(true)
+
+  parent   Account?      @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children Account[]     @relation("AccountHierarchy")
+  lines    JournalLine[]
+}
+
+model JournalEntry {
+  id          String   @id @default(cuid())
+  entryNumber Int      @unique // تسلسلي قابل للعرض (JE-000412 في الواجهة)
+  // تاريخ الفترة المحاسبية التي يُرحَّل إليها هذا القيد -- مختلف عن
+  // createdAt عمدًا، بنفس الفصل الذي طُبِّق بالفعل هذا الموسم بين تاريخ
+  // الفاتورة/أمر الشراء وتوقيت سجل الحركة الحقيقي.
+  businessDate DateTime
+  sourceType  String // "ORDER_PAYMENT" | "PURCHASE_ORDER_RECEIVE" | "WASTE" | ...
+  sourceId    String // معرف الطلب/أمر الشراء/... الذي سبّب هذا القيد
+  locationId  String? // بُعد تقريري فقط -- ليس دفترًا منفصلًا
+  description String
+  createdById String
+  createdAt   DateTime @default(now()) // توقيت حقيقي دائمًا -- لا يُؤرَّخ لاحقًا بتاريخ سابق
+
+  lines JournalLine[]
+
+  @@index([sourceType, sourceId])
+  @@index([businessDate])
+}
+
+model JournalLine {
+  id             String  @id @default(cuid())
+  journalEntryId String
+  accountId      String
+  debit          Decimal @default(0) @db.Decimal(12, 2)
+  credit         Decimal @default(0) @db.Decimal(12, 2)
+
+  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id])
+  account      Account      @relation(fields: [accountId], references: [id])
+
+  @@index([accountId])
+}
+
+// يقفل فترة محاسبية (مثلًا شهر كامل) بعد أن يصبح كل يوم عمل فيها مُغلَقًا
+// بالفعل (DayClose) -- بنفس آلية بوابة التسوية الحالية (settlement-status)
+// التي تمنع فاتورة جديدة على يوم سابق غير منتهى. إعادة فتح فترة مُقفلة
+// إجراء صريح ومُسجَّل (ليس حذفًا عاديًا)، بنفس موقف كل شيء آخر دُقِّق هذا
+// الموسم.
+model AccountingPeriodClose {
+  id           String    @id @default(cuid())
+  periodStart  DateTime
+  periodEnd    DateTime
+  closedById   String
+  closedAt     DateTime  @default(now())
+  reopenedById String?
+  reopenedAt   DateTime?
+
+  @@unique([periodStart, periodEnd])
+}

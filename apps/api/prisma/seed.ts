@@ -46,6 +46,12 @@ const PERMISSIONS: Array<{ code: string; label: string }> = [
   { code: 'order_types.manage', label: 'إدارة أنواع الطلبات' },
   { code: 'system.reset_data', label: 'حذف/تصفير بيانات النظام (إجراء حسّاس)' },
   { code: 'system.backup_manage', label: 'إنشاء/تحميل/استعادة النسخ الاحتياطية (إجراء حسّاس)' },
+  // Phase 0 of the reporting-architecture doc (Account/JournalEntry/
+  // JournalLine schema only so far -- no posting code exists yet, these
+  // codes are declared now the same way every other not-yet-built module's
+  // codes were declared ahead of its implementation).
+  { code: 'accounting.view', label: 'عرض دليل الحسابات والقيود (دفتر الأستاذ العام)' },
+  { code: 'accounting.manage', label: 'إدارة دليل الحسابات وإقفال/إعادة فتح الفترات المحاسبية' },
 ];
 
 // Seeded once, then left alone -- an admin can add more or rename these
@@ -62,6 +68,28 @@ const DEFAULT_PAYMENT_METHODS: Array<{ code: string; name: string; isCash: boole
   // yet -- shifts.closeSummary's byPaymentMethod breakdown is what lets an
   // admin read off the employee-meals total to apply manually for now.
   { code: 'STAFF_MEAL', name: 'وجبات الموظفين', isCash: false },
+];
+
+// A starter chart of accounts only -- a real one gets edited/extended from
+// whatever UI the accounting module eventually ships, same posture as
+// DEFAULT_PAYMENT_METHODS above. One company-wide ledger (see the Phase 0
+// design doc): branch is a reporting dimension on JournalEntry.locationId,
+// never a separate set of accounts. "Accounts Payable" and "VAT Receivable"
+// exist here as placeholders only -- nothing posts to them yet (no AP
+// ledger/due-date tracking exists on PurchaseOrder/Supplier today).
+const DEFAULT_ACCOUNTS: Array<{ code: string; name: string; type: 'ASSET' | 'LIABILITY' | 'EQUITY' | 'REVENUE' | 'EXPENSE' }> = [
+  { code: '1000', name: 'الصندوق (نقدًا)', type: 'ASSET' },
+  { code: '1010', name: 'تسوية الشبكة/البطاقات', type: 'ASSET' },
+  { code: '1200', name: 'المخزون', type: 'ASSET' },
+  { code: '1300', name: 'ضريبة القيمة المضافة المستحقة (مشتريات)', type: 'ASSET' },
+  { code: '2000', name: 'ذمم دائنة (موردون)', type: 'LIABILITY' },
+  { code: '2300', name: 'ضريبة القيمة المضافة المستحقة (مبيعات)', type: 'LIABILITY' },
+  { code: '3000', name: 'حقوق الملاك', type: 'EQUITY' },
+  { code: '4000', name: 'إيرادات المبيعات', type: 'REVENUE' },
+  { code: '4100', name: 'مردودات ومسموحات المبيعات', type: 'REVENUE' },
+  { code: '5000', name: 'تكلفة المبيعات', type: 'EXPENSE' },
+  { code: '5100', name: 'هدر المخزون', type: 'EXPENSE' },
+  { code: '5200', name: 'فروقات جرد المخزون', type: 'EXPENSE' },
 ];
 
 // A starter catalog only -- Ingredient.unit stays a free string (see
@@ -170,6 +198,10 @@ async function main() {
 
   for (const t of DEFAULT_ORDER_TYPES) {
     await prisma.orderType.upsert({ where: { code: t.code }, update: {}, create: t });
+  }
+
+  for (const a of DEFAULT_ACCOUNTS) {
+    await prisma.account.upsert({ where: { code: a.code }, update: {}, create: a });
   }
 
   // eslint-disable-next-line no-console
