@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { POStatus, TaxType } from '@prisma/client';
+import { JournalService } from '../accounting/journal.service';
 import { scopedLocationIds } from '../common/location-scope.util';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -15,6 +16,7 @@ export class PurchaseOrdersService {
     private readonly prisma: PrismaService,
     private readonly approvalRules: ApprovalRulesService,
     private readonly inventory: InventoryService,
+    private readonly journal: JournalService,
   ) {}
 
   private async assertLocationInScope(userId: string, locationId: string) {
@@ -207,6 +209,29 @@ export class PurchaseOrdersService {
         });
       }
       await tx.purchaseOrderActivityLog.create({ data: { purchaseOrderId: id, action: 'RECEIVED', createdById: userId } });
+
+      // Shadow-posting (Phase 0, step 2): Dr Inventory at its real ex-VAT
+      // cost + Dr VAT Receivable, Cr Accounts Payable at the full invoiced
+      // total. The AP *control account* balances correctly even though no
+      // per-supplier aging sub-ledger exists yet (that needs its own
+      // due-date/paid-amount fields, still on the catalog's blocked list) --
+      // a control account only needs to know the total owed, not to whom
+      // or by when.
+      const vatTotal = Number(po.vatTotal);
+      await this.journal.post(tx, {
+        businessDate: new Date(),
+        sourceType: 'PURCHASE_ORDER_RECEIVE',
+        sourceId: po.id,
+        locationId: po.locationId,
+        description: `استلام أمر شراء ${po.id}`,
+        createdById: userId,
+        lines: [
+          { accountCode: '1200', debit: round2(Number(po.totalAmount) - vatTotal) },
+          ...(vatTotal > 0 ? [{ accountCode: '1300', debit: round2(vatTotal) }] : []),
+          { accountCode: '2000', credit: round2(Number(po.totalAmount)) },
+        ],
+      });
+
       return tx.purchaseOrder.update({ where: { id }, data: { status: POStatus.RECEIVED }, include: { lines: true } });
     });
   }

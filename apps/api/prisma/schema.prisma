@@ -1252,7 +1252,7 @@ model Account {
 
 model JournalEntry {
   id          String   @id @default(cuid())
-  entryNumber Int      @unique // تسلسلي قابل للعرض (JE-000412 في الواجهة)
+  entryNumber Int      @unique @default(autoincrement()) // تسلسلي قابل للعرض (JE-000412 في الواجهة) -- متتالية DB ذرّية، لا عدّاد يدوي عرضة للتزاحم
   // تاريخ الفترة المحاسبية التي يُرحَّل إليها هذا القيد -- مختلف عن
   // createdAt عمدًا، بنفس الفصل الذي طُبِّق بالفعل هذا الموسم بين تاريخ
   // الفاتورة/أمر الشراء وتوقيت سجل الحركة الحقيقي.

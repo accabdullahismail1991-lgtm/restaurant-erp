@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { InvoiceType, OrderStatus, TaxType } from '@prisma/client';
+import { InvoiceType, OrderStatus, Prisma, TaxType } from '@prisma/client';
+import { JournalService } from '../accounting/journal.service';
 import { computeBusinessDate } from '../common/business-date.util';
 import { scopedLocationIds } from '../common/location-scope.util';
 import { userHasPermission } from '../common/permission.util';
@@ -29,6 +30,7 @@ export class OrdersService {
     private readonly production: ProductionOrdersService,
     private readonly orderTypes: OrderTypesService,
     private readonly shifts: ShiftsService,
+    private readonly journal: JournalService,
   ) {}
 
   private async assertLocationInScope(userId: string, locationId: string) {
@@ -574,7 +576,60 @@ export class OrdersService {
         const points = Math.floor(Number(order.grandTotal) / EARN_CURRENCY_PER_POINT);
         await this.customers.awardPoints(tx, order.customerId, points, 'ORDER_EARN', id);
       }
+      await this.postOrderPaymentJournal(tx, order, dto.payments, userId);
       return tx.order.findUniqueOrThrow({ where: { id }, include: { lines: true, payments: true, promotion: true } });
+    });
+  }
+
+  // Shadow-posting (Phase 0, step 2): one compound, balanced entry per
+  // paid order -- Dr cash/card clearing (by Payment.method), Cr Sales
+  // Revenue + VAT Payable, PLUS Dr COGS / Cr Inventory for the cost side.
+  // COGS is re-derived from StockMovement (reason='SALE', refId=order.id)
+  // rather than threaded through from consumeRecipeFor's own totalCost --
+  // same reconciliation posture as the inventory item card: an
+  // independently-derived figure that must agree with what inventory
+  // already recorded, not a second copy of the same number carried by
+  // hand through several call frames.
+  private async postOrderPaymentJournal(
+    tx: Prisma.TransactionClient,
+    order: { id: string; locationId: string; grandTotal: Prisma.Decimal; vatTotal: Prisma.Decimal; businessDate: Date | null },
+    payments: Array<{ method: string; amount: number }>,
+    userId: string,
+  ) {
+    const grandTotal = Number(order.grandTotal);
+    const vatTotal = Number(order.vatTotal);
+    const netRevenue = round2(grandTotal - vatTotal);
+
+    // Only CASH clears to the till (1000); every other method (card,
+    // wallet, a custom PaymentMethod.code, staff meals) clears to the
+    // generic non-cash clearing account (1010) -- a real bank-deposit
+    // reconciliation report (matching each clearing batch to an actual
+    // bank statement line) is still on the catalog's blocked list.
+    const clearingByCode = new Map<string, number>();
+    for (const p of payments) {
+      const code = p.method === 'CASH' ? '1000' : '1010';
+      clearingByCode.set(code, round2((clearingByCode.get(code) ?? 0) + p.amount));
+    }
+
+    const cogsMovements = await tx.stockMovement.findMany({
+      where: { refId: order.id, reason: 'SALE' },
+      include: { batch: { select: { unitCost: true } } },
+    });
+    const cogs = round2(cogsMovements.reduce((s, m) => s + Number(m.quantity.negated()) * Number(m.batch.unitCost), 0));
+
+    await this.journal.post(tx, {
+      businessDate: order.businessDate ?? new Date(),
+      sourceType: 'ORDER_PAYMENT',
+      sourceId: order.id,
+      locationId: order.locationId,
+      description: `دفع الطلب ${order.id}`,
+      createdById: userId,
+      lines: [
+        ...[...clearingByCode.entries()].map(([accountCode, amount]) => ({ accountCode, debit: amount })),
+        { accountCode: '4000', credit: netRevenue },
+        ...(vatTotal > 0 ? [{ accountCode: '2300', credit: vatTotal }] : []),
+        ...(cogs > 0 ? [{ accountCode: '5000', debit: cogs }, { accountCode: '1200', credit: cogs }] : []),
+      ],
     });
   }
 

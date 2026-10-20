@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { JournalService } from '../accounting/journal.service';
 import { scopedLocationIds } from '../common/location-scope.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CostAdjustmentDto, ReceiveInventoryDto, WasteInventoryDto } from './dto/adjust-inventory.dto';
@@ -14,7 +15,10 @@ type Db = Pick<PrismaService, 'inventoryBatch' | 'stockMovement' | 'inventoryBal
 
 @Injectable()
 export class InventoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly journal: JournalService,
+  ) {}
 
   async scopedLocationIds(userId: string) {
     return scopedLocationIds(this.prisma, userId);
@@ -177,11 +181,34 @@ export class InventoryService {
 
   async recordWaste(dto: WasteInventoryDto, userId: string) {
     await this.assertLocationInScope(userId, dto.locationId);
-    return this.consume(this.prisma, {
-      locationId: dto.locationId,
-      ingredientId: dto.ingredientId,
-      quantity: dto.quantity,
-      reason: 'WASTE',
+    // Wrapped in its own transaction (consume() alone wasn't -- a bonus
+    // atomicity fix, not just scaffolding for the journal post below) so
+    // the stock movement and its GL entry either both land or neither does.
+    return this.prisma.$transaction(async (tx) => {
+      const result = await this.consume(tx, {
+        locationId: dto.locationId,
+        ingredientId: dto.ingredientId,
+        quantity: dto.quantity,
+        reason: 'WASTE',
+      });
+      // Shadow-posting (Phase 0, step 2): Dr Waste Expense / Cr Inventory,
+      // at the real cost of whatever batches were actually depleted --
+      // `result.totalCost` is zero (and nothing posts) for the edge case
+      // consume() itself documents: a shortfall allowed through by
+      // Location.allowNegativeStock has no real batch to price it from.
+      await this.journal.post(tx, {
+        businessDate: new Date(),
+        sourceType: 'WASTE',
+        sourceId: `${dto.locationId}:${dto.ingredientId}:${Date.now()}`,
+        locationId: dto.locationId,
+        description: `هدر مخزون (${dto.ingredientId})`,
+        createdById: userId,
+        lines: [
+          { accountCode: '5100', debit: Number(result.totalCost) },
+          { accountCode: '1200', credit: Number(result.totalCost) },
+        ],
+      });
+      return result;
     });
   }
 
